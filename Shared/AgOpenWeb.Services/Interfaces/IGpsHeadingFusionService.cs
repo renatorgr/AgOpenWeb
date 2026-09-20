@@ -29,9 +29,22 @@ public interface IGpsHeadingFusionService
     /// <param name="speedMs">Current speed, m/s.</param>
     /// <param name="easting">Current easting, meters, local frame.</param>
     /// <param name="northing">Current northing, meters, local frame.</param>
+    /// <param name="ksxtHeading">Dual-antenna heading read directly from the
+    /// latest $KSXT sentence, degrees 0–360. Only meaningful when
+    /// <paramref name="ksxtValid"/> is true. Defaults to 0 for callers that
+    /// don't parse KSXT (single-antenna setups).</param>
+    /// <param name="ksxtValid">True when a $KSXT sentence with a valid
+    /// heading fix was received this cycle. When true, this takes priority
+    /// over the static <c>IsDualGps</c> setting: the dual-antenna solution
+    /// is used because it is actually fresh right now, not because the
+    /// operator ticked a box. When false — antenna blocked, or no KSXT
+    /// parser wired up — falls back to <paramref name="gpsHeading"/> /
+    /// <paramref name="imuHeading"/> fusion exactly as before. Defaults to
+    /// false, so existing callers keep their current behavior unchanged.</param>
     /// <returns>Final heading in degrees, normalized to 0–360.</returns>
     double FuseHeading(double gpsHeading, double imuHeading, bool imuValid,
-                       double speedMs, double easting, double northing);
+                       double speedMs, double easting, double northing,
+                       double ksxtHeading = 0, bool ksxtValid = false);
 
     /// <summary>
     /// Discard fix-to-fix history. Call on field close or GPS reconnect.
