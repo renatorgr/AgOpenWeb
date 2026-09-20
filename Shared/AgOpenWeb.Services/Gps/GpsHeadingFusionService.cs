@@ -35,12 +35,33 @@ public class GpsHeadingFusionService : IGpsHeadingFusionService
     private bool _hasPreviousPosition;
 
     public double FuseHeading(double gpsHeading, double imuHeading, bool imuValid,
-                              double speedMs, double easting, double northing)
+                              double speedMs, double easting, double northing,
+                              double ksxtHeading = 0, bool ksxtValid = false)
     {
         double finalHeading = gpsHeading;
 
+        // A fresh $KSXT this cycle is ground truth: the UM982 itself is
+        // reporting a valid dual-antenna fix right now, not "dual mode is
+        // configured". Prefer it over the static IsDualGps setting so a
+        // momentarily blocked antenna falls through to IMU/fix-to-fix on
+        // the very cycle it happens, instead of waiting for the firmware to
+        // notice and switch sentence type.
+        if (ksxtValid)
+        {
+            finalHeading = ksxtHeading + Connections.DualHeadingOffset;
+
+            while (finalHeading < 0) finalHeading += 360;
+            while (finalHeading >= 360) finalHeading -= 360;
+
+            // At low speed, dual-antenna heading may be unreliable — prefer fix-to-fix.
+            if (speedMs < Connections.DualSwitchSpeed && _hasPreviousPosition)
+            {
+                double fixToFix = CalculateFixToFixHeading(easting, northing);
+                if (fixToFix >= 0) finalHeading = fixToFix;
+            }
+        }
         // Dual GPS mode - heading comes from dual antenna baseline.
-        if (Connections.IsDualGps)
+        else if (Connections.IsDualGps)
         {
             finalHeading = gpsHeading + Connections.DualHeadingOffset;
 
