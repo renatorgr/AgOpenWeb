@@ -53,9 +53,20 @@ public class NmeaParserServiceFast
 
     private const int MIN_PANDA_FIELDS = 15;
 
+    // Field indices for KSXT (UM982 dual-antenna sentence). Field 0 is the
+    // "$KSXT" identifier itself (GetField's virtual leading comma at -1
+    // makes field 0 = everything before the first real comma) — same
+    // convention as FIELD_TIME=1 below for PANDA/PAOGI.
+    // $KSXT,time,lon,lat,alt,heading,pitch,roll,speed,hdop,fixPos,fixHeading,sats,...
+    //  [0]   [1] [2] [3] [4]   [5]    [6]   [7]  [8]   [9]  [10]    [11]     [12]
+    private const int KSXT_FIELD_HEADING = 5;
+    private const int KSXT_FIELD_FIX = 10;
+    private const int MIN_KSXT_FIELDS = 11;
+
     // Sentence type identifiers (after $)
     private static ReadOnlySpan<byte> PANDA => "PANDA"u8;
     private static ReadOnlySpan<byte> PAOGI => "PAOGI"u8;
+    private static ReadOnlySpan<byte> KSXT => "KSXT,"u8; // 5-byte slice(1,5) of "$KSXT,..." includes the comma
 
     public NmeaParserServiceFast(IGpsService gpsService)
     {
@@ -328,6 +339,19 @@ public class NmeaParserServiceFast
         // Get sentence type (bytes 1-5 after $)
         var sentenceType = data.Slice(1, 5);
 
+        // KSXT = UM982 dual-antenna baseline sentence. Only heading + fix
+        // status are consumed; position/speed/etc still come from GGA/VTG
+        // (or PANDA/PAOGI) on a separate cycle. Layout differs entirely from
+        // PANDA/PAOGI so it gets its own field parser below.
+        if (sentenceType.SequenceEqual(KSXT))
+        {
+            if (!ParseKsxtFieldsIntoState(data.Slice(0, asterisk), ref state))
+                return false;
+
+            state.MarkParseEnd();
+            return true;
+        }
+
         // PANDA = single GPS + IMU; field 12 is IMU heading scaled ×10 with
         // sentinel "65535", field 13 is IMU roll scaled ×10. PAOGI = dual
         // antenna; field 12 is dual-antenna heading as float, field 13 is
@@ -342,6 +366,61 @@ public class NmeaParserServiceFast
             return false;
 
         state.MarkParseEnd();
+        return true;
+    }
+
+    /// <summary>
+    /// Parse $KSXT fields directly into VehicleState. Only heading (field 4)
+    /// and fix status (field 9) are consumed — position, altitude, speed
+    /// and the KSXT's own roll are intentionally ignored: position comes
+    /// from GGA, and roll is preferred from a dedicated IMU (e.g. TM171)
+    /// via PANDA rather than the dual-antenna baseline roll, which is
+    /// noisier and only valid when both antennas hold RTK fix simultaneously.
+    /// Sets <see cref="VehicleState.KsxtValid"/> false (not just leaving
+    /// heading stale) whenever the fix status field reports no heading fix,
+    /// so a momentarily blocked antenna is visible to the fusion service
+    /// the same cycle it happens.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static bool ParseKsxtFieldsIntoState(ReadOnlySpan<byte> data, ref VehicleState state)
+    {
+        Span<int> commas = stackalloc int[20];
+        int commaCount = 0;
+
+        commas[commaCount++] = -1; // Virtual comma before first field
+
+        for (int i = 0; i < data.Length && commaCount < 20; i++)
+        {
+            if (data[i] == ',')
+                commas[commaCount++] = i;
+        }
+
+        commas[commaCount++] = data.Length;
+
+        if (commaCount < MIN_KSXT_FIELDS + 1) return false;
+
+        var fixField = GetField(data, commas, KSXT_FIELD_FIX);
+        int fixStatus = 0;
+        if (fixField.Length > 0)
+        {
+            Utf8Parser.TryParse(fixField, out fixStatus, out _);
+        }
+
+        var headingField = GetField(data, commas, KSXT_FIELD_HEADING);
+
+        if (fixStatus >= 1 && headingField.Length > 0
+            && Utf8Parser.TryParse(headingField, out double rawHeading, out _))
+        {
+            state.KsxtHeading = rawHeading;
+            state.KsxtValid = true;
+        }
+        else
+        {
+            // Antenna blocked / fix lost this cycle — make that visible
+            // immediately rather than leaving a stale heading in place.
+            state.KsxtValid = false;
+        }
+
         return true;
     }
 
