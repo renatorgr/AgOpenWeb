@@ -861,6 +861,42 @@ public partial class MainViewModel
     }
 
     /// <summary>
+    /// Capture and apply aerial imagery for the CURRENTLY OPEN field's already-saved
+    /// boundary — for fields created before "Draw boundary on map" existed, imported
+    /// from KML, or built by driving around the perimeter. Reuses the same padded
+    /// bounds + Bing composite as the draw-on-map path; the only difference is the
+    /// boundary points come from disk instead of a just-drawn polygon.
+    /// </summary>
+    public (double nwLat, double nwLon, double seLat, double seLon,
+            double mercMinX, double mercMaxX, double mercMinY, double mercMaxY)?
+        GetImageryBoundsForCurrentBoundary()
+    {
+        var boundary = State.Field.CurrentBoundary;
+        if (boundary?.OuterBoundary is not { IsValid: true } outer || outer.Points.Count < 3)
+            return null;
+
+        var points = outer.Points
+            .Select(p => (p.Easting, p.Northing))
+            .ToList();
+        return GetBoundaryImageryBounds(points);
+    }
+
+    /// <summary>
+    /// Remote command counterpart of "boundary.fromMapPoints"'s auto-capture, but for
+    /// a boundary that already exists on disk. The web client calls this (e.g. a
+    /// "Get imagery" button on fields with no background) instead of supplying points
+    /// itself — the host reads the saved boundary, so nothing can drift out of sync
+    /// with what's actually on the map.
+    /// </summary>
+    public (double nwLat, double nwLon, double seLat, double seLon,
+            double mercMinX, double mercMaxX, double mercMinY, double mercMaxY)?
+        RemoteCaptureImageryForExistingBoundary()
+    {
+        if (!IsFieldOpen || string.IsNullOrEmpty(CurrentFieldName)) return null;
+        return GetImageryBoundsForCurrentBoundary();
+    }
+
+    /// <summary>
     /// Padded WGS84 + Web-Mercator bounds for the aerial that should cover a drawn
     /// boundary (E/N field-local). The host fetches/assembles Bing tiles for these bounds;
     /// uses the field's LocalPlane so the saved imagery aligns with the boundary.
