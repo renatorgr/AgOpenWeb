@@ -310,6 +310,28 @@ public static partial class RemoteServerWiring
                                         });
                                     return;
                                 }
+                                case "boundary.captureImagery": // "Get imagery" — existing field,
+                                {                                // saved boundary, no drawn points.
+                                    // Same crash-isolated capture as boundary.fromMapPoints above,
+                                    // but the boundary comes from disk (already-open field) rather
+                                    // than points the client just drew — for fields created before
+                                    // Draw-on-map existed, imported from KML, or driven around.
+                                    if (vm.RemoteCaptureImageryForExistingBoundary() is { } bb2)
+                                        _ = System.Threading.Tasks.Task.Run(async () =>
+                                        {
+                                            var outPath = System.IO.Path.Combine(
+                                                System.IO.Path.GetTempPath(), "AgOpenWeb_SatCap",
+                                                "BackPic_" + System.Guid.NewGuid().ToString("N") + ".png");
+                                            var ok = await imageryCapture.TryCaptureAsync(
+                                                bb2.mercMinX, bb2.mercMaxX, bb2.mercMinY, bb2.mercMaxY, outPath);
+                                            if (ok)
+                                                dispatcher.Post(() =>
+                                                    vm.ApplyCapturedBackground(outPath,
+                                                        bb2.nwLat, bb2.nwLon, bb2.seLat, bb2.seLon,
+                                                        bb2.mercMinX, bb2.mercMaxX, bb2.mercMinY, bb2.mercMaxY));
+                                        });
+                                    return;
+                                }
                                 case "track.drawPoint": // Phase MT — map-tap AB/curve point.
                                 {                       // arg = "e,n" (m, from s2w). Routes to the
                                     var tp = arg.Split(','); // native SetABPointCommand (DrawAB =
