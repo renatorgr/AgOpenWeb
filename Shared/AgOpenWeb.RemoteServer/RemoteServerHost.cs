@@ -62,17 +62,135 @@ public sealed class RemoteServerHost
     }
     private Func<PromptDto?>? _promptProvider;
 
-    // Satellite tile fetch (Phase MT — Draw boundary on map). Keyless Bing aerial
-    // tiles via the Virtual Earth quadkey endpoint (same source as native's
-    // BoundaryMapDialog). Proxied through the host so the browser draws them into the
-    // CanvasKit map without CORS taint; cached in memory.
+    // Satellite tile fetch (Phase MT — Draw boundary on map). This is the FALLBACK
+    // path only — BoundaryImageryCapture tries the DGT WMS first for anywhere in
+    // mainland Portugal (see #imagery-source there); this Google/Bing tile path only
+    // runs for areas outside DGT coverage, or if the DGT service is unreachable.
+    // Google Map Tiles API when a local API key is configured, falling back to the
+    // original keyless Bing Virtual Earth endpoint (same source as native's
+    // BoundaryMapDialog) when it isn't or when Google returns an error. Proxied
+    // through the host so the browser draws them into the CanvasKit map without CORS
+    // taint; cached in memory.
+    //
+    // #imagery-source: freshness, worst to best for a typical rural PT parcel — Bing's
+    // keyless endpoint can be a decade or more stale (confirmed ~12y in Castelo de
+    // Vide, PT); Google's satellite layer is refreshed far more often in most regions
+    // (~3y there) but needs a billed Cloud project even within its free tier (100k tile
+    // calls/month); the DGT's own Ortos series (Ortos2018, Ortos2021, ...) is the
+    // official state survey, free, no key, CC-BY-4.0, refreshed roughly every 2-3
+    // years — the best source when it covers the area (mainland Portugal only; no
+    // Azores/Madeira). Google is opt-in via a local key file rather than baked in —
+    // nobody who clones this repo is forced into creating a Cloud project.
     private static readonly System.Net.Http.HttpClient _tileHttp =
         new() { Timeout = TimeSpan.FromSeconds(10) };
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte[]> _tileCache = new();
 
+    // Local-only key file, NEVER committed: <config dir>/google-tiles.key, one line,
+    // just the API key. Absent (the common case for a fresh clone) => Bing only.
+    private static readonly string _googleKeyPath = Path.Combine(
+        AppContext.BaseDirectory, "google-tiles.key");
+    private static string? _googleApiKey;
+    private static bool _googleKeyLoaded;
+
+    private static string? GoogleApiKey()
+    {
+        if (_googleKeyLoaded) return _googleApiKey;
+        _googleKeyLoaded = true;
+        try
+        {
+            if (File.Exists(_googleKeyPath))
+            {
+                var k = File.ReadAllText(_googleKeyPath).Trim();
+                if (k.Length > 0) _googleApiKey = k;
+            }
+        }
+        catch { /* missing/unreadable key file => Bing fallback, not fatal */ }
+        return _googleApiKey;
+    }
+
+    // Google session token cache — one session covers many tile requests; renewed
+    // a little before its reported expiry rather than on a hard failure, so a
+    // capture in progress doesn't straddle an expired session.
+    private static string? _googleSession;
+    private static DateTimeOffset _googleSessionExpiry = DateTimeOffset.MinValue;
+    private static readonly System.Threading.SemaphoreSlim _googleSessionLock = new(1, 1);
+
+    private static async System.Threading.Tasks.Task<string?> GetGoogleSessionAsync(string apiKey)
+    {
+        if (_googleSession is not null && DateTimeOffset.UtcNow < _googleSessionExpiry - TimeSpan.FromMinutes(5))
+            return _googleSession;
+
+        await _googleSessionLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            // Another caller may have refreshed it while we waited for the lock.
+            if (_googleSession is not null && DateTimeOffset.UtcNow < _googleSessionExpiry - TimeSpan.FromMinutes(5))
+                return _googleSession;
+
+            using var req = new System.Net.Http.HttpRequestMessage(
+                System.Net.Http.HttpMethod.Post,
+                $"https://tile.googleapis.com/v1/createSession?key={apiKey}")
+            {
+                Content = new System.Net.Http.StringContent(
+                    """{"mapType":"satellite","language":"pt-PT","region":"PT"}""",
+                    System.Text.Encoding.UTF8, "application/json")
+            };
+            using var resp = await _tileHttp.SendAsync(req).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode) return null;
+
+            using var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(stream).ConfigureAwait(false);
+            var root = doc.RootElement;
+            var session = root.TryGetProperty("session", out var s) ? s.GetString() : null;
+            if (session is null) return null;
+
+            _googleSession = session;
+            _googleSessionExpiry = root.TryGetProperty("expiry", out var e)
+                && long.TryParse(e.GetString(), out var epochSec)
+                ? DateTimeOffset.FromUnixTimeSeconds(epochSec)
+                : DateTimeOffset.UtcNow + TimeSpan.FromHours(1); // conservative default per Google docs
+            return _googleSession;
+        }
+        catch { return null; }
+        finally { _googleSessionLock.Release(); }
+    }
+
+    /// <summary>
+    /// Fetch one satellite tile at Bing quadkey coordinates, trying Google Map Tiles
+    /// API first (if a local key is configured) and falling back to Bing on any
+    /// failure — missing key, network error, quota exceeded, session issue, etc.
+    /// Callers keep passing a quadkey; this converts to Google's z/x/y internally
+    /// so BoundaryImageryCapture doesn't need to know which provider served a tile.
+    /// </summary>
+    /// <summary>
+    /// One-shot GET for a DGT WMS GetMap URL (see BoundaryImageryCapture's DGT path) —
+    /// no session, no tile grid, no caching (each request's bbox is unique to that
+    /// capture, so there's nothing to reuse across calls the way tiles are).
+    /// </summary>
+    public static async System.Threading.Tasks.Task<byte[]?> FetchDgtMapAsync(string url)
+    {
+        try { return await _tileHttp.GetByteArrayAsync(url).ConfigureAwait(false); }
+        catch { return null; }
+    }
+
     public static async System.Threading.Tasks.Task<byte[]?> FetchSatTileAsync(string quadkey)
     {
         if (_tileCache.TryGetValue(quadkey, out var cached)) return cached;
+
+        var apiKey = GoogleApiKey();
+        if (apiKey is not null)
+        {
+            var googleBytes = await FetchGoogleTileAsync(quadkey, apiKey).ConfigureAwait(false);
+            if (googleBytes is not null)
+            {
+                if (_tileCache.Count > 1024) _tileCache.Clear();
+                _tileCache[quadkey] = googleBytes;
+                return googleBytes;
+            }
+            // Falls through to Bing below — a single tile failing (rate limit, a
+            // transient createSession error, etc.) shouldn't blank out the capture.
+        }
+
         try
         {
             var bytes = await _tileHttp.GetByteArrayAsync(
@@ -82,6 +200,40 @@ public sealed class RemoteServerHost
             return bytes;
         }
         catch { return null; }
+    }
+
+    private static async System.Threading.Tasks.Task<byte[]?> FetchGoogleTileAsync(string quadkey, string apiKey)
+    {
+        try
+        {
+            var session = await GetGoogleSessionAsync(apiKey).ConfigureAwait(false);
+            if (session is null) return null;
+
+            var (z, x, y) = QuadkeyToZxy(quadkey);
+            return await _tileHttp.GetByteArrayAsync(
+                $"https://tile.googleapis.com/v1/2dtiles/{z}/{x}/{y}?session={session}&key={apiKey}"
+            ).ConfigureAwait(false);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Bing quadkey -> Google's plain z/x/y tile coordinates (same Web-Mercator
+    /// tile grid both providers use — only the addressing scheme differs).</summary>
+    private static (int z, int x, int y) QuadkeyToZxy(string quadkey)
+    {
+        int x = 0, y = 0, z = quadkey.Length;
+        for (int i = 0; i < z; i++)
+        {
+            int mask = 1 << (z - i - 1);
+            switch (quadkey[i])
+            {
+                case '1': x |= mask; break;
+                case '2': y |= mask; break;
+                case '3': x |= mask; y |= mask; break;
+                // '0' => neither bit set
+            }
+        }
+        return (z, x, y);
     }
 
     /// <summary>Host-supplied projector for the live Steer Wizard — returns a WizardDto
