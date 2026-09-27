@@ -84,6 +84,30 @@ public struct VehicleState
     public double ImuHeading;
 
     // ═══════════════════════════════════════════════════════════════════════
+    // KSXT Data (UM982/dual-antenna GNSS, updated by NMEA parser if received)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Dual-antenna heading in degrees (0-360, true north), read directly
+    /// from a $KSXT sentence. Distinct from <see cref="Heading"/> (the
+    /// fused value guidance uses) and from <see cref="ImuHeading"/> (PANDA's
+    /// IMU-only heading): this is the UM982's own baseline heading, valid
+    /// only when <see cref="KsxtValid"/> is true for the current cycle.
+    /// </summary>
+    public double KsxtHeading;
+
+    /// <summary>
+    /// True if a $KSXT sentence with a valid heading fix (fix status >= 1)
+    /// was received and parsed this cycle. Distinct from a static
+    /// "dual GPS mode" setting — this reflects the actual freshness of the
+    /// dual-antenna solution message to message, so the fusion service can
+    /// fall back to IMU/fix-to-fix the moment one antenna loses its fix
+    /// (e.g. blocked by a tree or structure) without needing the firmware
+    /// to make that call first.
+    /// </summary>
+    public bool KsxtValid;
+
+    // ═══════════════════════════════════════════════════════════════════════
     // Local Coordinates (updated after GPS parse, using LocalPlane)
     // ═══════════════════════════════════════════════════════════════════════
 
