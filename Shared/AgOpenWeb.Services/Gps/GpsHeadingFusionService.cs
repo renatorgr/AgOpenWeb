@@ -84,7 +84,8 @@ public class GpsHeadingFusionService : IGpsHeadingFusionService
     public bool IsChangingDirection { get; private set; }
 
     public double FuseHeading(double gpsHeading, double imuHeading, bool imuValid,
-                              double speedMs, double easting, double northing)
+                              double speedMs, double easting, double northing,
+                              double ksxtHeading = 0, bool ksxtValid = false)
     {
         var con = Connections;
         double speedKmh = Math.Abs(speedMs) * 3.6;
@@ -94,7 +95,31 @@ public class GpsHeadingFusionService : IGpsHeadingFusionService
         ImuCorrectedDeg = imu is double ir ? Wrap(ir + _imuGpsOffset) * 180.0 / Math.PI : double.NaN;
 
         bool useFix = true;
-        if (con.IsDualGps)
+
+        // A fresh $KSXT this cycle is ground truth: the UM982 itself is reporting
+        // a valid dual-antenna fix right now, not "dual mode is configured". Takes
+        // priority over the static IsDualGps setting so a momentarily blocked
+        // antenna falls through to Fix/IMU on the very cycle it happens, instead
+        // of waiting for the firmware to notice and switch sentence type.
+        if (ksxtValid)
+        {
+            double dual = Wrap(ToRad(ksxtHeading + con.DualHeadingOffset));
+            if (con.AutoDualFix && speedKmh > con.DualSwitchSpeed)
+                imu = dual;                       // dual stands in for the IMU
+            else
+                useFix = false;
+
+            if (!useFix)
+            {
+                IsChangingDirection = false;
+                DetectDualReverse(dual, easting, northing, con.DualReverseDistance);
+                _isFirstHeadingSet = true;
+                _fixHeading = _gpsHeading = dual;
+                PushStep(easting, northing);
+                return Output(_fixHeading);
+            }
+        }
+        else if (con.IsDualGps)
         {
             double dual = Wrap(ToRad(gpsHeading + con.DualHeadingOffset));
             if (con.AutoDualFix && speedKmh > con.DualSwitchSpeed)
