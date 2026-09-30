@@ -343,7 +343,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         lock (_contourLock)
         {
             _contourOn = on;
-            _contour.ClearLine(); // also unlocks
+            _contour.ClearReference(); // also unlocks
         }
     }
 
@@ -510,17 +510,14 @@ public sealed class GpsPipelineService : IGpsPipelineService
             // armed arc and lands on the *old* NextTrack (the original
             // exit pass) instead of replanning for the just-snapped pass.
             // Mirrors the direction-override re-arm in YouTurnStateMachine.
-            if (_youTurn.TurnPath != null)
-            {
-                _youTurn.TurnPath = null;
-                _youTurn.NextTrack = null;
-                _youTurn.IsTriggered = false;
-            }
+            YouTurnStateMachine.DiscardPlannedTurn(_youTurn);
         }
         // Phase D D5. Nudge accumulates (multiple clicks between drains sum).
         // Heading-same-way flips the sign so "left" always means left from the
         // driver's seat regardless of track direction. Reset wins if both
-        // arrive in the same tick.
+        // arrive in the same tick. A planned turn was built for the old line, so it is
+        // dropped and re-planned (AgOpenGPS RebuildAfterNudge, #1173); like a snap (#50),
+        // a turn already being driven is left alone.
         if (intents.GuidanceNudgeMeters != 0)
         {
             double adjusted = _guidanceWorking.IsHeadingSameWay
@@ -528,11 +525,13 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 : -intents.GuidanceNudgeMeters;
             _guidanceWorking.NudgeOffset += adjusted;
             _trackGuidanceState = null;
+            if (!_youTurn.IsExecuting) YouTurnStateMachine.DiscardPlannedTurn(_youTurn);
         }
         if (intents.GuidanceResetNudge)
         {
             _guidanceWorking.NudgeOffset = 0;
             _trackGuidanceState = null;
+            if (!_youTurn.IsExecuting) YouTurnStateMachine.DiscardPlannedTurn(_youTurn);
         }
 
         // Stage 2: Fix-quality status. The validator labels the fix; it does not
@@ -1595,6 +1594,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         ContourSteer? steer = null;
         lock (_contourLock)
         {
+            _contour.FollowAutoSteer(autoSteerEngaged); // before the rebuild: lock the current line
             if (hasActiveField)
             {
                 double contourWidth = (config.ActualToolWidth - config.Tool.Overlap) / 3.0;
@@ -1611,7 +1611,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
                     var p = ContourParamsFor(speedKmh);
                     if (contourOn)
                         _contour.BuildContourGuidanceLine(pivot, headingRad, p,
-                            Clock.Current.GetTimestamp() / (double)Clock.Current.Frequency);
+                            Clock.Current.GetTimestamp() / (double)Clock.Current.Frequency, autoSteerEngaged);
                     _lastContourPos = new Vec2(pivotE, pivotN);
                 }
             }
