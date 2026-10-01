@@ -96,7 +96,8 @@ public class AgShareDownloadTests
 
             foreach (var name in new[] { "Flags.txt", "Headland.txt", "Contour.txt", "Sections.txt" })
                 Assert.That(File.ReadAllText(Path.Combine(dir, name)), Is.EqualTo("local " + name), name);
-            Assert.That(File.Exists(Path.Combine(dir, "Boundary.txt")), Is.True);
+            Assert.That(new FieldService().LoadField(dir).Boundary?.OuterBoundary, Is.Not.Null, "boundary in field.geojson");
+            Assert.That(File.Exists(Path.Combine(dir, "Boundary.txt")), Is.False, "no AgOpenGPS field files");
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -123,7 +124,7 @@ public class AgShareDownloadTests
             Assert.That(field.Boundary.OuterBoundary.Points[2].Northing, Is.EqualTo(400).Within(0.001));
             Assert.That(field.Boundary.InnerBoundaries, Has.Count.EqualTo(1));
 
-            var tracks = TrackFilesService.Load(dir);
+            var tracks = GeoJson.GeoJsonFieldService.LoadTracks(dir);
             Assert.That(tracks.Select(t => t.Name), Is.EqualTo(new[] { "AB", "C" }));
             Assert.That(tracks[0].Points, Has.Count.EqualTo(2));
             Assert.That(tracks[1].Points, Has.Count.EqualTo(3));
@@ -133,17 +134,76 @@ public class AgShareDownloadTests
     }
 
     [Test]
-    public async Task Download_NewField_CreatesEmptyFiles_ButNoSections()
+    public async Task Download_NewField_WritesOnlyTheFieldFile()
     {
         var dir = Path.Combine(Path.GetTempPath(), "agshare-" + Guid.NewGuid().ToString("N"));
         try
         {
             await FieldFileWriter.WriteAllFilesAsync(AgShareFieldParser.Parse(Dto()), dir);
-            Assert.That(File.ReadAllLines(Path.Combine(dir, "Flags.txt"))[0], Is.EqualTo("$Flags"));
-            Assert.That(File.ReadAllLines(Path.Combine(dir, "Headland.txt"))[0], Is.EqualTo("$Headland"));
-            Assert.That(File.ReadAllLines(Path.Combine(dir, "Contour.txt"))[0], Is.EqualTo("$Contour"));
-            Assert.That(File.Exists(Path.Combine(dir, "Sections.txt")), Is.False);
+            Assert.That(File.Exists(Path.Combine(dir, "Flags.txt")), Is.False, "flags live in field.geojson");
+            Assert.That(File.Exists(Path.Combine(dir, "TrackLines.txt")), Is.False, "tracks live in field.geojson");
+            Assert.That(File.Exists(Path.Combine(dir, "Headland.txt")), Is.False, "the headland lives in field.geojson");
+            Assert.That(File.Exists(Path.Combine(dir, "field.geojson")), Is.True);
+            Assert.That(Directory.GetFiles(dir).Select(Path.GetFileName),
+                Is.EquivalentTo(new[] { "agshare.txt", "field.geojson" }));
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    private static BoundaryPolygon Square(double size)
+    {
+        var p = new BoundaryPolygon();
+        foreach (var (e, n) in new[] { (0.0, 0.0), (size, 0.0), (size, size), (0.0, size) })
+            p.Points.Add(new BoundaryPoint(e, n, 0));
+        p.UpdateBounds();
+        return p;
+    }
+
+    [Test]
+    public async Task Redownload_OverAnEarlierAgOpenGpsDownload_ImportsThenReplacesIt()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "agshare-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            // An earlier download from a build that wrote AgOpenGPS files, never opened.
+            new FieldPlaneFileService().SaveField(new Field { Name = "F", Origin = new Position { Latitude = 51, Longitude = 4 } }, dir);
+            new BoundaryFileService().SaveBoundary(new Boundary { OuterBoundary = Square(40) }, dir);
+
+            var ring = new List<CoordinateDto> { Up(0, 0), Up(100, 0), Up(100, 100) };
+            await FieldFileWriter.WriteAllFilesAsync(AgShareFieldParser.Parse(Dto(new() { ring })), dir);
+
+            Assert.That(File.Exists(Path.Combine(dir, "Field.txt")), Is.False);
+            Assert.That(File.Exists(Path.Combine(dir, "Boundary.txt")), Is.False);
+            var field = new FieldService().LoadField(dir);
+            Assert.That(field.Origin.Latitude, Is.EqualTo(Origin.Latitude).Within(1e-9), "the download's origin");
+            Assert.That(field.Boundary!.OuterBoundary!.Points.Max(p => p.Easting), Is.EqualTo(100).Within(0.001));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public async Task Redownload_ReplacesTheBoundary_AndKeepsTheHeadland()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "agshare-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var fields = new FieldService();
+            fields.SaveField(new Field
+            {
+                Name = "F", DirectoryPath = dir,
+                Origin = new Position { Latitude = Origin.Latitude, Longitude = Origin.Longitude },
+                Boundary = new Boundary { OuterBoundary = Square(40), HeadlandPolygon = Square(30) },
+            });
+
+            var ring = new List<CoordinateDto> { Up(0, 0), Up(100, 0), Up(100, 100) };
+            await FieldFileWriter.WriteAllFilesAsync(AgShareFieldParser.Parse(Dto(new() { ring })), dir);
+
+            var b = fields.LoadField(dir).Boundary!;
+            Assert.That(b.OuterBoundary!.Points.Max(p => p.Easting), Is.EqualTo(100).Within(0.001), "boundary replaced");
+            Assert.That(b.HeadlandPolygon, Is.Not.Null, "headland kept (local work)");
+        }
+        finally { Directory.Delete(dir, true); }
     }
 }
