@@ -662,6 +662,26 @@ function applyMobileQualityCap() {
   transport.send('display.capResolution|2.5'); // 2.5 = Medium
 }
 
+// The largest texture this browser's GPU holds (often 4096 on tablets). The host keeps the
+// coverage grid within it, so coverage always fits one GPU render target; a bigger grid
+// falls back to a 2D canvas that is copied whole several times over and can get a tablet's
+// web view killed for memory. Read from CanvasKit's own context once it exists; sent once.
+let maxTextureSide = 0;
+let maxTextureSent = false;
+function readMaxTextureSide() {
+  try {
+    // The context CanvasKit made: asking for the same type returns it, not a new one.
+    const gl = ckcv.getContext('webgl2') || ckcv.getContext('webgl');
+    if (!gl) return 0;
+    return Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)) | 0;
+  } catch (e) { return 0; }
+}
+function reportMaxTexture() {
+  if (maxTextureSent || !iHoldControl || maxTextureSide <= 0) return;
+  maxTextureSent = true;
+  transport.send('display.maxTexture|' + maxTextureSide);
+}
+
 // An observer (a browser without control) sees everything and changes nothing (#397): the
 // host drops its commands, so say why when a tap of its own was refused. The host's
 // ObserverIds plus the hub's own control.* / diag.ping are what it may send.
@@ -702,6 +722,11 @@ function recreateSkSurface() {
   if (!grCtx) {
     const ctxHandle = CK.GetWebGLContext(ckcv);
     if (ctxHandle) grCtx = CK.MakeWebGLContext(ctxHandle);
+    if (grCtx) {
+      maxTextureSide = readMaxTextureSide();
+      reportMaxTexture();
+      upgradeCovToGpu(); // a grid built before the GPU context existed moves onto it
+    }
   }
   if (grCtx) skSurface = CK.MakeOnScreenGLSurface(grCtx, ckcv.width, ckcv.height, null);
   if (!skSurface) skSurface = CK.MakeWebGLCanvasSurface(ckcv);
@@ -1723,20 +1748,66 @@ function startRecordCurve() {              // GPS: record by driving — Set Sta
   document.getElementById('draw-setpoint').textContent = tr('Set Point A');
   hintEl.classList.add('show'); setAbHint();
 }
-// "Bnd. Curve" — tap point A then point B on the boundary; the host walks the shorter arc
-// between them and builds a curve following the boundary. Each tap lands on the fence where
-// it's nearest (a corner when one is close) for display; the host projects it again.
+// "Bnd. Curve" — tap point A then point B on the boundary, then pick which way round the
+// curve goes (#450): A → B runs on from A in the boundary's own order, B → A the other way;
+// the shorter one is picked first and drawn on the map. Each tap lands on the fence where
+// it's nearest (a corner when one is close); the host projects A and B again and takes the
+// way round that passes the chosen arc's midpoint.
+let bcArcs = null, bcSel = 0;  // the two ways round on the outer boundary, [A→B, B→A]
 function startBoundaryCurve() {
-  abFlow = 'boundaryCurve'; drawPts = [];
+  abFlow = 'boundaryCurve'; drawPts = []; bcArcs = null;
   showAbBar(false, false, false);          // draw toolbar shows just Cancel
   startMapTap({ hint: tr('Tap point A on the boundary'), onTap: boundaryCurveTap });
 }
 function boundaryCurveTap(e, n) {
   drawPts.push(snapToFence(e, n, Infinity)); // A/B on the fence (dot shown)
   if (drawPts.length < 2) { hintEl.textContent = tr('Tap point B on the boundary'); return; }
-  const a = drawPts[0], b = drawPts[1];
-  transport.send('track.boundaryCurveSeg|' + a.e.toFixed(3) + ',' + a.n.toFixed(3) + ',' + b.e.toFixed(3) + ',' + b.n.toFixed(3));
-  endAbFlow();
+  const ring = scene && scene.boundaries && scene.boundaries[0];
+  bcArcs = ring && ring.length >= 3 ? boundaryArcs(ring, drawPts[0], drawPts[1]) : null;
+  if (!bcArcs) { abFinish(); return; }     // no ring to choose on: the host takes the shorter
+  bcSel = polyLen(bcArcs[0]) <= polyLen(bcArcs[1]) ? 0 : 1;
+  mapTap = null; document.getElementById('maptap-hint').classList.remove('show'); // no more taps
+  showAbBar(false, false, true);
+  document.getElementById('draw-finish').textContent = tr('Create');
+  for (const b of bcDirBtns) b.style.display = '';
+  setBcDir(bcSel);
+}
+const bcDirBtns = [document.getElementById('draw-dir-ab'), document.getElementById('draw-dir-ba')];
+bcDirBtns.forEach((b, i) => b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); setBcDir(i); }));
+function setBcDir(i) {
+  bcSel = i;
+  bcDirBtns.forEach((b, k) => b.classList.toggle('active', k === i));
+  hintEl.textContent = tr('Pick which way round, then Create'); hintEl.classList.add('show');
+}
+function polyLen(pts) { let l = 0; for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i].e - pts[i - 1].e, pts[i].n - pts[i - 1].n); return l; }
+// The two ways round a ring between points a and b on it: [a on in ring order to b, b on to a].
+function boundaryArcs(ring, a, b) {
+  const m = ring.length;
+  const at = (p) => {                      // the side (i → i+1) a point lies on, and how far along
+    let best = { i: 0, t: 0 }, bd = Infinity;
+    for (let i = 0; i < m; i++) {
+      const p0 = ring[i], p1 = ring[(i + 1) % m];
+      const dx = p1.e - p0.e, dn = p1.n - p0.n, l2 = dx * dx + dn * dn;
+      const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.e - p0.e) * dx + (p.n - p0.n) * dn) / l2)) : 0;
+      const d = Math.hypot(p0.e + t * dx - p.e, p0.n + t * dn - p.n);
+      if (d < bd) { bd = d; best = { i, t }; }
+    }
+    return best;
+  };
+  const walk = (p, pa, q, qa) => {         // from p on in ring order to q
+    const out = [p];
+    if (!(pa.i === qa.i && pa.t <= qa.t))
+      for (let k = (pa.i + 1) % m; ; k = (k + 1) % m) { out.push(ring[k]); if (k === qa.i) break; }
+    out.push(q);
+    return out;
+  };
+  const sa = at(a), sb = at(b);
+  return [walk(a, sa, b, sb), walk(b, sb, a, sa)];
+}
+// The chosen way round, drawn while picking (#450).
+function drawBoundaryCurvePreviewSk(canvas) {
+  if (abFlow !== 'boundaryCurve' || !bcArcs) return;
+  strokePtsSk(canvas, bcArcs[bcSel], false, SKP.track);
 }
 // A drawn line is the edge between passes (PassGeometry), as in AgOpenGPS's FormABDraw,
 // whose taps all land on fence points. A tap near the fence snaps onto it (a corner when
@@ -1826,7 +1897,23 @@ function abUndo() {
   setAbHint();
 }
 function abFinish() {
-  if (abFlow === 'curve') transport.send('track.drawFinish');
+  if (abFlow === 'boundaryCurve') {
+    if (drawPts.length < 2) return;
+    const a = drawPts[0], b = drawPts[1], f = (v) => v.toFixed(3);
+    let msg = 'track.boundaryCurveSeg|' + f(a.e) + ',' + f(a.n) + ',' + f(b.e) + ',' + f(b.n);
+    if (bcArcs) {                          // + a point halfway along the chosen way round
+      const arc = bcArcs[bcSel], half = polyLen(arc) / 2;
+      let run = 0, via = arc[0];
+      for (let i = 1; i < arc.length; i++) {
+        const l = Math.hypot(arc[i].e - arc[i - 1].e, arc[i].n - arc[i - 1].n);
+        if (run + l >= half) { const u = l > 0 ? (half - run) / l : 0; via = { e: arc[i - 1].e + u * (arc[i].e - arc[i - 1].e), n: arc[i - 1].n + u * (arc[i].n - arc[i - 1].n) }; break; }
+        run += l;
+      }
+      msg += ',' + f(via.e) + ',' + f(via.n);
+    }
+    transport.send(msg);
+  }
+  else if (abFlow === 'curve') transport.send('track.drawFinish');
   else if (abFlow === 'recordCurve') transport.send('track.finishCurve');
   else return;
   endAbFlow();
@@ -1838,6 +1925,8 @@ function abCancel() {
 }
 function endAbFlow() {
   abFlow = null; drawMode = null; drawPts = []; driveRaw = []; driveStep = 0;
+  bcArcs = null; for (const b of bcDirBtns) b.style.display = 'none';
+  document.getElementById('draw-finish').textContent = tr('Finish');
   curveMarks = []; _lastCurveMark = null; // clear record-curve path dots
   drawBar.classList.remove('show');
   endMapTap();
@@ -4238,7 +4327,7 @@ function renderRole() {
 }
 function updateControlUi() {
   iHoldControl = lastControl.held && lastControl.holderId === myClientId;
-  if (iHoldControl) applyMobileQualityCap(); // a host-wide setting: sent once we may (#397)
+  if (iHoldControl) { applyMobileQualityCap(); reportMaxTexture(); } // host-wide: sent once we may (#397)
   if (typeof renderHostPrompt === 'function') renderHostPrompt(); // who may answer
   if (typeof updateAsGated === 'function') updateAsGated(); // re-gate AutoSteer actions
   if (document.getElementById('recpath').classList.contains('open')) renderRecPath(); // re-gate Play
@@ -4635,6 +4724,22 @@ function updateLightbarText() {
     lbText.textContent = fmtUnit(Math.abs(xte) * 100, 'cm', 0);
   }
   lbEl.style.display = 'block';
+}
+
+// Tram lights (#451): AgOpenGPS's two dots, left and right of the light bar. The host sends
+// whether to show them (Tram tab Display, a tram mode on, a tool wider than the wheel track),
+// which wheel is on a tram track, and which side is forced on; a tap toggles the force.
+const tramLightsEl = document.getElementById('tram-lights');
+const tramL = document.getElementById('tram-l'), tramR = document.getElementById('tram-r');
+tramL.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); transport.send('tram.manualLeft'); });
+tramR.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); transport.send('tram.manualRight'); });
+function updateTramLights() {
+  const b = tick && tick.tools ? tick.tools.tramLights | 0 : 0;
+  tramLightsEl.classList.toggle('show', (b & 16) !== 0);
+  tramR.classList.toggle('on', (b & 1) !== 0);
+  tramL.classList.toggle('on', (b & 2) !== 0);
+  tramR.classList.toggle('manual', (b & 4) !== 0);
+  tramL.classList.toggle('manual', (b & 8) !== 0);
 }
 
 // Pass HUD → DOM overlay under the lightbar readout, as AgOpenGPS's DrawTrackInfo: shown
@@ -7222,11 +7327,7 @@ function makeCovGrid(init) {
   let canvas = null, cctx = null, covPaint = null;
   if (surface) {
     surface.getCanvas().clear(CK.TRANSPARENT);
-    covPaint = new CK.Paint(); covPaint.setStyle(CK.PaintStyle.Fill); covPaint.setAntiAlias(false);
-    // Src (replace), not SrcOver: cells carry a coverage-fraction alpha (edge cells < 1), and a
-    // cell is re-emitted with rising alpha as it fills — replace sets the exact value each time;
-    // SrcOver would blend re-draws and creep edges toward opaque.
-    covPaint.setBlendMode(CK.BlendMode.Src);
+    covPaint = makeCovPaint();
   } else {
     canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; cctx = canvas.getContext('2d');
   }
@@ -7235,6 +7336,32 @@ function makeCovGrid(init) {
     width: w, height: h, surface, covPaint, pending: [],
     canvas, cctx, dirty: true, skImg: null, lastBuild: 0,
   };
+}
+function makeCovPaint() {
+  const p = new CK.Paint(); p.setStyle(CK.PaintStyle.Fill); p.setAntiAlias(false);
+  // Src (replace), not SrcOver: cells carry a coverage-fraction alpha (edge cells < 1), and a
+  // cell is re-emitted with rising alpha as it fills — replace sets the exact value each time;
+  // SrcOver would blend re-draws and creep edges toward opaque.
+  p.setBlendMode(CK.BlendMode.Src);
+  return p;
+}
+// A page that loads with a job open gets its coverage before CanvasKit is ready, so the grid
+// is built on the 2D fallback and would stay there. Once the GPU context exists, copy it onto
+// a render target (once) and carry on with the GPU path. Both paths flip y the same way
+// (row 0 = highest northing), so the copy lines up as is.
+function upgradeCovToGpu() {
+  if (!cov || cov.surface || !cov.canvas || !CK || !grCtx) return;
+  let surface = null;
+  try { surface = CK.MakeRenderTarget(grCtx, cov.width, cov.height); } catch (e) { surface = null; }
+  if (!surface) return; // bigger than a texture: stays on the 2D path
+  const sk = surface.getCanvas();
+  sk.clear(CK.TRANSPARENT);
+  const img = CK.MakeImageFromCanvasImageSource(cov.canvas);
+  if (img) { sk.drawImageOptions(img, 0, 0, CK.FilterMode.Nearest, CK.MipmapMode.None, null); img.delete(); }
+  surface.flush();
+  if (cov.skImg) cov.skImg.delete();
+  cov.surface = surface; cov.covPaint = makeCovPaint();
+  cov.canvas = null; cov.cctx = null; cov.skImg = null; cov.dirty = true;
 }
 
 // Re-anchor existing coverage into a grown grid (bounds expansion, SAME cell size). The old
@@ -7517,6 +7644,7 @@ function renderSkia(canvas, rp) {
   drawSatBoundarySk(canvas); // live boundary-on-satellite polygon being drawn
   drawAbDrawPreviewSk(canvas); // #40 — A/B (orange/blue) dots for the AB/curve being drawn
   drawCurveMarksSk(canvas); // record-curve path dots (Set Point A → B)
+  drawBoundaryCurvePreviewSk(canvas); // Bnd. Curve: the chosen way round (#450)
   drawDrawingSk(canvas); // live draw-on-map AB/curve preview (Phase MT)
   drawHeadlandDrawSk(canvas); // live headland draw preview (Field Builder stage 2)
   drawHeadlandSegEditLinesSk(canvas); // headland-editor offset lines (yellow/red) while editing
@@ -7546,6 +7674,7 @@ function skFrame() {
   }
   // DOM overlays (independent of the GL surface).
   updateLightbarText();
+  updateTramLights();
   updatePassHud();
   updateHeadlandHud();
   renderStatusBar();
