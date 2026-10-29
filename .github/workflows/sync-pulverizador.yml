@@ -1,13 +1,13 @@
 name: Sync pulverizador
 
 # renatorgr fork only. develop stays a copy of AgOpenGPS-Official/develop; pulverizador is
-# develop plus the sprayer changes and is this fork's default branch (the nightly is built
+# develop plus the sprayer changes and is this fork's default branch (the beta is built
 # from it). Once a day: bring develop up to date with the official repository ("Sync fork"),
 # then open a PR from develop into pulverizador when develop has something new. Merging
 # that PR is the update; a conflict shows on the PR.
 on:
   schedule:
-    # 18:00 UTC: the PR is there at the end of the working day, before the 22:00 UTC nightly.
+    # 18:00 UTC: the PR is there at the end of the working day, before the 22:00 UTC beta build.
     - cron: '0 18 * * *'
   workflow_dispatch:
 
