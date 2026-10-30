@@ -718,14 +718,8 @@ public partial class MainViewModel : ObservableObject
             toolN = hitchN - Math.Cos(toolHeading) * pivotOffset;
         }
 
-        // Lateral offset perpendicular to tool heading (right is positive,
-        // matching ToolPositionService.ApplyLateralOffset).
-        if (Math.Abs(tool.Offset) > 0.001)
-        {
-            double perp = toolHeading + Math.PI / 2.0;
-            toolE += Math.Sin(perp) * tool.Offset;
-            toolN += Math.Cos(perp) * tool.Offset;
-        }
+        // No lateral offset: the section spans the map draws from this point carry it,
+        // as in ToolPositionService (#446).
 
         _mapService.SetAllPositions(
             p.Position.Easting, p.Position.Northing, p.Heading,
@@ -6280,6 +6274,11 @@ public partial class MainViewModel : ObservableObject
 
             foreach (var track in tracks)
             {
+                // A recorded path saved more than once (each open added a copy, fixed above) is
+                // loaded once; the next save drops the copies.
+                if (track.IsRecordedPath && SavedTracks.Any(t => t.IsRecordedPath && SamePoints(t, track)))
+                    continue;
+
                 // Ensure all tracks start inactive (SelectedTrack setter will activate)
                 track.IsActive = false;
                 MigrateCurveTrack(track);
@@ -6304,6 +6303,10 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    private static bool SamePoints(Track a, Track b) =>
+        a.Points.Count == b.Points.Count
+        && a.Points.Zip(b.Points).All(p => Math.Abs(p.First.Easting - p.Second.Easting) < 0.01 && Math.Abs(p.First.Northing - p.Second.Northing) < 0.01);
+
     private void LoadRecPathFromField(string fieldPath)
     {
         try
@@ -6312,6 +6315,10 @@ public partial class MainViewModel : ObservableObject
             var recPath = recPoints is { Count: >= 2 }
                 ? Track.FromRecordedPath("Recorded Path", recPoints.Select(p => new Vec3(p.Easting, p.Northing, p.Heading)).ToList())
                 : null;
+            // The path in use is usually among the field's tracks already (saved with them when it
+            // was recorded): adding it again put one more copy in the track list at every open.
+            if (recPath != null && SavedTracks.Any(t => t.IsRecordedPath && SamePoints(t, recPath)))
+                recPath = null;
             if (recPath != null)
             {
                 SavedTracks.Add(recPath);

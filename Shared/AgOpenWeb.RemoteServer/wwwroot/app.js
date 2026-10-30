@@ -6742,40 +6742,26 @@ function drawBoundaryRecordingSk(canvas) {
     canvas.drawCircle(xy[0], xy[1], rad, SKP.flagFill);
   }
 }
-// Live boundary draw-on-map preview (Phase MT) — the polygon vertices tapped on the
-// satellite imagery so far. Closed white outline + outlined dots; client-side only.
-// Extra guidelines (Phase MT parity) — the adjacent passes ±tool-width × i from the
-// followed line, when Display.ExtraGuidelines is on. Mirrors native DrawExtraGuidelinesSk:
-// offset the active/display line by ±toolW·i and stroke faint green (over a shadow), with
-// a zoom gate so the lines don't collapse into a band.
-function offsetLine(pts, offset) {
-  const out = new Array(pts.length);
-  for (let i = 0; i < pts.length; i++) {
-    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
-    const dx = b.e - a.e, dy = b.n - a.n, len = Math.hypot(dx, dy);
-    if (len < 1e-6) { out[i] = pts[i]; continue; }
-    out[i] = { e: pts[i].e + (-dy / len) * offset, n: pts[i].n + (dx / len) * offset };
-  }
-  return out;
-}
+// Extra guidelines (Phase MT parity) — the adjacent passes either side of the followed line,
+// when Display.ExtraGuidelines is on, faint green over a shadow, with a zoom gate so the lines
+// don't collapse into a band. The host builds them from the reference like the pass itself
+// (#450): a curve keeps its shape at corners, and the spacing is width − overlap with the tool
+// offset on alternate sides. An AB line's come as two points each and are drawn across the field.
 function drawExtraGuidelinesSk(canvas) {
   const d = config && config.display;
   if (!d || !d.extraGuidelines) return;
-  const count = d.extraGuidelinesCount || 0;
-  if (count < 1) return;
-  const line = scene && scene.guidanceLine; // the followed pass (native offsets ActiveTrack)
+  const line = scene && scene.guidanceLine; // the followed pass
   if (!line || line.length < 2) return;
   const toolW = toolWidthM();
   if (toolW < 0.1 || toolW * pxPerM < 3) return; // zoom gate: skip when passes < ~3 px apart
-  const baseLine = extendAbLine(line);
-  for (let i = 1; i <= count; i++) {
-    for (const off of [toolW * i, -toolW * i]) {
-      const ol = offsetLine(baseLine, off);
-      strokePtsSk(canvas, ol, false, SKP.extraGuideShadow);
-      strokePtsSk(canvas, ol, false, SKP.extraGuide);
-    }
+  for (const gl of scene.guideLines || []) {
+    const pts = extendAbLine(gl);
+    strokePtsSk(canvas, pts, false, SKP.extraGuideShadow);
+    strokePtsSk(canvas, pts, false, SKP.extraGuide);
   }
 }
+// Live boundary draw-on-map preview (Phase MT) — the polygon vertices tapped on the
+// satellite imagery so far. Closed white outline + outlined dots; client-side only.
 function drawSatBoundarySk(canvas) {
   if (!satBnd || !satPts.length) return;
   if (satPts.length >= 2) strokePtsSk(canvas, satPts, satPts.length >= 3, SKP.boundary);
@@ -7688,7 +7674,30 @@ function renderSkia(canvas, rp) {
 // The single render loop. Window rAF (not surface.requestAnimationFrame) so it
 // survives surface recreation on resize and runs even before CanvasKit finishes
 // loading (DOM overlays update regardless; the GL map draws once skSurface exists).
-function skFrame() {
+// Frame cap (#408): the picture changes with the 10 Hz pose and its extrapolation at field
+// speeds, so the map is drawn at 30 fps; drawing at the display's rate (60-120 Hz) only heats
+// the tablet. While the operator handles it (a press, a drag or pinch, the wheel, a key) and
+// shortly after, every frame is drawn, so panning and zooming stay smooth.
+const FRAME_CAP_FPS = 30, FULL_RATE_AFTER_INPUT_MS = 300;
+let _frameLast = 0, _fullRateUntil = 0;
+function noteInput(e) {
+  if (e.type === 'pointermove' && !e.buttons) return; // a hover is not handling the map
+  _fullRateUntil = performance.now() + FULL_RATE_AFTER_INPUT_MS;
+}
+for (const t of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown'])
+  addEventListener(t, noteInput, { capture: true, passive: true });
+function skFrame(ts) {
+  // rAF runs at the display's rate; a frame that comes too soon is skipped whole (map and DOM
+  // overlays). _frameLast advances by the interval, so the average holds on any refresh rate
+  // (30 on a 144 Hz screen); the 2 ms tolerance absorbs rAF jitter.
+  if (typeof ts === 'number') {
+    if (ts < _fullRateUntil) _frameLast = ts;
+    else {
+      const interval = 1000 / FRAME_CAP_FPS, since = ts - _frameLast;
+      if (since < interval - 2) { requestAnimationFrame(skFrame); return; }
+      _frameLast = since > interval * 2 ? ts : _frameLast + interval;
+    }
+  }
   // Client render rate over a ~500 ms window (shown on the GPS-detail card).
   const _now = performance.now();
   if (_fpsT0 === 0) _fpsT0 = _now;
