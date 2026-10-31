@@ -60,7 +60,8 @@ public record SceneDto(
     IReadOnlyList<IReadOnlyList<Vec2Dto>> ContourStrips, // saved contour strips (#110)
     IReadOnlyList<Vec2Dto>? ContourRef, // contour mode: the strip being followed (points) (#110)
     bool ContourLocked, // contour lock on
-    IReadOnlyList<IReadOnlyList<Vec2Dto>> GuideLines); // a curve's extra guidelines, built by the host (#450)
+    IReadOnlyList<IReadOnlyList<Vec2Dto>> GuideLines, // a curve's extra guidelines, built by the host (#450)
+    IReadOnlyList<Vec2Dto>? ToolPass); // the centre of the pass shown, where the tool runs: the map draws the tool's width along it
 
 /// <summary>A field flag marker: field-local position (m) + display colour hex + name.</summary>
 public record FlagDto(double E, double N, string ColorHex, string Name);
@@ -175,6 +176,10 @@ public record TickDto(
     // driver's seat (GuidanceState.NudgeOffset sign-flipped when heading against the track,
     // matching how the nudge intent applies it). Shown on the AB flyout's nudge readout (#93).
     double NudgeOffset,
+    // Ref Nudge panel (#489): how far the selected track was moved since the panel opened (m, +right).
+    double RefNudgeMoved,
+    // ... and whether that move still waits for Save (Undo / Save enable on it).
+    bool RefNudgePending,
     // Pure Pursuit goal point (field-local m) — the steering target while engaged, or in
     // free-drive the target it would chase if engaged now. HasGoal gates the map marker (#95).
     bool HasGoal,
@@ -314,6 +319,8 @@ public record StatusDto(
     bool SendCorrectedPosition = false,
     // Bytes 9–11 of the last scan reply: the subnet the scan came from (#334); "" = none.
     string ScanReplySubnet = "",
+    // The NTRIP session: which service is in use, the failover state, the last failure (NTRIP plan).
+    NtripSessionDto? NtripSession = null,
     // Sprayer readout from the machine module (PGN 160); null until it is heard.
     SprayerDto? Sprayer = null);
 
@@ -372,6 +379,23 @@ public record NtripRtcmDto(
 /// <param name="EverySeconds">Mean spacing; NaN after a single message.</param>
 public record NtripRtcmTypeDto(int Type, long Count, double EverySeconds, double LastSeconds);
 
+/// <summary>Which NTRIP service the corrections come from and how the connection is doing, for the
+/// Network IO card. State is <c>NtripState</c> (0 Stopped, 1 Connecting, 2 Connected, 3 Streaming,
+/// 4 Waiting, 5 GaveUp); LastError is <c>NtripCategory</c>, -1 for none. Notice is the last switch
+/// message ("" for none).</summary>
+public record NtripSessionDto(
+    bool UsingFallback,
+    bool MainIsBack,
+    bool HasFallback,
+    bool ProfilePerField,
+    int State,
+    int LastError,
+    int Attempts,
+    double RetryInSeconds,
+    string Notice,
+    string Profile = "",
+    string Service = "");
+
 /// <summary>Config read-frame (Phase 9). A structured projection of
 /// ConfigurationStore for the left-nav settings panels — seeded on connect and
 /// re-sent when the config fingerprint changes. Grows a section per sub-phase;
@@ -407,7 +431,9 @@ public record AutoSteerConfigDto(
     bool ManualTurnsEnabled, double ManualTurnsSpeed, double MinSteerSpeed, double MaxSteerSpeed,
     // Tab 9 — Display
     int LineWidth, int NudgeDistance, double NextGuidanceTime, int CmPerPixel,
-    bool LightbarEnabled, bool SteerBarEnabled, bool GuidanceBarOn);
+    bool LightbarEnabled, bool SteerBarEnabled, bool GuidanceBarOn,
+    // Ref Nudge panel step, cm (moves the reference line; NudgeDistance offsets the guidance line).
+    int RefNudgeDistance);
 
 /// <summary>Screen &amp; Alerts panel (ConfigStore.Display): display toggles, on-screen
 /// buttons, alert sounds, plus the App-Settings device flags (keyboard / start
@@ -551,7 +577,21 @@ public record NtripProfilesDto(
 public record NtripProfileDto(
     string Id, string Name, string CasterHost, int CasterPort, string MountPoint,
     string Username, string Password, bool AutoConnectOnFieldLoad, bool IsDefault,
-    IReadOnlyList<string> AssociatedFields);
+    IReadOnlyList<string> AssociatedFields,
+    NtripFallbackDto? Fallback = null);
+
+/// <summary>A profile's fallback service. Like the profile's own, its password goes out only as <see cref="Secrets.Mask"/>.</summary>
+public record NtripFallbackDto(
+    string CasterHost, int CasterPort, string MountPoint, string Username, string Password,
+    bool AutoSwitch, int SwitchAfterFailures);
+
+/// <summary>The mount points last asked for in the NTRIP profile editor: its own frame, sent when a new
+/// list (or a new status) is ready. For is "main" or "fallback"; Status is the sentence to show.</summary>
+public record NtripMountpointsDto(int Seq, string For, string Status, IReadOnlyList<NtripMountpointDto> Items);
+
+/// <param name="DistanceKm">NaN when the position of the mount point or of the receiver is unknown.</param>
+public record NtripMountpointDto(string Mount, string Name, string Format, string Systems, string Country,
+    double DistanceKm, bool NeedsPosition);
 
 /// <summary>Field Operations read-frame (Phase 9 Field Ops) — the field/job lifecycle
 /// lists for the Fields-and-Jobs dialog. Fields = every field on disk (distance enriched

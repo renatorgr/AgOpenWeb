@@ -28,7 +28,7 @@ window.RemoteTransport = {
     const url = `${proto}//${location.host}/ws`;
     let ws = null, stopped = false;
 
-    const TYPE = { SCENE: 1, TICK: 2, COVERAGE_INIT: 3, COVERAGE_CELLS: 4, STATUS: 5, CONTROL_STATE: 6, HELLO: 7, CONFIG: 8, PROFILES: 9, WIZARD: 10, NTRIP_PROFILES: 11, FIELD_OPS: 12, AGSHARE: 13, APP_INFO: 14, FIELD_TOOLS: 15, RECORDED_PATH: 16, BOUNDARY: 17, SOUND: 18, PONG: 19, COVERAGE_EDGE: 20, VIEW_PREFS: 21, PROMPT: 22, TOAST: 23, DRIVE_PICK: 24, HW_MSG: 25, VT: 26, VT_IMAGE: 27 };
+    const TYPE = { SCENE: 1, TICK: 2, COVERAGE_INIT: 3, COVERAGE_CELLS: 4, STATUS: 5, CONTROL_STATE: 6, HELLO: 7, CONFIG: 8, PROFILES: 9, WIZARD: 10, NTRIP_PROFILES: 11, FIELD_OPS: 12, AGSHARE: 13, APP_INFO: 14, FIELD_TOOLS: 15, RECORDED_PATH: 16, BOUNDARY: 17, SOUND: 18, PONG: 19, COVERAGE_EDGE: 20, VIEW_PREFS: 21, PROMPT: 22, TOAST: 23, DRIVE_PICK: 24, HW_MSG: 25, VT: 26, VT_IMAGE: 27, NTRIP_MOUNTPOINTS: 28 };
     const td = new TextDecoder();
 
     function decode(buffer) {
@@ -82,11 +82,12 @@ window.RemoteTransport = {
           const contourRef = optPts(), contourLocked = !!u8();
           const glc = i32(); const guideLines = new Array(glc); // #450
           for (let k = 0; k < glc; k++) guideLines[k] = pts();
+          const toolPass = optPts();
           handlers.onScene && handlers.onScene({
             version, originLat, originLon, fieldName, hasField, boundaries, boundaryInner, tracks,
             headland, guidanceLine, toolSections, uTurnPath, nextTrack, flags, imagery, trackList,
             headlandSegs, tramSystems, tramLines, recordedPaths, contourStrips, contourRef, contourLocked,
-            guideLines,
+            guideLines, toolPass,
           });
           break;
         }
@@ -121,6 +122,8 @@ window.RemoteTransport = {
           op.executing = !!u8(); // #50 — u-turn arc executing (blocks on-screen U-turn/Lateral)
           op.passNumber = i32(); // guidance pass offset (0 = on reference) — reference gate + label
           op.nudgeOffset = f32(); // driver-relative line nudge (m, +right) — AB flyout readout (#93)
+          op.refNudgeMoved = f32(); // Ref Nudge panel: track moved since it opened (m, +right) — #489
+          op.refNudgePending = !!u8(); // ... and it is not saved yet
           const hasGoal = !!u8(); const goalE = f64(), goalN = f64();
           const goal = hasGoal ? { e: goalE, n: goalN } : null; // Pure Pursuit target (#95)
           op.reverse = !!u8(); // #125 — vehicle reversing
@@ -204,6 +207,13 @@ window.RemoteTransport = {
           const sendCorrectedPosition = !!u8();
           // Network IO: the subnet the scan came from (append-only, #334).
           const scanReplySubnet = str();
+          // NTRIP session (append-only): null without a client. state: 0 Stopped, 1 Connecting,
+          // 2 Connected, 3 Streaming, 4 Waiting, 5 GaveUp; lastError: NtripCategory, -1 none.
+          let ntripSession = null;
+          if (u8()) {
+            ntripSession = { usingFallback: !!u8(), mainIsBack: !!u8(), hasFallback: !!u8(), profilePerField: !!u8(),
+              state: u8(), lastError: i32(), attempts: i32(), retrySeconds: f32(), notice: str(), profile: str(), service: str() };
+          }
           // Sprayer readout (append-only): PGN 160 from the machine module; null until heard.
           // alarms = SprayerAlarms bits; expectedFlowLpm NaN = no flow check.
           let sprayer = null;
@@ -223,7 +233,7 @@ window.RemoteTransport = {
             gpsIp, moduleSubnet, hostIps, ntripConnected, ntripStatus, ntripBytes, ntripDestination, ntripUnicast, rtcmBroadcast, ntripEnabled, ntripTestStatus,
             simPanelVisible, driftEasting, driftNorthing, unsavedCoveragePrompt,
             devOverlay, gpsToPgnLatencyMs, gpsSentence, dualHeadingMissing, ntripRtcm, systemData,
-            gpsLost, isobus, fieldData, sendCorrectedPosition, scanReplySubnet, sprayer,
+            gpsLost, isobus, fieldData, sendCorrectedPosition, scanReplySubnet, ntripSession, sprayer,
           });
           break;
         }
@@ -234,11 +244,20 @@ window.RemoteTransport = {
             const username = str(), password = str(), autoConnect = !!u8(), isDefault = !!u8();
             const ac = i32(); const associatedFields = new Array(ac);
             for (let j = 0; j < ac; j++) associatedFields[j] = str();
-            profiles[k] = { id, name, casterHost, casterPort, mountPoint, username, password, autoConnect, isDefault, associatedFields };
+            let fallback = null;
+            if (u8()) fallback = { host: str(), port: i32(), mount: str(), username: str(), password: str(), autoSwitch: !!u8(), after: i32() };
+            profiles[k] = { id, name, casterHost, casterPort, mountPoint, username, password, autoConnect, isDefault, associatedFields, fallback };
           }
           const af = i32(); const availableFields = new Array(af);
           for (let k = 0; k < af; k++) availableFields[k] = str();
           handlers.onNtripProfiles && handlers.onNtripProfiles({ profiles, availableFields });
+          break;
+        }
+        case TYPE.NTRIP_MOUNTPOINTS: {
+          const seq = i32(), forService = str(), status = str();
+          const n = i32(); const items = new Array(n);
+          for (let k = 0; k < n; k++) items[k] = { mount: str(), name: str(), format: str(), systems: str(), country: str(), km: f32(), needsPosition: !!u8() };
+          handlers.onNtripMountpoints && handlers.onNtripMountpoints({ seq, forService, status, items });
           break;
         }
         case TYPE.FIELD_OPS: {
@@ -365,7 +384,7 @@ window.RemoteTransport = {
             uTurnCompensation: f64(), sideHillCompensation: f64(), steerInReverse: !!u8(),
             manualTurnsEnabled: !!u8(), manualTurnsSpeed: f64(), minSteerSpeed: f64(), maxSteerSpeed: f64(),
             lineWidth: i32(), nudgeDistance: i32(), nextGuidanceTime: f64(), cmPerPixel: i32(),
-            lightbarEnabled: !!u8(), steerBarEnabled: !!u8(), guidanceBarOn: !!u8(),
+            lightbarEnabled: !!u8(), steerBarEnabled: !!u8(), guidanceBarOn: !!u8(), refNudgeDistance: i32(),
           };
           handlers.onConfig && handlers.onConfig({ vehicle, gps, roll, tool, uturn, tram, machine, display, autosteer });
           break;

@@ -16,7 +16,7 @@ public static partial class RemoteServerWiring
     // hooks, and every state projector to a live MainViewModel. Shared by every
     // head (WebBackend) and the headless host (HeadlessHost). All of them inject the
     // single-thread HostLoopDispatcher as IUiDispatcher, resolved below.
-    // See Plans/WEBUI_MIGRATION_PLAN.md Phase 10.
+    // See Plans/Completed/WEBUI_MIGRATION_PLAN.md Phase 10.
     public static void Wire(
         AgOpenWeb.RemoteServer.RemoteServerHost server,
         AgOpenWeb.ViewModels.MainViewModel vm,
@@ -55,8 +55,8 @@ public static partial class RemoteServerWiring
                             var num = System.Globalization.NumberStyles.Float;
                             // Starting a line or path turns contour off first, like AgOpenGPS's
                             // track / AB+ / draw / record / path Go buttons (#110).
-                            if (vm.IsContourModeOn && cmd is "track.activate" or "track.aPlus" or "track.latLonHeading" or "track.latLonAB" or "track.drawStraight"
-                                    or "track.drawCurve" or "track.recordCurve" or "track.driveAB" or "recpath.play")
+                            if (vm.IsContourModeOn && cmd is "track.activate" or "track.aPlus" or "track.latLonHeading" or "track.latLonAB" or "track.latLonPivot" or "track.drawStraight"
+                                    or "track.drawCurve" or "track.recordCurve" or "track.recordPivot" or "track.driveAB" or "recpath.play")
                                 vm.ToggleContourModeCommand?.Execute(null);
 
                             // Sim ids that set a property or carry an arg (all Tier-1,
@@ -277,6 +277,7 @@ public static partial class RemoteServerWiring
                                     return;
                                 case "track.latLonHeading": // Quick AB. arg = "lat,lon,heading" (#335)
                                 case "track.latLonAB":      // Quick AB. arg = "latA,lonA,latB,lonB" (#335)
+                                case "track.latLonPivot":   // Quick AB. arg = "lat,lon" of a water pivot's centre
                                 {
                                     var llParts = arg.Split(',');
                                     var ll = new double[llParts.Length];
@@ -286,6 +287,8 @@ public static partial class RemoteServerWiring
                                         vm.CreateLatLonHeadingLine(ll[0], ll[1], ll[2]);
                                     else if (cmd == "track.latLonAB" && ll.Length == 4)
                                         vm.CreateLatLonABLine(ll[0], ll[1], ll[2], ll[3]);
+                                    else if (cmd == "track.latLonPivot" && ll.Length == 2)
+                                        vm.CreateLatLonPivot(ll[0], ll[1]);
                                     return;
                                 }
                                 case "track.select": // Tracks manager / Field Builder — tap a row:
@@ -619,11 +622,11 @@ public static partial class RemoteServerWiring
                                 // directly (mirrors the vehicle/tool ApplyProfileCommand path);
                                 // confirmations happen client-side. Tier-1 (config files). ---
                                 case "ntrip.save": case "ntrip.delete": case "ntrip.setDefault":
-                                case "ntrip.test":
+                                case "ntrip.test": case "ntrip.switch": case "ntrip.mountpoints": case "ntrip.mountpoints.clear": case "ntrip.use":
                                     ApplyNtripCommand(
                                         services.GetRequiredService<INtripProfileService>(),
                                         services.GetRequiredService<AgOpenWeb.Models.State.ApplicationState>(),
-                                        dispatcher, cmd, arg, vm);
+                                        dispatcher, cmd, arg, vm, services.GetService<IGpsService>());
                                     return;
                                 // --- Field Operations (Phase 9). Lifecycle routes through the real
                                 // StartWorkSessionDialogViewModel (host-driven) so field/job open/
@@ -713,6 +716,13 @@ public static partial class RemoteServerWiring
                                 "track.halfNudgeLeft" => vm.HalfToolNudgeLeftCommand,
                                 "track.halfNudgeRight" => vm.HalfToolNudgeRightCommand,
                                 "track.resetNudge" => vm.ResetNudgeCommand,
+                                "track.refNudgeLeft" => vm.RefNudgeLeftCommand,    // Ref Nudge panel (#489)
+                                "track.refNudgeRight" => vm.RefNudgeRightCommand,
+                                "track.refHalfNudgeLeft" => vm.RefHalfNudgeLeftCommand,
+                                "track.refHalfNudgeRight" => vm.RefHalfNudgeRightCommand,
+                                "track.refNudgeBegin" => vm.RefNudgeBeginCommand,
+                                "track.refNudgeSave" => vm.RefNudgeSaveCommand,
+                                "track.refNudgeUndo" => vm.RefNudgeUndoCommand,
                                 "track.extendA" => vm.ExtendTrackACommand,
                                 "track.extendB" => vm.ExtendTrackBCommand,
                                 "track.shrinkA" => vm.ShrinkTrackACommand,
@@ -740,6 +750,7 @@ public static partial class RemoteServerWiring
                                 // DriveAB/Curve modes → uses live GPS).
                                 "track.driveAB" => vm.StartDriveABCommand,
                                 "track.recordCurve" => vm.StartCurveRecordingCommand,
+                                "track.recordPivot" => vm.StartPivotRecordingCommand,
                                 "track.finishCurve" => vm.FinishCurveRecordingCommand,
                                 "track.setABGps" => vm.SetABPointCommand,
                                 // Tracks manager toolbar (act on the active/selected track).
@@ -850,6 +861,7 @@ public static partial class RemoteServerWiring
 
                     // Refusals and failures (#109): shown as a short notification on the web.
                     vm.FailureReported += msg => server.ShowToast(msg);
+                    vm.NtripNoticeReported += msg => server.ShowToast(msg);
 
                     // AiO board messages (PGN 221), when "AiO Board Msgs" is on (#110).
                     if (services.GetService<IAutoSteerService>() is { } hwSteer)

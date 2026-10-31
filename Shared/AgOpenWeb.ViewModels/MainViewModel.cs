@@ -466,7 +466,7 @@ public partial class MainViewModel : ObservableObject
         // Replaces Phase 2c #1's 10 Hz "display tick" — same architecture,
         // half the rate, and now also includes diagnostics like
         // GpsToPgnLatencyMs that AutoSteer was writing at 100 Hz.
-        // See Plans/perf_data/2026-05-20/ANALYSIS.md.
+        // See Plans/Ideas/perf_data/2026-05-20/ANALYSIS.md.
         _statusTickTimer = _timerFactory.Create();
         _statusTickTimer.Interval = TimeSpan.FromMilliseconds(200);
         _statusTickTimer.Tick += OnStatusTick;
@@ -474,6 +474,7 @@ public partial class MainViewModel : ObservableObject
         _udpService.ModuleConnectionChanged += OnModuleConnectionChanged;
         _ntripService.ConnectionStatusChanged += OnNtripConnectionChanged;
         _ntripService.RtcmDataReceived += OnRtcmDataReceived;
+        _ntripService.Notice += OnNtripNotice;
         ConfigStore.Connections.PropertyChanged += OnNtripEnabledChanged;
         _fieldService.ActiveFieldChanged += OnActiveFieldChanged;
         FieldFullyLoaded += OnFieldFullyLoaded;
@@ -1769,7 +1770,7 @@ public partial class MainViewModel : ObservableObject
                 // Migrate legacy/imported dense boundaries to normalized resolution
                 // in-memory so derived geometry (tram/headland), inside-tests, and
                 // rendering operate on a sane point count. Persisted on the next
-                // explicit boundary save. See Plans/BOUNDARY_RESOLUTION_NORMALIZATION.md.
+                // explicit boundary save. See Plans/Completed/BOUNDARY_RESOLUTION_NORMALIZATION.md.
                 NormalizeBoundaryInPlace(boundary);
                 SetCurrentBoundary(boundary);
                 CenterMapOnBoundary(boundary);
@@ -1889,7 +1890,7 @@ public partial class MainViewModel : ObservableObject
             // large saved file was costing seconds on the open critical path, so they
             // aren't saved at all. The tram buttons regenerate via UpdateTramLines from
             // the current track/systems. Start clean so a prior field's lines don't linger. See
-            // Plans/BOUNDARY_RESOLUTION_NORMALIZATION.md.
+            // Plans/Completed/BOUNDARY_RESOLUTION_NORMALIZATION.md.
             _tramLineService.Clear();
             _mapService.SetTramLines(
                 _tramLineService.OuterBoundaryTrack,
@@ -2267,7 +2268,7 @@ public partial class MainViewModel : ObservableObject
     // Curve recording state (drive mode)
     private List<Vec3> _recordedCurvePoints = new();
     private Vec3? _lastCurvePoint;
-    private const double CurveMinPointSpacing = 2.0; // Minimum 2m spacing between curve points
+    private const double CurveMinPointSpacing = 1.0; // a point a metre while driving a curve (AgOpenGPS: every fix)
 
     /// <summary>
     /// Whether curve recording is currently active
@@ -2361,6 +2362,7 @@ public partial class MainViewModel : ObservableObject
                 // Sync IsActive state with selection
                 if (oldValue != null)
                 {
+                    DiscardPendingRefNudge(oldValue); // an unsaved Ref Nudge move doesn't follow to the next line (#489)
                     oldValue.IsActive = false;
                 }
                 if (value != null)
@@ -4242,6 +4244,7 @@ public partial class MainViewModel : ObservableObject
 
     // AB Line Guidance Commands - Bottom Bar (always visible)
     public ICommand? SnapLeftCommand { get; private set; }
+    public ICommand? StartPivotRecordingCommand { get; private set; }
     public ICommand? SnapRightCommand { get; private set; }
     public ICommand? StopGuidanceCommand { get; private set; }
     public ICommand? UTurnCommand { get; private set; }
@@ -4683,7 +4686,7 @@ public partial class MainViewModel : ObservableObject
     /// GPS-captured or imported boundaries (e.g. ~3431 points at ~1 m for a 440-acre
     /// field) otherwise propagate that density into tram/headland generation,
     /// inside-tests, and rendering. Idempotent: an already-sparse boundary is left
-    /// essentially unchanged. See Plans/BOUNDARY_RESOLUTION_NORMALIZATION.md.
+    /// essentially unchanged. See Plans/Completed/BOUNDARY_RESOLUTION_NORMALIZATION.md.
     /// </summary>
     private void NormalizeBoundaryInPlace(Boundary boundary)
     {
@@ -6189,7 +6192,7 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            Services.GeoJson.GeoJsonFieldService.SaveTracks(activeField.DirectoryPath, SavedTracks.ToList());
+            Services.GeoJson.GeoJsonFieldService.SaveTracks(activeField.DirectoryPath, TracksForSave());
             _logger.LogDebug("[NUDGE] SaveTracksToFile: Saved {TrackCount} tracks", SavedTracks.Count);
         }
         catch (System.Exception ex)
@@ -6282,6 +6285,14 @@ public partial class MainViewModel : ObservableObject
                 // Ensure all tracks start inactive (SelectedTrack setter will activate)
                 track.IsActive = false;
                 MigrateCurveTrack(track);
+                // A pivot imported from AgOpenGPS has only its centre: its reference circle is a
+                // pass width out, so its passes are AgOpenGPS's (half a width, then whole widths).
+                if (track.IsPivot && track.Points.Count < 3 && track.Points.Count > 0)
+                {
+                    var c = track.Points[0];
+                    track.Points = Models.Guidance.CurveProcessing.Circle(new Vec3(c.Easting, c.Northing, 0), PassWidth);
+                    track.IsClosed = true;
+                }
                 SavedTracks.Add(track); // mirrors into State.Field.Tracks
 
                 // Debug: log track details

@@ -244,7 +244,7 @@ public class CodePathContinuityTests
     {
         // Field folder (Plans/Completed/FILE_FORMAT_MODERNIZATION_PLAN.md)
         "field.geojson", "background.png", "contours.geojson", "recorded-paths.geojson", "elevation.csv",
-        "job.json", "screenshot.png", "manifest.json", "field.json", "doc.kml",
+        "job.json", "screenshot.png", "manifest.json", "doc.kml",
         "coverage_disp.bin", "coverage_detect.bin",
         // App data
         "appsettings.json", "appstate.json", "configuration.json", "runtime_state.json",
@@ -253,6 +253,7 @@ public class CodePathContinuityTests
         ".AutoSteer.json", ".tool.xml", ".env.xml",
         // Bug report dump
         "gps_data_log.csv", "logs.txt", "system_info.txt", "ntrip_rtcm.txt",
+        "ntrip_session.txt", // what the NTRIP connection did and why it failed (Plans/Completed/NTRIP_MAIN_FALLBACK_PLAN.md, Phase 2)
         "contact.txt", // the reporter's email, maintainers only (#407 follow-up)
         "appsettings_error.txt", "configuration_error.txt", "field_error.txt", "job_error.txt",
         "logs_error.txt", "save_error.txt", "screenshot_error.txt", "state_error.txt",
