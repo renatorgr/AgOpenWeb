@@ -187,9 +187,15 @@
     #lb {
       text-align: center; display: none;
       color: var(--text-2); font: 600 calc(15px * var(--hud-s)) system-ui, sans-serif; pointer-events: none;
-      text-shadow: 0 1px 2px #000;
+      text-shadow: 0 1px 2px #000; font-variant-numeric: tabular-nums; position: relative;
     }
-    #lb .lb-avg { display: none; margin-left: 10px; color: #f2f366; font: 600 12px system-ui, sans-serif; }
+    /* The distance stays centred: the average hangs off its right, so its coming and going
+       moves nothing (#479). The probe, never seen, measures the widest readout. */
+    #lb .lb-core { position: relative; display: inline-block; white-space: nowrap; }
+    #lb .lb-avg { display: none; position: absolute; left: 100%; top: 50%; transform: translateY(-50%);
+      margin-left: calc(10px * var(--hud-s)); white-space: nowrap; color: #f2f366; font: 600 calc(12px * var(--hud-s)) system-ui, sans-serif; }
+    #lb .lb-probe { position: absolute; left: 0; top: 0; visibility: hidden; white-space: nowrap; }
+    #lb .lb-probe .lb-avg { display: inline; position: static; transform: none; margin: 0; }
     /* Guidance bar (#479), as AgOpenGPS. Light bar: the cells either side of the readout, on
        its row (lightbarSk), the pass under them. Steer bar: the readout, then the bar
        (steerBarSk, drawn at 84 px), then the pass. */
@@ -502,6 +508,7 @@
     .sa-lbl { align-self: center; color: var(--text-2); font: 600 12px system-ui, sans-serif; }
     .sa-act { background: rgba(var(--ov),0.10); }
     .sa-grid .cfg-num { height: 40px; }
+    .sa-grid .sa-newrow { grid-column: 1; } /* starts its own row: keeps a pair together */
     .sa-hint { color: var(--text-muted); font: 400 11px system-ui, sans-serif; }
     .ln-sub { color: var(--text-muted); font: 600 12px system-ui, sans-serif; margin-bottom: 12px; }
     /* #41: grow WIDER not taller so tall tabs fit a 1200x700 landscape tablet without
@@ -1285,6 +1292,30 @@
     .vt-ws { max-width: 180px; height: 22px; font-size: 12px; background: var(--bg-sunken); color: var(--text-2);
       border: 1px solid var(--border); border-radius: 4px; }
     .vt-body { position: relative; display: flex; gap: 4px; padding: 4px; }
+    /* Web cards (Plans/ADDON_WEB_CARDS_PLAN.md): an add-on's own page from the bookmark list, in
+       a frame. Never wider or taller than the screen leaves room for. */
+    .web-card { top: calc(var(--bar-bottom) + 24px); width: auto; --ww: 640px; --wh: 420px; }
+    .web-card .web-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .web-pick { max-width: 220px; height: 22px; font-size: 12px; background: var(--bg-sunken); color: var(--text-2);
+      border: 1px solid var(--border); border-radius: 4px; }
+    .web-body { position: relative; width: min(var(--ww), calc(100 * var(--vw) - 120px));
+      height: min(var(--wh), calc(100 * var(--vh) - 140px)); background: var(--bg-sunken); }
+    .web-body iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+    .web-cover { position: absolute; inset: 0; display: none; cursor: not-allowed; }
+    .web-cover.show { display: block; }
+    .web-msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      padding: 24px; text-align: center; color: var(--text-2); font-size: 14px; background: var(--panel); }
+    .web-edit { position: absolute; inset: 0; display: none; flex-direction: column; gap: 8px; padding: 12px;
+      background: var(--panel); overflow: auto; font-size: 13px; color: var(--text-2); }
+    .web-edit.show { display: flex; }
+    .web-edit input { height: 34px; font-size: 14px; padding: 0 8px; background: var(--bg-sunken); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px; }
+    .web-edit .web-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+    .web-edit .web-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .web-edit .web-row small { color: var(--text-muted); }
+    .web-edit button { height: 30px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px;
+      background: rgba(var(--ov),0.08); color: var(--text-2); cursor: pointer; }
+    .web-edit .web-sub { color: var(--text-muted); font-size: 12px; }
     .vt-mask { display: block; width: var(--vt); height: var(--vt); background: #000; touch-action: none; }
     .vt-keys { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(6, auto); grid-auto-flow: column;
       gap: 4px; align-content: start; width: calc(var(--vt) / 3 - 4px); }
@@ -1610,6 +1641,14 @@
         <text x="19.5" y="28" text-anchor="middle" font-size="12" font-weight="700" font-family="system-ui, sans-serif" style="fill:currentColor;stroke:none">VT</text>
       </svg>
     </button>
+    <button id="ln-web" class="ln-btn" title="Web Cards">
+      <svg class="ln-ic" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" style="fill:none;stroke:currentColor">
+        <circle cx="24" cy="24" r="17" stroke-width="2.5"/>
+        <ellipse cx="24" cy="24" rx="7.5" ry="17" stroke-width="2"/>
+        <line x1="7" y1="24" x2="41" y2="24" stroke-width="2"/>
+        <path d="M10 15 H38 M10 33 H38" stroke-width="2"/>
+      </svg>
+    </button>
     <button id="ln-network" class="ln-btn" title="Network IO">
       <svg class="ln-ic" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" style="stroke:currentColor;fill:currentColor">
         <line x1="24" y1="24" x2="24" y2="10" stroke-width="2.5"/>
@@ -1639,7 +1678,8 @@
       <button class="sa-act" data-cmd="display.toggleTheme">Day/Night Theme</button>
       <button class="sa-tgl" data-key="display.extraGuidelines"><img class="sa-ic" src="/icons/ConD_ExtraGuides.png" alt="">Extra Guides</button>
       <input id="sa-extracount" class="cfg-num" type="number" step="1" min="1" max="50" title="Extra guide count">
-      <button class="sa-act" data-cmd="display.cycleResolution">Quality: <span id="sa-quality">—</span></button>
+      <button class="sa-act sa-newrow" data-cmd="display.cycleResolution">Quality: <span id="sa-quality">—</span></button>
+      <button class="sa-tgl" id="sa-imagery"><img class="sa-ic" src="/icons/BoundaryByMap.png" alt="">Aerial Imagery</button>
     </div>
     <!-- Guidance bar, as AgOpenGPS: light bar or steer bar, one or the other, and On/Off apart
          from the style. Kept with the vehicle's AutoSteer settings, saved at once (#479). -->
@@ -2634,6 +2674,21 @@
       </div>
     </div>
   </template>
+  <!-- Web cards: add-ons' own pages, picked from the bookmarks (WebCards in app.js). -->
+  <template id="web-card-tpl">
+    <div class="chart-card web-card">
+      <div class="chart-hdr">
+        <span class="web-title"><select class="web-pick"></select></span>
+        <span><button class="web-add vt-hbtn" title="Another web card">＋</button><button class="web-ext vt-hbtn" title="Open in browser">↗</button><button class="web-size vt-hbtn" title="Size">⤢</button><button class="web-gear vt-hbtn" title="Bookmarks">⚙</button><button class="web-x chart-x" title="Close">✕</button></span>
+      </div>
+      <div class="web-body">
+        <iframe sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads" referrerpolicy="no-referrer"></iframe>
+        <div class="web-cover" title="View only: this browser doesn't hold control"></div>
+        <div class="web-msg"></div>
+        <div class="web-edit"></div>
+      </div>
+    </div>
+  </template>
   <div id="chart-steer" class="chart-card" style="display:none">
     <div class="chart-hdr"><span>Steer</span><button class="chart-x" data-chart="steer" title="Close">✕</button></div>
     <canvas class="chart-cv" width="400" height="150"></canvas>
@@ -2828,6 +2883,7 @@
       <button id="bm-delete" class="bm-tbtn" title="Delete selected boundary"><img src="/icons/Trash.png" alt=""></button>
       <button id="bm-importkml" class="bm-tbtn" title="Import boundary from a KML/KMZ file"><img src="/icons/BoundaryLoadFromGE.png" alt=""></button>
       <button id="bm-drawmap" class="bm-tbtn" title="Draw boundary on satellite imagery"><img src="/icons/BoundaryByMap.png" alt=""></button>
+      <button id="bm-imagery" class="bm-tbtn" title="Get aerial imagery for the field boundary"><img src="/icons/GoogleEarth.png" alt=""></button>
       <button id="bm-buildtracks" class="bm-tbtn" title="Build boundary from driven tracks"><img src="/icons/BoundaryFromTracks.png" alt=""></button>
       <button id="bm-drivearound" class="bm-tbtn" title="Drive around field to record boundary"><img src="/icons/ST_SteerTab.png" alt=""></button>
       <button id="bm-driveinner" class="bm-tbtn" title="Drive around obstacle (inner boundary)"><img src="/icons/Boundary.png" alt=""><span class="bm-plus">+</span></button>

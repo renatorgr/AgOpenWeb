@@ -510,6 +510,17 @@ public sealed class SceneProjector
         return list.Seq * 31L + list.Status.GetHashCode() + list.Items.Count;
     }
 
+    // The web cards' bookmarks. The list is replaced whole on a change, so reading it here is safe.
+    public WebCardsDto BuildWebCards() =>
+        new(_settings.Settings.WebCards.Select(b => new WebCardDto(b.Name, b.Url)).ToList());
+
+    public long WebCardsFingerprint()
+    {
+        long h = 17;
+        foreach (var b in _settings.Settings.WebCards) h = h * 31 + HashCode.Combine(b.Name, b.Url);
+        return h;
+    }
+
     // Re-send the NTRIP profiles frame on add / edit / delete / set-default.
     public long NtripProfilesFingerprint()
     {
@@ -886,7 +897,7 @@ public sealed class SceneProjector
             d.UTurnButtonVisible, d.LateralButtonVisible,
             d.AutoSteerSound, d.UTurnSound, d.HydraulicSound, d.SectionsSound,
             d.KeyboardEnabled, d.StartFullscreen, d.ElevationLogEnabled, rm,
-            _persist.State.IsDayMode, d.UiScale);
+            _persist.State.IsDayMode, d.UiScale, d.ImageryVisible);
     }
 
     // Profiles read-frame (Phase 9) — the Vehicle & Tool picker hub: available
@@ -967,7 +978,8 @@ public sealed class SceneProjector
             | (dp.AutoDayNight ? 64 : 0) | (dp.HardwareMessagesEnabled ? 128 : 0) | (dp.ExtraGuidelines ? 256 : 0)
             | (dp.UTurnButtonVisible ? 512 : 0) | (dp.LateralButtonVisible ? 1024 : 0) | (dp.AutoSteerSound ? 2048 : 0)
             | (dp.UTurnSound ? 4096 : 0) | (dp.HydraulicSound ? 8192 : 0) | (dp.SectionsSound ? 16384 : 0)
-            | (dp.KeyboardEnabled ? 32768 : 0) | (dp.StartFullscreen ? 65536 : 0) | (dp.ElevationLogEnabled ? 131072 : 0);
+            | (dp.KeyboardEnabled ? 32768 : 0) | (dp.StartFullscreen ? 65536 : 0) | (dp.ElevationLogEnabled ? 131072 : 0)
+            | (dp.ImageryVisible ? 262144 : 0);
         h = h * 31 + db;
         h = h * 31 + dp.ExtraGuidelinesCount * 7 + dp.DisplayResolutionMultiplier.GetHashCode();
         h = h * 31 + dp.UiScale;

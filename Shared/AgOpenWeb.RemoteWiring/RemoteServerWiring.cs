@@ -48,6 +48,32 @@ public static partial class RemoteServerWiring
                     var vt = services.GetService<IVirtualTerminalService>();
                     if (vt is not null) VirtualTerminalRemote.Start(server, vt);
 
+                    // Capture + save the aerial imagery covering a boundary in a
+                    // CRASH-ISOLATED child process — SkiaSharp can hard-crash on a
+                    // headless board and must never take the host down. On success,
+                    // apply the background back on the UI thread. A drawn boundary gets
+                    // it at once; any other gets it on request (#500).
+                    void CaptureBoundaryImagery(System.Collections.Generic.IReadOnlyList<(double E, double N)> pts)
+                    {
+                        if (vm.GetBoundaryImageryBounds(pts) is not { } bb) return;
+                        _ = System.Threading.Tasks.Task.Run(async () =>
+                        {
+                            var outPath = System.IO.Path.Combine(
+                                System.IO.Path.GetTempPath(), "AgOpenWeb_SatCap",
+                                "BackPic_" + System.Guid.NewGuid().ToString("N") + ".png");
+                            var ok = await imageryCapture.TryCaptureAsync(
+                                bb.mercMinX, bb.mercMaxX, bb.mercMinY, bb.mercMaxY, outPath);
+                            dispatcher.Post(() =>
+                            {
+                                if (!ok) { server.ShowToast("No aerial imagery: no internet?"); return; }
+                                vm.ApplyCapturedBackground(outPath,
+                                    bb.nwLat, bb.nwLon, bb.seLat, bb.seLon,
+                                    bb.mercMinX, bb.mercMaxX, bb.mercMinY, bb.mercMaxY);
+                                server.ShowToast("Aerial imagery saved");
+                            });
+                        });
+                    }
+
                     server.CommandHandler = (cmd, arg) =>
                         dispatcher.Post(() =>
                         {
@@ -397,6 +423,20 @@ public static partial class RemoteServerWiring
                                         vm.RemoteSetTramField(tsi, arg[(t1 + 1)..t2], arg[(t2 + 1)..]);
                                     return;
                                 }
+                                case "webcard.save":   // Web card bookmarks: "index\tname\turl", index −1 adds.
+                                case "webcard.delete": // "index".
+                                {
+                                    var st = services.GetRequiredService<ISettingsService>();
+                                    var wp = arg.Split('\t');
+                                    var edited = !int.TryParse(wp[0], out var wi) ? null
+                                        : cmd == "webcard.delete" ? AgOpenWeb.Models.WebCardBookmarks.Delete(st.Settings.WebCards, wi)
+                                        : wp.Length == 3 ? AgOpenWeb.Models.WebCardBookmarks.Save(st.Settings.WebCards, wi, wp[1], wp[2])
+                                        : null;
+                                    if (edited is null) { server.ShowToast("Bookmark not saved: a name and an http:// or https:// address"); return; }
+                                    st.Settings.WebCards = edited; // replaced whole: the broadcaster reads it
+                                    st.Save();
+                                    return;
+                                }
                                 case "boundary.importKmlFile": // Import-KML picker. arg = KML file name.
                                     vm.RemoteImportKmlBoundary(arg);
                                     return;
@@ -412,26 +452,14 @@ public static partial class RemoteServerWiring
                                             bmp.Add((pe, pn));
                                     }
                                     vm.RemoteCreateBoundaryFromMapPoints(bmp);
-                                    // Capture + save the aerial imagery covering the boundary in a
-                                    // CRASH-ISOLATED child process — SkiaSharp can hard-crash on a
-                                    // headless board and must never take the host down. On success,
-                                    // apply the background back on the UI thread.
-                                    if (vm.GetBoundaryImageryBounds(bmp) is { } bb)
-                                        _ = System.Threading.Tasks.Task.Run(async () =>
-                                        {
-                                            var outPath = System.IO.Path.Combine(
-                                                System.IO.Path.GetTempPath(), "AgOpenWeb_SatCap",
-                                                "BackPic_" + System.Guid.NewGuid().ToString("N") + ".png");
-                                            var ok = await imageryCapture.TryCaptureAsync(
-                                                bb.mercMinX, bb.mercMaxX, bb.mercMinY, bb.mercMaxY, outPath);
-                                            if (ok)
-                                                dispatcher.Post(() =>
-                                                    vm.ApplyCapturedBackground(outPath,
-                                                        bb.nwLat, bb.nwLon, bb.seLat, bb.seLon,
-                                                        bb.mercMinX, bb.mercMaxX, bb.mercMinY, bb.mercMaxY));
-                                        });
+                                    CaptureBoundaryImagery(bmp);
                                     return;
                                 }
+                                case "boundary.captureImagery": // Boundary menu: the aerial for the
+                                    if (vm.OuterBoundaryPoints() is { } obp) // field's boundary, however
+                                        CaptureBoundaryImagery(obp);         // it was made (#500).
+                                    else server.ShowToast("The field has no boundary");
+                                    return;
                                 case "track.drawPoint": // Phase MT — map-tap AB/curve point.
                                 {                       // arg = "e,n" (m, from s2w). Routes to the
                                     var tp = arg.Split(','); // native SetABPointCommand (DrawAB =

@@ -332,6 +332,7 @@ const transport = RemoteTransport.create({
     } else {
       imageryRect = null; imageryImg = null; imageryVer = null;
     }
+    if (saPanel.classList.contains('open')) populateScreenAlerts(); // Aerial Imagery follows the field
     // Keep the Tracks manager list live (activate/add/delete/hide change the Scene).
     if (document.getElementById('dlg-tracks').classList.contains('open')) renderTracksList();
     if (document.getElementById('fieldbuilder').classList.contains('open') && fbTab === 'tracks'
@@ -438,8 +439,9 @@ const transport = RemoteTransport.create({
     if (document.getElementById('boundaryplayer').classList.contains('open')) renderBoundaryPlayer();
   },
   onWizard(w) { wizard = w; wizardDirty = true; },
-  onHello(id) { myClientId = id; updateControlUi(); claimSeatIfFree(); Vt.render(); },
-  onControlState(s) { lastControl = s; updateControlUi(); claimSeatIfFree(); Vt.render(); },
+  onHello(id) { myClientId = id; updateControlUi(); claimSeatIfFree(); Vt.render(); WebCards.render(); },
+  onControlState(s) { lastControl = s; updateControlUi(); claimSeatIfFree(); Vt.render(); WebCards.render(); },
+  onWebCards(list) { WebCards.setBookmarks(list); },
   onSound(id) { Sounds.play(id); },
   onPrompt(p) { hostPrompt = p; renderHostPrompt(); },
   onToast(msg) { showToast(msg); },
@@ -2807,6 +2809,14 @@ document.getElementById('bm-delete').addEventListener('pointerdown', e => {
     () => transport.send('boundary.delete'));
 });
 document.getElementById('bm-buildtracks').addEventListener('pointerdown', e => { e.stopPropagation(); transport.send('boundary.buildFromTracks'); });
+// The aerial covering the field's boundary, however it was made (driven, KML, AgShare), into
+// the field background; replaces any it has. Needs the internet (#500).
+document.getElementById('bm-imagery').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  if (!imageryImg) { transport.send('boundary.captureImagery'); return; }
+  showConfirm(tr('Get Aerial Imagery'), tr('Replace the field\'s aerial imagery with a new one for its boundary?'),
+    () => transport.send('boundary.captureImagery'));
+});
 document.getElementById('bm-drawmap').addEventListener('pointerdown', e => { e.stopPropagation(); startSatBoundary(); });
 // Import-KML boundary picker: lists KML/KMZ from the Import folder (FieldOps frame),
 // tapping one imports it as the field boundary (host parses + imports, replacing the outer).
@@ -2867,7 +2877,7 @@ for (const b of document.querySelectorAll('.ln-closex'))
 const saPanel = document.getElementById('screenalerts');
 // Units + device settings (keyboard/fullscreen/elevation) moved to App Settings (File menu).
 // Screen & Alerts toggles → config.set|display.X; action rows (theme/quality) → command.
-for (const b of saPanel.querySelectorAll('.sa-tgl'))
+for (const b of saPanel.querySelectorAll('.sa-tgl[data-key]'))
   b.addEventListener('pointerdown', e => { e.stopPropagation(); cfgSend(b.dataset.key, b.classList.contains('active') ? '0' : '1'); });
 for (const b of saPanel.querySelectorAll('.sa-act'))
   b.addEventListener('pointerdown', e => { e.stopPropagation(); transport.send(b.dataset.cmd); });
@@ -2881,12 +2891,25 @@ for (const b of saPanel.querySelectorAll('.sa-opt[data-val]'))
 const saBarOn = document.getElementById('sa-baron'), saCmpp = document.getElementById('sa-cmpp');
 saBarOn.addEventListener('pointerdown', e => { e.stopPropagation(); cfgSend(saBarOn.dataset.key, saBarOn.classList.contains('active') ? '0' : '1'); });
 saCmpp.addEventListener('change', () => { const v = parseInt(saCmpp.value); if (Number.isFinite(v)) cfgSend('autosteer.cmPerPixel', v); });
+// Aerial Imagery (#500): an open field without imagery shows off, and a tap offers to get it
+// for the field's boundary; otherwise the button shows and flips the setting.
+const saImagery = document.getElementById('sa-imagery');
+const fieldLacksImagery = () => !!(scene && scene.hasField) && !scene.imagery;
+saImagery.addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  if (!fieldLacksImagery()) { cfgSend('display.imageryVisible', saImagery.classList.contains('active') ? '0' : '1'); return; }
+  showConfirm(tr('Aerial Imagery'), tr('This field has no aerial imagery. Get it for the field boundary now?'), () => {
+    if (!config.display.imageryVisible) cfgSend('display.imageryVisible', '1');
+    transport.send('boundary.captureImagery');
+  });
+});
 const saExtra = document.getElementById('sa-extracount');
 saExtra.addEventListener('change', () => { const v = parseInt(saExtra.value); if (Number.isFinite(v)) cfgSend('display.extraGuidelinesCount', v); });
 function populateScreenAlerts() {
   if (!config || !config.display) return;
   const d = config.display;
-  for (const b of saPanel.querySelectorAll('.sa-tgl')) b.classList.toggle('active', !!d[b.dataset.key.split('.')[1]]);
+  for (const b of saPanel.querySelectorAll('.sa-tgl[data-key]')) b.classList.toggle('active', !!d[b.dataset.key.split('.')[1]]);
+  saImagery.classList.toggle('active', !!d.imageryVisible && !fieldLacksImagery());
   if (document.activeElement !== saExtra) saExtra.value = d.extraGuidelinesCount;
   document.getElementById('sa-quality').textContent = d.resolutionLabel || '—';
   for (const b of saPanel.querySelectorAll('.sa-scale')) b.classList.toggle('active', +b.dataset.scale === (d.uiScale || 100));
@@ -5151,17 +5174,27 @@ function xteText(xte) {
 // Updated every frame from the latest tick; hidden when guidance is off.
 const lbEl = document.getElementById('lb');
 // Arrow + text as two spans, so the arrow can take the colour of the lit cells.
-const lbArrow = lbEl.appendChild(document.createElement('span'));
-const lbText = lbEl.appendChild(document.createElement('span'));
+const lbCore = lbEl.appendChild(document.createElement('span'));
+lbCore.className = 'lb-core';
+const lbArrow = lbCore.appendChild(document.createElement('span'));
+const lbText = lbCore.appendChild(document.createElement('span'));
 // Light bar style: AgOpenGPS's small yellow figure, a slow average of the error that shows
 // while it stays under 15 cm. Beside the distance, not under it: the pass HUD is there.
-const lbAvg = lbEl.appendChild(document.createElement('span'));
+const lbAvg = lbCore.appendChild(document.createElement('span'));
 lbAvg.className = 'lb-avg';
+// The widest readout (three digits and the average), so the cells keep their place (#479).
+const lbProbe = lbEl.appendChild(document.createElement('div'));
+lbProbe.className = 'lb-probe';
+const lbProbeCore = lbProbe.appendChild(document.createElement('span'));
+const lbProbeAvg = lbProbe.appendChild(document.createElement('span'));
+lbProbeAvg.className = 'lb-avg';
+let lbProbeKey = '', lbProbeHalfW = 0;
 let lbAvgTick = null, lbAvgM = 0.15;
-let lbHalfW = 0; // half the readout's width, for the light bar's cells either side of it
+let lbHalfW = 0; // from the centre to the readout's right end (average included), for the cells
 let lbCy = 70, steerCy = 84; // screen y of the readout row's and the steer bar slot's centres
 let lbSteerH = -1;
 const lbSteer = document.getElementById('lb-steer');
+const LB_TRAM_W = 38; // a tram dot and its gap from the readout, at HUD scale 1
 const LB_LEFT = '#ff7a3d', LB_RIGHT = '#39FF6A'; // as lightbarSk: steer left / steer right, on line
 function updateLightbarText() {
   const cfg = config && config.autosteer;
@@ -5187,9 +5220,19 @@ function updateLightbarText() {
     lbAvg.style.display = lbAvgM < 0.15 ? 'inline' : 'none';
   }
   lbEl.style.display = 'block';
-  // Screen pixels (the canvas isn't zoomed): the readout's half width and its row's centre, for
-  // the light bar's cells; the steer bar's slot centre.
-  lbHalfW = (zoomRect(lbArrow).width + zoomRect(lbText).width + (lbAvg.style.display === 'none' ? 0 : zoomRect(lbAvg).width + 10 * hudK)) / 2;
+  // Screen pixels (the canvas isn't zoomed): the readout's reach and its row's centre, for
+  // the light bar's cells; the steer bar's slot centre. The reach is the widest readout's, not
+  // this one's, so the cells don't jump as the digits or the average come and go; only a
+  // distance past three digits pushes them out.
+  const key = hudK + unitLabel('cm');
+  if (key !== lbProbeKey) {
+    lbProbeKey = key;
+    lbProbeCore.textContent = '▶ ' + fmtUnit(888, 'cm', 0);
+    lbProbeAvg.textContent = fmtUnit(14.9, 'cm', 1);
+    lbProbeHalfW = zoomRect(lbProbeCore).width / 2 + 10 * hudK + zoomRect(lbProbeAvg).width;
+  }
+  const liveHalfW = zoomRect(lbCore).width / 2 + (lbAvg.style.display === 'none' ? 0 : 10 * hudK + zoomRect(lbAvg).width);
+  lbHalfW = Math.max(lbProbeHalfW, liveHalfW);
   const row = zoomRect(lbEl);
   lbCy = row.top + row.height / 2;
   if (steerH) { const st = zoomRect(lbSteer); steerCy = st.top + st.height / 2; }
@@ -5209,6 +5252,10 @@ function updateTramLights() {
   tramL.classList.toggle('on', (b & 2) !== 0);
   tramR.classList.toggle('manual', (b & 4) !== 0);
   tramL.classList.toggle('manual', (b & 8) !== 0);
+  // Light bar style: the dots sit between the readout and the cells (lightbarSk leaves room).
+  const w = (b & 16) && document.body.classList.contains('lightbar')
+    ? Math.round(2 * (lbHalfW + LB_TRAM_W * hudK) / uiZoom) + 'px' : '';
+  if (tramLightsEl.style.width !== w) tramLightsEl.style.width = w;
 }
 
 // Pass HUD → DOM overlay under the lightbar readout, as AgOpenGPS's DrawTrackInfo: shown
@@ -5355,8 +5402,12 @@ SB.bar.addEventListener('pointerdown', e => e.stopPropagation());
 // Start Fullscreen (#110): browsers only allow fullscreen from a user gesture, so in a
 // plain browser go fullscreen on the first tap after the page loads. The desktop
 // launcher window opens fullscreen itself.
+// In the desktop launcher (Photino) the web view ignores the Fullscreen API: the button asks
+// the launcher over its message channel, which answers with the window's state (#498).
+const inLauncher = !!(window.external && typeof window.external.sendMessage === 'function');
 document.addEventListener('click', function startFs() {
   document.removeEventListener('click', startFs, true);
+  if (inLauncher) return;
   if (!(config && config.display && config.display.startFullscreen)) return;
   if (document.fullscreenElement || document.webkitFullscreenElement) return;
   const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
@@ -5369,6 +5420,7 @@ if (fsBtn) {
   // that pointerdown doesn't reliably grant on Android Chrome (entering took 2–3 taps).
   // exitFullscreen needs no activation, so that always worked first tap.
   fsBtn.addEventListener('click', () => {
+    if (inLauncher) { window.external.sendMessage('fullscreen|toggle'); return; }
     if (fsEl()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
     const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
     if (req) { try { const p = req.call(el); if (p && p.catch) p.catch(() => {}); } catch (_) {} }
@@ -5384,6 +5436,13 @@ if (fsBtn) {
   };
   document.addEventListener('fullscreenchange', sync);
   document.addEventListener('webkitfullscreenchange', sync);
+  if (inLauncher && typeof window.external.receiveMessage === 'function') {
+    // No OS exit pill over a launcher window, so only the icon follows its state.
+    window.external.receiveMessage(m => {
+      if (m === 'fullscreen|1' || m === 'fullscreen|0') fsBtn.textContent = m === 'fullscreen|1' ? '🗗' : '⛶';
+    });
+    window.external.sendMessage('fullscreen|state'); // Start Fullscreen may have opened it so
+  }
 }
 SB.modBtn.addEventListener('pointerdown', e => {
   e.stopPropagation();
@@ -6988,6 +7047,174 @@ const Vt = (() => {
   return { message, image, render };
 })();
 
+// ---- Web cards ----
+// Add-ons' own web pages in cards (Plans/ADDON_WEB_CARDS_PLAN.md), apart from the VT cards. The
+// bookmarks (name + URL) are the host's, the same on every browser; which cards are open, their
+// page, size and place are this browser's (localStorage). {host} in a URL is the AgOpenWeb host
+// as this browser reaches it. The page loads from the add-on itself, on its own origin. A browser
+// without control sees the page under a cover that takes the taps (#397).
+const WebCards = (() => {
+  const tpl = document.getElementById('web-card-tpl'), navBtn = document.getElementById('ln-web');
+  const SIZES = [[480, 320], [640, 420], [800, 520], [1000, 640]], MAX = 4, KEY = 'web.cards';
+  let bookmarks = [], cards = [], shown = false;
+
+  const resolve = url => url.split('{host}').join(location.hostname);
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ shown, cards: cards.map(c => c.state) }));
+    } catch (_) {}
+  }
+
+  function makeCard(state) {
+    const card = tpl.content.firstElementChild.cloneNode(true);
+    const n = cards.length;
+    card.style.top = state.y != null ? state.y + 'px' : 'calc(' + (70 + n * 36) + 'px + var(--sat))';
+    card.style.left = state.x != null ? state.x + 'px' : 'calc(' + (80 + n * 36) + 'px + var(--sal))';
+    tpl.parentNode.insertBefore(card, tpl);
+    wireCardDrag(card);
+    raiseCard(card);
+    const q = s => card.querySelector(s);
+    const pick = q('.web-pick'), frame = q('iframe'), cover = q('.web-cover'), msg = q('.web-msg'), editEl = q('.web-edit');
+    const c = { card, state, editing: false, editIx: null };
+    const applySize = () => {
+      const [w, h] = SIZES[state.size] || SIZES[1];
+      card.style.setProperty('--ww', w + 'px'); card.style.setProperty('--wh', h + 'px');
+    };
+    applySize();
+
+    c.render = () => {
+      // The picker: the bookmarks, the card's page chosen.
+      const opts = [['', tr('Choose a page')]].concat(bookmarks.map(b => [b.url, b.name]));
+      const sig = JSON.stringify(opts);
+      if (pick.dataset.sig !== sig) {
+        pick.dataset.sig = sig; pick.innerHTML = '';
+        for (const [v, t] of opts) { const o = document.createElement('option'); o.value = v; o.textContent = t; pick.appendChild(o); }
+      }
+      pick.value = bookmarks.some(b => b.url === state.url) ? state.url : '';
+      const src = state.url ? resolve(state.url) : '';
+      if (frame.dataset.src !== src) { frame.dataset.src = src; frame.src = src || 'about:blank'; }
+      msg.textContent = !bookmarks.length ? tr('No pages yet. Add one with ⚙.') : tr('Choose a page above.');
+      msg.style.display = state.url ? 'none' : '';
+      cover.classList.toggle('show', !iHoldControl);
+      q('.web-add').style.display = cards.length < MAX ? '' : 'none';
+      q('.web-ext').style.display = state.url ? '' : 'none';
+      if (c.editing && !iHoldControl) c.editing = false;
+      editEl.classList.toggle('show', c.editing);
+      if (c.editing) renderEdit(c, editEl);
+    };
+
+    pick.addEventListener('change', () => { state.url = pick.value; save(); c.render(); });
+    // Another card, a little below and right of this one, so both headers can be reached.
+    q('.web-add').addEventListener('pointerdown', e => {
+      e.preventDefault();
+      const r = zoomRect(card);
+      add({ url: '', size: state.size, x: r.left / uiZoom + 36, y: r.top / uiZoom + 36 });
+    });
+    q('.web-ext').addEventListener('pointerdown', e => { e.preventDefault(); if (state.url) window.open(resolve(state.url), '_blank'); });
+    q('.web-size').addEventListener('pointerdown', e => {
+      e.preventDefault(); state.size = ((state.size | 0) + 1) % SIZES.length; applySize(); save();
+    });
+    q('.web-gear').addEventListener('pointerdown', e => {
+      e.preventDefault();
+      if (!iHoldControl) return; // the bookmarks change for every browser
+      c.editing = !c.editing; c.editIx = null; c.render();
+    });
+    q('.web-x').addEventListener('pointerdown', e => {
+      e.preventDefault();
+      card.remove(); cards = cards.filter(x => x !== c);
+      if (!cards.length) shown = false;
+      save(); render();
+    });
+    // Where the card was dragged to (wireCardDrag sets left/top in the card's own pixels).
+    q('.chart-hdr').addEventListener('pointerup', () => {
+      const x = parseFloat(card.style.left), y = parseFloat(card.style.top);
+      if (Number.isFinite(x) && Number.isFinite(y) && (x !== state.x || y !== state.y)) { state.x = x; state.y = y; save(); }
+    });
+    return c;
+  }
+
+  // The bookmark editor over the card's page: the list, and a form for a new or changed one.
+  function renderEdit(c, el) {
+    el.innerHTML = '';
+    const btn = (text, fn) => {
+      const b = document.createElement('button'); b.textContent = text;
+      b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); fn(); });
+      return b;
+    };
+    bookmarks.forEach((b, i) => {
+      const row = document.createElement('div'); row.className = 'web-row';
+      const t = document.createElement('span'); t.textContent = b.name + ' ';
+      const u = document.createElement('small'); u.textContent = b.url; t.appendChild(u);
+      row.append(t,
+        btn(tr('Edit'), () => { c.editIx = i; c.render(); }),
+        btn(tr('Delete'), () => showConfirm(tr('Delete Bookmark'), tr('Delete "{name}"?', { name: b.name }),
+          () => transport.send('webcard.delete|' + i))));
+      el.appendChild(row);
+    });
+    const editing = c.editIx != null ? bookmarks[c.editIx] : null;
+    const name = document.createElement('input'); name.placeholder = tr('Name'); name.maxLength = 40;
+    const url = document.createElement('input'); url.placeholder = 'http://{host}/'; url.maxLength = 500;
+    url.autocapitalize = 'off'; url.spellcheck = false; url.setAttribute('translate', 'no');
+    if (editing) { name.value = editing.name; url.value = editing.url; }
+    const sub = document.createElement('div'); sub.className = 'web-sub';
+    sub.textContent = tr('{host} is this AgOpenWeb\'s own address, for an add-on on the same computer.');
+    const row = document.createElement('div'); row.className = 'web-row';
+    row.append(
+      btn(editing ? tr('Save') : tr('Add'), () => {
+        if (!name.value.trim() || !url.value.trim()) return;
+        transport.send('webcard.save|' + (editing ? c.editIx : -1) + '\t' + name.value.trim().replace(/\t/g, ' ') + '\t' + url.value.trim());
+        c.editIx = null; name.value = ''; url.value = '';
+        document.activeElement?.blur(); // the list redraws when the host sends it back
+      }),
+      btn(editing ? tr('Cancel') : tr('Done'), () => { if (editing) c.editIx = null; else c.editing = false; c.render(); }));
+    el.append(name, url, sub, row);
+  }
+
+  function add(state) {
+    if (cards.length >= MAX) return;
+    const c = makeCard(state);
+    cards.push(c); shown = true;
+    save(); render();
+  }
+
+  function render() {
+    navBtn.classList.toggle('active', shown && cards.length > 0);
+    for (const c of cards) c.render();
+  }
+
+  function setBookmarks(list) {
+    bookmarks = list;
+    // An editor open on a bookmark that moved or went: back to the list.
+    for (const c of cards) if (c.editIx != null && c.editIx >= list.length) c.editIx = null;
+    for (const c of cards) if (!c.editing || document.activeElement?.closest('.web-edit') !== c.card.querySelector('.web-edit')) c.render();
+  }
+
+  // The nav button: hides every web card when any is open, else brings back the last ones.
+  navBtn.addEventListener('pointerdown', e => {
+    e.preventDefault(); e.stopPropagation();
+    if (shown && cards.length) {
+      shown = false;
+      save(); // kept for the next tap
+      for (const c of cards) c.card.remove();
+      cards = [];
+      render();
+      return;
+    }
+    let last = [];
+    try { last = (JSON.parse(localStorage.getItem(KEY) || '{}').cards) || []; } catch (_) {}
+    if (!last.length) last = [{ url: '', size: 1 }];
+    for (const s of last.slice(0, MAX)) add(s);
+  });
+
+  // Cards that were open when this browser last left.
+  try {
+    const st = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (st.shown) for (const s of (st.cards || []).slice(0, MAX)) add(s);
+  } catch (_) {}
+
+  return { setBookmarks, render };
+})();
+
 // Clock — browser-local 24h HH:MM:SS.
 const clockEl = document.getElementById('clock');
 function tickClock() {
@@ -7655,6 +7882,7 @@ function drawGroundTextureSk(canvas) {
 let skImagery = null, skImageryVer = null, skImageryMult = -1;
 function drawImagerySk(canvas) {
   if (!imageryImg || !imageryRect) return;
+  if (config && config.display && config.display.imageryVisible === false) return; // Screen & Alerts › Aerial Imagery (#500)
   // Quality button: scale the imagery LOD by DisplayResolutionMultiplier so the background
   // degrades with quality like native's Apple composite path (which bakes imagery into the
   // multiplier-sized coverage bitmap). Ultra = full res; lower quality = downsampled (also a
@@ -8089,7 +8317,9 @@ function lightbarSk(canvas) {
   const steerLeft = val > 0; // lights point the way to STEER (native convention)
   const litCol = steerLeft ? '#ff7a3d' : '#39FF6A';
   // Scaled with the HUD (hudK), as the readout beside it, but never wider than the screen allows.
-  const inner0 = (k) => Math.max(40 * k, lbHalfW + 10 * k); // clear of the readout, however wide it is
+  // Clear of the readout and, when shown, the tram dots beside it.
+  const tram = tramLightsEl.classList.contains('show') ? LB_TRAM_W * hudK : 0;
+  const inner0 = (k) => Math.max(40 * k, lbHalfW + tram + 10 * k);
   let k = hudK;
   while (k > 0.5 && inner0(k) + SIDE * (W + GAP) * k > 0.47 * vw) k -= 0.05;
   const inner = inner0(k), w = W * k, h = H * k, g = GAP * k, top = lbCy - h / 2;
