@@ -24,7 +24,7 @@ public static class WireCodec
         ControlState = 6, Hello = 7, Config = 8, Profiles = 9, Wizard = 10, NtripProfiles = 11,
         FieldOps = 12, AgShare = 13, AppInfo = 14, FieldTools = 15, RecordedPath = 16, Boundary = 17,
         Sound = 18, Pong = 19, CoverageEdge = 20, ViewPrefs = 21, Prompt = 22, Toast = 23, DrivePick = 24, HardwareMessage = 25,
-        Vt = 26, VtImage = 27;
+        Vt = 26, VtImage = 27, NtripMountpoints = 28;
 
     /// <summary>One-shot alert: tells the client to play sound effect
     /// <paramref name="effectId"/> (the <c>SoundEffect</c> enum value). Pushed
@@ -250,6 +250,30 @@ public static class WireCodec
         return ms.ToArray();
     }
 
+    // The mount points last asked for in the profile editor: [i32 seq] str for, str status,
+    // [i32 n][ per mount point: str mount, name, format, systems, country, f32 km (NaN = unknown), u8 needs position ].
+    public static byte[] EncodeNtripMountpoints(NtripMountpointsDto d)
+    {
+        using var ms = new MemoryStream();
+        using var w = new BinaryWriter(ms);
+        w.Write(NtripMountpoints);
+        w.Write(d.Seq);
+        WriteStr(w, d.For);
+        WriteStr(w, d.Status);
+        w.Write(d.Items.Count);
+        foreach (var m in d.Items)
+        {
+            WriteStr(w, m.Mount);
+            WriteStr(w, m.Name);
+            WriteStr(w, m.Format);
+            WriteStr(w, m.Systems);
+            WriteStr(w, m.Country);
+            w.Write((float)m.DistanceKm);
+            w.Write((byte)(m.NeedsPosition ? 1 : 0));
+        }
+        return ms.ToArray();
+    }
+
     public static byte[] EncodeNtripProfiles(NtripProfilesDto p)
     {
         using var ms = new MemoryStream();
@@ -269,6 +293,20 @@ public static class WireCodec
             w.Write((byte)(e.IsDefault ? 1 : 0));
             w.Write(e.AssociatedFields.Count);
             foreach (var f in e.AssociatedFields) WriteStr(w, f);
+            // The fallback service (append-only): [u8 present] then str host, i32 port, str mount,
+            // str user, str password (masked), u8 auto-switch, i32 failed attempts before switching.
+            var fb = e.Fallback;
+            w.Write((byte)(fb != null ? 1 : 0));
+            if (fb != null)
+            {
+                WriteStr(w, fb.CasterHost);
+                w.Write(fb.CasterPort);
+                WriteStr(w, fb.MountPoint);
+                WriteStr(w, fb.Username);
+                WriteStr(w, fb.Password);
+                w.Write((byte)(fb.AutoSwitch ? 1 : 0));
+                w.Write(fb.SwitchAfterFailures);
+            }
         }
         w.Write(p.AvailableFields.Count);
         foreach (var f in p.AvailableFields) WriteStr(w, f);
@@ -431,6 +469,7 @@ public static class WireCodec
         // Tab 9 — Display
         w.Write(a.LineWidth); w.Write(a.NudgeDistance); w.Write(a.NextGuidanceTime); w.Write(a.CmPerPixel);
         DB(a.LightbarEnabled); DB(a.SteerBarEnabled); DB(a.GuidanceBarOn);
+        w.Write(a.RefNudgeDistance); // i32 — Ref Nudge panel step, cm
         return ms.ToArray();
     }
 
@@ -568,6 +607,7 @@ public static class WireCodec
         w.Write((byte)(s.ContourLocked ? 1 : 0));
         w.Write(s.GuideLines.Count);                              // #450
         foreach (var line in s.GuideLines) WritePts(w, line);
+        WriteOptPts(w, s.ToolPass);
 
         return ms.ToArray();
     }
@@ -629,6 +669,8 @@ public static class WireCodec
         w.Write((byte)(t.IsYouTurnExecuting ? 1 : 0)); // #50 — mid-turn gate for on-screen buttons
         w.Write(t.PassNumber);       // i32 — guidance pass offset (0 = on reference)
         w.Write((float)t.NudgeOffset); // f32 — driver-relative nudge (m, +right) — #93 readout
+        w.Write((float)t.RefNudgeMoved); // f32 — Ref Nudge panel total (m, +right) — #489
+        w.Write((byte)(t.RefNudgePending ? 1 : 0)); // unsaved reference move
         w.Write((byte)(t.HasGoal ? 1 : 0)); // #95 — PP goal marker
         w.Write(t.GoalE);            // f64
         w.Write(t.GoalN);            // f64
@@ -793,6 +835,26 @@ public static class WireCodec
         w.Write((byte)(s.SendCorrectedPosition ? 1 : 0));
         // Network IO: the subnet the scan came from (append-only, #334).
         WriteStr(w, s.ScanReplySubnet);
+        // NTRIP session (append-only, NTRIP plan Phase 4): [u8 present] then u8 using fallback,
+        // main is back, has fallback, profile per field; u8 state; i32 last error (-1 none);
+        // i32 failed attempts; f32 retry s; str notice.
+        var ns = s.NtripSession;
+        w.Write((byte)(ns != null ? 1 : 0));
+        if (ns != null)
+        {
+            w.Write((byte)(ns.UsingFallback ? 1 : 0));
+            w.Write((byte)(ns.MainIsBack ? 1 : 0));
+            w.Write((byte)(ns.HasFallback ? 1 : 0));
+            w.Write((byte)(ns.ProfilePerField ? 1 : 0));
+            w.Write((byte)ns.State);
+            w.Write(ns.LastError);
+            w.Write(ns.Attempts);
+            w.Write((float)ns.RetryInSeconds);
+            WriteStr(w, ns.Notice);
+            // Append-only: the profile in use ("" for a caster typed in) and the service in use ("MOUNT@host:port").
+            WriteStr(w, ns.Profile);
+            WriteStr(w, ns.Service);
+        }
         // Sprayer readout (append-only): [u8 present] then f32 pressure (bar), f32 flow
         // (L/min), f64 total (L), u8 master, u8 sections, u8 open nozzles, f32 open width (m),
         // f32 expected flow (L/min, NaN = no check), u8 alarms.

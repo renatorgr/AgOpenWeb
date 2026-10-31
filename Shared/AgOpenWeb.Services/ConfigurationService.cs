@@ -520,6 +520,8 @@ public class ConfigurationService(
         store.Connections.RtcmBroadcast = settings.RtcmBroadcast;
         store.Connections.SendCorrectedPosition = settings.SendCorrectedPosition;
         store.Connections.NtripEnabled = settings.NtripEnabled;
+        store.Connections.NtripProfilePerField = settings.NtripProfilePerField;
+        store.Connections.NtripModeNoticeShown = settings.NtripModeNoticeShown;
         store.Connections.GpsUpdateRate = settings.GpsUpdateRate;
         store.Connections.UseRtk = settings.UseRtk;
         store.Connections.IsGpsConfigured = settings.IsGpsConfigured;
@@ -594,6 +596,8 @@ public class ConfigurationService(
         settings.RtcmBroadcast = store.Connections.RtcmBroadcast;
         settings.SendCorrectedPosition = store.Connections.SendCorrectedPosition;
         settings.NtripEnabled = store.Connections.NtripEnabled;
+        settings.NtripProfilePerField = store.Connections.NtripProfilePerField;
+        settings.NtripModeNoticeShown = store.Connections.NtripModeNoticeShown;
         settings.GpsUpdateRate = store.Connections.GpsUpdateRate;
         settings.UseRtk = store.Connections.UseRtk;
         settings.IsGpsConfigured = store.Connections.IsGpsConfigured;
@@ -645,6 +649,36 @@ public class ConfigurationService(
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to save AutoSteer config: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc/>
+    public void SaveAutoSteerDisplaySettings()
+    {
+        try
+        {
+            var path = GetAutoSteerConfigPath(Store.ActiveVehicleProfileName);
+            var a = Store.AutoSteer;
+            var saved = File.Exists(path)
+                ? JsonSerializer.Deserialize<AutoSteerConfigDto>(File.ReadAllText(path))
+                : null;
+            // No file yet: everything as it is now, as a profile save would write it.
+            var dto = (saved ?? a.ToDto()) with
+            {
+                LineWidth = a.LineWidth,
+                NudgeDistance = a.NudgeDistance,
+                RefNudgeDistance = a.RefNudgeDistance,
+                NextGuidanceTime = a.NextGuidanceTime,
+                CmPerPixel = a.CmPerPixel,
+                LightbarEnabled = a.LightbarEnabled,
+                SteerBarEnabled = a.SteerBarEnabled,
+                GuidanceBarOn = a.GuidanceBarOn,
+            };
+            File.WriteAllText(path, JsonSerializer.Serialize(dto, JsonOptions));
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to save AutoSteer display settings: {ex.Message}");
         }
     }
 

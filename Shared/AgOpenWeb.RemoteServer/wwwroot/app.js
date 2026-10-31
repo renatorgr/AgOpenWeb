@@ -76,6 +76,7 @@ let mapIsDay = false;  // day/night theme (mirrors config.display.isDayMode) —
 let profiles = null;   // Vehicle & Tool picker hub: profile lists + active pair
 let profilesDirty = false;
 let ntripProfiles = null; // Network IO: saved NTRIP profiles + associable fields
+let ntripMounts = { seq: 0, forService: '', status: '', items: [] }; // the mount points last asked for in the profile editor
 let ntripDirty = false;
 let fieldOps = null;   // Field Operations: field list + jobs + suggestions + import files
 let fieldOpsDirty = false;
@@ -425,6 +426,7 @@ const transport = RemoteTransport.create({
   onConfig(c) { config = c; configDirty = true; applyTheme(c && c.display && c.display.isDayMode); applyUiScale(c && c.display && c.display.uiScale); },
   onProfiles(p) { profiles = p; profilesDirty = true; },
   onNtripProfiles(p) { ntripProfiles = p; ntripDirty = true; },
+  onNtripMountpoints(m) { ntripMounts = m; renderNtripMounts(); },
   onFieldOps(f) { fieldOps = f; fieldOpsDirty = true; },
   onAgShare(a) { agShare = a; agShareDirty = true; },
   onAppInfo(a) { appInfo = a; appInfoDirty = true; I18n.setLanguage(a.currentLanguage); },
@@ -738,15 +740,14 @@ function ckColor(s) {
   return CK.Color(m[0], m[1], m[2], m.length > 3 ? m[3] : 1);
 }
 // Day/Night theme. CSS chrome flips via [data-theme]; the Skia map (clear + grid) is
-// recoloured here. Grid greys read on dark; dark-blue greys read on the light day field.
+// recoloured here. Grid greys read on dark; dark-blue greys read on the light day field. One grid
+// colour: every line looks the same, as in AgOpenGPS (#496).
 const MAP_CLEAR = { night: '#0f1115', day: '#d7dee7' };
 const GRID_MINOR = { night: 'rgba(180,180,180,0.314)', day: 'rgba(80,92,110,0.33)' };
-const GRID_MAJOR = { night: 'rgba(200,200,200,0.47)', day: 'rgba(60,72,90,0.5)' };
 function applyMapTheme() {
   if (!CK || !SKP) return; // paints not built yet — buildSkPaints() re-applies on init
   const k = mapIsDay ? 'day' : 'night';
   SKP.gridMinor.setColor(ckColor(GRID_MINOR[k]));
-  SKP.gridMajor.setColor(ckColor(GRID_MAJOR[k]));
 }
 // UI size (Screen & Alerts): the controls are zoomed by CSS (--ui-zoom), the map is not.
 // Anything that turns screen pixels into a zoomed element's left/top divides by uiZoom.
@@ -763,6 +764,7 @@ function applyUiScale(pct) {
   document.documentElement.style.setProperty('--ui-zoom', String(z));
   calibrateZoom();
   placeCorner();
+  placeHud();
 }
 function calibrateZoom() {
   const root = document.documentElement.style;
@@ -824,6 +826,37 @@ if (window.ResizeObserver) {
   ro.observe(document.getElementById('bottomstack'));
 }
 addEventListener('resize', placeCorner);
+// Top-centre HUD (#hud-top) and everything docked under the status bar hang from the bar's
+// measured bottom (--bar-bottom): the dev diagnostics row adds 26 px, the UI size zooms the
+// bar, iOS adds the safe area. The HUD scales with the screen height, roughly as AgOpenGPS
+// sizes its light-bar and track text: ×1 up to 540 px, ×1.33 on a 720p screen, at most ×2.
+// The map canvas isn't zoomed, so the light bar's cells (drawn on it) take hudK, the HUD
+// scale times the UI zoom, to match the readout beside them.
+let hudScale = 0, hudBarBottom = -1, hudK = 1;
+function placeHud() {
+  const root = document.documentElement.style;
+  const s = Math.min(2, Math.max(1, innerHeight / 540));
+  if (s !== hudScale) { hudScale = s; root.setProperty('--hud-s', s.toFixed(3)); }
+  hudK = hudScale * uiZoom;
+  let bottom = 0;
+  for (const id of ['statusbar', 'sb-diag']) {
+    const el = document.getElementById(id);
+    if (el) bottom = Math.max(bottom, zoomRect(el).bottom);
+  }
+  if (bottom !== hudBarBottom) {
+    hudBarBottom = bottom;
+    // No bar on screen (not connected yet): keep the CSS default, the bar's usual place.
+    if (bottom > 0) root.setProperty('--bar-bottom', (bottom / uiZoom).toFixed(2) + 'px');
+    else root.removeProperty('--bar-bottom');
+  }
+}
+if (window.ResizeObserver) {
+  const ro = new ResizeObserver(placeHud);
+  ro.observe(document.getElementById('statusbar'));
+  ro.observe(document.getElementById('sb-diag'));
+}
+addEventListener('resize', placeHud);
+placeHud();
 function applyTheme(isDay) {
   mapIsDay = !!isDay;
   document.documentElement.setAttribute('data-theme', mapIsDay ? 'day' : 'night');
@@ -847,13 +880,12 @@ function buildSkPaints() {
     // updateLineWidths() (world metres × pxPerM, like native's world-space strokes).
     boundary: mk('rgba(242,112,89,0.8)', 5), boundaryInner: mk('rgb(245,245,77)', 5), headland: mk('rgb(251,235,107)', 4),
     track: mk('#ffd24a', 4), reference: mk('rgb(180,100,255)', 5, [9, 7]),
-    guidance: mk('rgb(252,86,186)', 5), uturn: mk('rgb(77,242,77)', 5), next: mk('rgb(0,200,200)', 4),
+    guidance: mk('rgb(252,86,186)', 5), guidanceOutline: mk('rgb(0,0,0)', 15), uturn: mk('rgb(77,242,77)', 5), next: mk('rgb(0,200,200)', 4),
     // Extra guidelines (adjacent passes) — native _extraGuidePaint green(51,153,50,153)
     // over a black shadow, both 0.3 m. Widths set per frame in updateLineWidths.
     extraGuide: mk('rgba(51,153,50,0.6)', 1), extraGuideShadow: mk('rgba(0,0,0,0.5)', 1),
-    // Match native (night-mode) grid: grey, ~0.31/0.47 alpha, major ~2× thickness.
-    gridMinor: mk('rgba(180,180,180,0.314)', 1), gridMajor: mk('rgba(200,200,200,0.47)', 2),
-    axisX: mk('rgba(204,51,51,0.275)', 1.5), axisY: mk('rgba(51,204,51,0.275)', 1.5),
+    // Grid: grey, ~0.31 alpha, one line style (#496); its width is set per frame in drawGridSk.
+    gridMinor: mk('rgba(180,180,180,0.314)', 1),
     vehicle: fill('#39FF6A'),
     flagFill: fill('#FF0000'), flagOutline: mk('#101010', 1.5), // colour set per flag
     // Field Builder headland-editor offset lines: yellow = contributes to the closed
@@ -861,6 +893,9 @@ function buildSkPaints() {
     hlEdit: mk('rgba(245,235,90,0.95)', 3), hlEditOff: mk('rgba(232,86,74,0.95)', 3),
     // Tram lines (wheel tracks) — orange, set per frame in drawTramLinesSk.
     tram: mk('rgba(255,140,60,0.9)', 2),
+    // AgOpenGPS's shadow on the current line: where the tool will land. Lighter than its 20 %
+    // grey (shadowAreaGray), with clear edges, so it reads over the aerial image.
+    toolBand: fill('rgba(220,220,220,0.3)'), toolBandEdge: mk('rgba(240,240,240,0.75)', 1.5),
     // Saved recorded paths / contour strips — AgOpenGPS's pale-yellow lines (#110).
     recPath: mk('rgb(250,235,117)', 2), contourStrip: mk('rgb(250,235,107)', 2),
   };
@@ -885,6 +920,14 @@ function buildSkPaints() {
   SKP.lbFill = new CK.Paint();
   SKP.lbFill.setStyle(CK.PaintStyle.Fill);
   SKP.lbFill.setAntiAlias(false);
+  // Steer bar (steerBarSk): its bar and arrows, outlined in black.
+  SKP.sbFill = new CK.Paint();
+  SKP.sbFill.setStyle(CK.PaintStyle.Fill);
+  SKP.sbFill.setAntiAlias(true);
+  SKP.sbLine = new CK.Paint();
+  SKP.sbLine.setStyle(CK.PaintStyle.Stroke);
+  SKP.sbLine.setAntiAlias(true);
+  SKP.sbLine.setStrokeJoin(CK.StrokeJoin.Miter);
   // Vehicle triangle in marker-local px (drawn under canvas translate+rotate).
   skTri = CK.Path.MakeFromSVGString('M 0 -14 L 9 11 L -9 11 Z');
   applyMapTheme(); // sync grid colours if the theme arrived before paints were built
@@ -1251,6 +1294,8 @@ function showConfirm(title, message, onConfirm, onBack) {
 }
 dialogHost.querySelector('.dlg-backdrop').addEventListener('pointerdown', e => {
   e.stopPropagation();
+  // A sticky card (a long list to pick from) stays until it is closed: an outside tap on a screen this size is a slip.
+  if (dialogHost.querySelector('.dlg-card.open.sticky')) return;
   // Backdrop-dismiss of the unsaved-coverage guard must resolve it (= Cancel), else the
   // host stays blocked with its dialog open and the field never closes.
   if (_ucovOpen) { _ucovOpen = false; transport.send('coverage.cancelClose'); }
@@ -1440,9 +1485,10 @@ function llFill(pt) {
 }
 function openLatLonLine(mode) {
   llMode = mode;
-  const ab = mode === 'latLonAB';
-  llEl('ll-title').textContent = ab ? tr('AB Line from Two Points') : tr('AB Line from Point and Heading');
-  llEl('ll-heading-row').hidden = ab;
+  const ab = mode === 'latLonAB', pivot = mode === 'latLonPivot';
+  llEl('ll-title').textContent = pivot ? tr('Water Pivot from its Centre') : ab ? tr('AB Line from Two Points') : tr('AB Line from Point and Heading');
+  llEl('ll-a-label').textContent = pivot ? tr('Centre') : 'A';
+  llEl('ll-heading-row').hidden = ab || pivot;
   llEl('ll-b-row').hidden = !ab;
   for (const id of ['ll-lat-a', 'll-lon-a', 'll-heading', 'll-lat-b', 'll-lon-b']) llEl(id).value = '';
   llEl('ll-err').textContent = '';
@@ -1461,7 +1507,8 @@ llEl('ll-ok').addEventListener('pointerdown', e => {
   const latA = num('ll-lat-a'), lonA = num('ll-lon-a');
   let err = !okLat(latA) || !okLon(lonA) ? tr('Point A needs a latitude (−90 to 90) and longitude (−180 to 180)') : '';
   let cmd = '';
-  if (!err && llMode === 'latLonAB') {
+  if (!err && llMode === 'latLonPivot') cmd = 'track.latLonPivot|' + [latA, lonA].join(',');
+  else if (!err && llMode === 'latLonAB') {
     const latB = num('ll-lat-b'), lonB = num('ll-lon-b');
     if (!okLat(latB) || !okLon(lonB)) err = tr('Point B needs a latitude (−90 to 90) and longitude (−180 to 180)');
     else cmd = 'track.latLonAB|' + [latA, lonA, latB, lonB].join(',');
@@ -1681,7 +1728,56 @@ document.getElementById('flag-deleteall').addEventListener('pointerdown', e => {
   showConfirm(tr('Delete All Flags'), tr('Delete all flags? This cannot be undone.'), () => transport.send('flag.deleteAll'));
 });
 document.getElementById('flag-close').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); closeDialog(); });
-document.getElementById('bn-abmenu').addEventListener('pointerdown', e => { e.stopPropagation(); bnToggleFly(bnAb, e.currentTarget); });
+document.getElementById('bn-abmenu').addEventListener('pointerdown', e => {
+  e.stopPropagation(); bnToggleFly(bnAb, e.currentTarget);
+  populateCfgControls(bnAb, true); // the snap distance
+});
+wireCfgControls(bnAb);
+
+// ---- Ref Nudge panel (#489, AgOpenGPS FormRefNudge) ----
+// Moves the saved line itself (the AB flyout's nudge only offsets the guidance line). The panel
+// stays open: the right nav's track buttons pick the next line, each move is saved by the host
+// at once, Exit closes. The total and the step come from the host (tick.op.refNudgeMoved, the
+// vehicle profile's autosteer.refNudgeDistance); nothing is computed here.
+const refPanel = document.getElementById('refnudge');
+const refMoved = document.getElementById('rf-moved');
+const refName = document.getElementById('rf-name');
+let refNudgeOpen = false;
+function openRefNudge() {
+  refNudgeOpen = true;
+  transport.send('track.refNudgeBegin'); // the total starts at zero
+  refPanel.hidden = false;
+  populateCfgControls(refPanel, true);
+}
+function closeRefNudge() { refNudgeOpen = false; refPanel.hidden = true; }
+document.getElementById('bn-refnudge').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); abFlyoutClose(); openRefNudge(); });
+const refUndo = document.getElementById('rf-undo');
+const refSave = document.getElementById('rf-save');
+let refPending = false; // an unsaved move on the selected line (tick.op.refNudgePending)
+document.getElementById('rf-exit').addEventListener('pointerdown', e => {
+  e.preventDefault(); e.stopPropagation();
+  if (!refPending) { closeRefNudge(); return; }
+  // Leaving would undo the move (the next line takes over): ask, Cancel keeps the panel for Undo.
+  showConfirm(tr('Reference Line Nudge'), tr('Save the moved line before closing?'), () => { transport.send('track.refNudgeSave'); closeRefNudge(); });
+});
+for (const b of refPanel.querySelectorAll('button[data-cmd]'))
+  b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); transport.send(b.dataset.cmd); });
+wireCfgControls(refPanel);
+function renderRefNudge(hasTrack) {
+  const show = refNudgeOpen && hasTrack;
+  if (refPanel.hidden === show) refPanel.hidden = !show;
+  if (!show) return;
+  const m = (tick && tick.op && tick.op.refNudgeMoved) || 0;
+  const amt = Math.round(Math.abs(m) * (isMetric() ? 100 : 39.3701));
+  const text = amt === 0 ? '0' : amt + ' ' + unitLabel('cm') + (m < 0 ? ' L' : ' R');
+  if (refMoved.textContent !== text) refMoved.textContent = text;
+  const name = tick.activeTrackName || '';
+  if (refName.textContent !== name) refName.textContent = name;
+  refPending = !!(tick.op && tick.op.refNudgePending);
+  refUndo.disabled = !refPending;
+  refSave.disabled = !refPending;
+  populateCfgControls(refPanel); // the step; not while it is being typed
+}
 
 // ---- AB-line creation (mirrors native QuickABSelector + DrawAB dialogs) ----
 // All four modes run the REAL native commands on the host (no geometry in JS):
@@ -1704,7 +1800,9 @@ function abHint() {
     case 'straight': return drawPts.length === 0 ? tr('Tap Point A') : tr('Tap Point B');
     case 'curve': return tr('Tap points ({n}) — Finish when done', { n: drawPts.length });
     case 'driveAB': return driveStep === 0 ? tr('Drive to A, then Set Point') : tr('Drive to B, then Set Point');
-    case 'recordCurve': return driveStep === 0 ? tr('Drive to A, then Set Point A') : tr('Drive the curve to B, then Set Point B');
+    case 'recordCurve': return recPivot
+      ? (driveStep === 0 ? tr('Drive onto the pivot track, then Start') : tr('Drive part of the way round the pivot, then Finish'))
+      : (driveStep === 0 ? tr('Drive to A, then Set Point A') : tr('Drive the curve to B, then Set Point B'));
   }
   return '';
 }
@@ -1735,14 +1833,16 @@ function updateAbCursorLabel(x, y) {
 // frame from drawPts (world→screen); cleared when the draw ends. DOM (CanvasKit has no text).
 function renderAbDotLabels() {
   if (!abDotLabelsEl) return;
-  const n = drawPts.length || 0; // letters for map-tap AND Drive-AB markers (drawMode may be null)
+  // Letters for map-tap AND Drive-AB markers (drawMode may be null), else the active line's A/B.
+  const active = activeAbPoints(), pts = drawPts.length ? drawPts : (active || []);
+  const n = pts.length;
   while (abDotLabelsEl.children.length < n) abDotLabelsEl.appendChild(document.createElement('span'));
   for (let i = 0; i < abDotLabelsEl.children.length; i++) {
     const span = abDotLabelsEl.children[i];
-    if (i >= n || pw(drawPts[i].e, drawPts[i].n) < 1.0) { span.style.display = 'none'; continue; }
-    const xy = w2s(drawPts[i].e, drawPts[i].n);
+    if (i >= n || pw(pts[i].e, pts[i].n) < 1.0) { span.style.display = 'none'; continue; }
+    const xy = w2s(pts[i].e, pts[i].n);
     span.textContent = abLetter(i);
-    span.style.color = abLabelColor(i);
+    span.style.color = drawPts.length ? abLabelColor(i) : (i ? ACTIVE_B_COLOR : ACTIVE_A_COLOR);
     span.style.left = xy[0] + 'px';
     span.style.top = xy[1] + 'px';
     span.style.display = 'block';
@@ -1768,12 +1868,15 @@ function startDriveAB() {                  // GPS: set A then B at the vehicle
   document.getElementById('draw-setpoint').textContent = tr('Set Point A');
   hintEl.classList.add('show'); setAbHint();
 }
-function startRecordCurve() {              // GPS: record by driving — Set Start → Set End
-  abFlow = 'recordCurve'; driveStep = 0; curveMarks = []; _lastCurveMark = null;
+// A water pivot is recorded the same way: Start, drive part of the way round, Finish; the host
+// fits the circle (AgOpenGPS adds three points round it by hand).
+let recPivot = false;
+function startRecordCurve(pivot = false) { // GPS: record by driving — Set Start → Set End
+  abFlow = 'recordCurve'; driveStep = 0; curveMarks = []; _lastCurveMark = null; recPivot = pivot;
   // Recording doesn't begin until "Set Start" (deferred track.recordCurve), so the operator
   // can position at the curve's start first. The set-point button drives the two-step.
   showAbBar(true, false, false);
-  document.getElementById('draw-setpoint').textContent = tr('Set Point A');
+  document.getElementById('draw-setpoint').textContent = pivot ? tr('Start') : tr('Set Point A');
   hintEl.classList.add('show'); setAbHint();
 }
 // "Bnd. Curve" — tap point A then point B on the boundary, then pick which way round the
@@ -1831,6 +1934,27 @@ function boundaryArcs(ring, a, b) {
   };
   const sa = at(a), sb = at(b);
   return [walk(a, sa, b, sb), walk(b, sb, a, sa)];
+}
+// A drawn curve as the host will make it: between two taps in a row on the fence it follows
+// the fence the shorter way round (AgOpenGPS FormABDraw); elsewhere it runs from tap to tap.
+function drawnCurvePreview() {
+  const ring = scene && scene.boundaries && scene.boundaries[0];
+  if (!ring || ring.length < 3) return drawPts;
+  const onFence = p => ring.some((a, i) => {
+    const b = ring[(i + 1) % ring.length], dx = b.e - a.e, dn = b.n - a.n, l2 = dx * dx + dn * dn;
+    const t = l2 > 0 ? Math.max(0, Math.min(1, ((p.e - a.e) * dx + (p.n - a.n) * dn) / l2)) : 0;
+    return Math.hypot(a.e + t * dx - p.e, a.n + t * dn - p.n) < 0.01;
+  });
+  const out = [drawPts[0]];
+  for (let i = 1; i < drawPts.length; i++) {
+    const a = drawPts[i - 1], b = drawPts[i];
+    if (onFence(a) && onFence(b)) {
+      const arcs = boundaryArcs(ring, a, b);
+      const run = polyLen(arcs[0]) <= polyLen(arcs[1]) ? arcs[0] : arcs[1].slice().reverse();
+      out.push(...run.slice(1));
+    } else out.push(b);
+  }
+  return out;
 }
 // The chosen way round, drawn while picking (#450).
 function drawBoundaryCurvePreviewSk(canvas) {
@@ -1903,8 +2027,8 @@ function abSetPoint() {                     // Set-point button — drives Drive
   } else if (abFlow === 'recordCurve') {
     if (driveStep > 1) return;              // guard a double-B while B lingers
     if (driveStep === 0) {                  // Set Point A → drop the A endpoint + begin recording
-      transport.send('track.recordCurve');
-      driveStep = 1; btn.textContent = tr('Set Point B');
+      transport.send(recPivot ? 'track.recordPivot' : 'track.recordCurve');
+      driveStep = 1; btn.textContent = recPivot ? tr('Finish') : tr('Set Point B');
       if (tick && tick.pose) {
         drawPts.push(poseEdgePt());                          // labeled "A" endpoint dot (orange)
         _lastCurveMark = { e: tick.pose.e, n: tick.pose.n }; // seed green-dot spacing; no dot at A itself
@@ -2173,7 +2297,8 @@ document.getElementById('dlg-quickab').querySelectorAll('[data-qab]').forEach(b 
       transport.send('track.aPlus' + (v !== '' && isFinite(+v) ? '|' + (+v) : ''));
     }
   }
-  else if (m === 'latLonHeading' || m === 'latLonAB') openLatLonLine(m);
+  else if (m === 'latLonHeading' || m === 'latLonAB' || m === 'latLonPivot') openLatLonLine(m);
+  else if (m === 'recordPivot') startRecordCurve(true);
   else if (m === 'driveAB') startDriveAB();
   else if (m === 'recordCurve') startRecordCurve();
   else if (m === 'boundaryEdge') transport.send('track.createFromBoundary');
@@ -2186,8 +2311,9 @@ document.getElementById('dlg-qab-cancel').addEventListener('pointerdown', e => {
 
 // ---- Tracks manager (mirrors native TracksDialogPanel) ----
 // View-only without control (just reads scene.trackList); the actions are Tier-2.
-// Like AgOpenGPS's track list: tapping a row only highlights it (trkSel); guidance
-// changes when Activate is pressed. Delete / Swap act on the highlighted row (#109).
+// Tapping a row highlights it (trkSel) and makes it the active track at once (#148), where
+// AgOpenGPS waits for Use; Activate on the active track turns guidance off. Delete / Swap act
+// on the highlighted row (#109).
 let trkSel = -1; // index into scene.trackList, or -1
 function openTracksManager() { trkSel = -1; renderTracksList(); openDialog('dlg-tracks'); }
 function renderTracksList() {
@@ -2264,13 +2390,13 @@ document.getElementById('dlg-tracks-close').addEventListener('pointerdown', e =>
 // to ConfigurationStore). Grows one entry per sub-phase.
 // Navigation: top-level buttons open a panel; sub-panels (vehicle/tool config) are
 // reached from the hub and carry a Back button. One panel open at a time.
-const LN_NAV_PANELS = ['screenalerts', 'tools', 'rollcorr', 'fieldtools', 'fieldbuilder', 'offsetfix', 'importtracks', 'recpath', 'boundarymenu', 'boundaryplayer', 'kmlboundary', 'vehtoolhub', 'vehiclecfg', 'toolcfg', 'autosteercfg', 'networkio', 'systemdata', 'ntripprofiles', 'ntripeditor', 'smartwas', 'fieldops', 'fieldsandjobs', 'newfield', 'fromexisting', 'isoimport', 'kmlimport', 'resumejob', 'agsettings', 'agupload', 'agdownload', 'filemenu', 'appsettings', 'language', 'viewsettings', 'logviewer', 'hotkeys', 'help', 'about', 'bugreport'];
+const LN_NAV_PANELS = ['screenalerts', 'tools', 'rollcorr', 'fieldtools', 'fieldbuilder', 'offsetfix', 'importtracks', 'recpath', 'boundarymenu', 'boundaryplayer', 'kmlboundary', 'vehtoolhub', 'vehiclecfg', 'toolcfg', 'autosteercfg', 'networkio', 'ntripsettings', 'systemdata', 'ntripprofiles', 'ntripeditor', 'smartwas', 'fieldops', 'fieldsandjobs', 'newfield', 'fromexisting', 'isoimport', 'kmlimport', 'resumejob', 'agsettings', 'agupload', 'agdownload', 'filemenu', 'appsettings', 'language', 'viewsettings', 'logviewer', 'hotkeys', 'help', 'about', 'bugreport'];
 // Watch-the-tractor panels opt OUT of the light-dismiss scrim — the map must stay
 // interactive (pan/zoom to follow the tractor while capturing). They close only via
 // the header (Back / ✕).
 // The bug report panel too: leave it open while driving and press the button the
 // moment a problem shows, since the dump holds only the last 60 s of GPS data.
-const NO_SCRIM = new Set(['smartwas', 'recpath', 'boundaryplayer', 'fieldbuilder', 'bugreport']);
+const NO_SCRIM = new Set(['smartwas', 'recpath', 'boundaryplayer', 'fieldbuilder', 'bugreport', 'ntripsettings', 'ntripprofiles', 'ntripeditor']);
 const lnScrim = document.getElementById('ln-scrim');
 function lnCloseAll() {
   for (const id of LN_NAV_PANELS) document.getElementById(id).classList.remove('open');
@@ -2488,7 +2614,10 @@ document.getElementById('fb-trk-edit').addEventListener('pointerdown', e => { e.
 document.getElementById('fb-trk-delete').addEventListener('pointerdown', e => {
   e.stopPropagation();
   const tl = scene && scene.trackList; if (fbSel < 0 || !tl || !tl[fbSel] || !iHoldControl) return;
-  transport.send('track.delete|' + tl[fbSel].index); fbSel = -1;
+  const t = tl[fbSel];
+  // Asks first, as the Tracks manager does: a track can't be brought back.
+  showConfirm(tr('Delete Track'), tr("Delete '{name}'? This cannot be undone.", { name: t.name }),
+    () => { transport.send('track.delete|' + t.index); fbSel = -1; });
 });
 document.getElementById('fb-trk-deleteall').addEventListener('pointerdown', e => {
   e.stopPropagation();
@@ -2745,6 +2874,13 @@ for (const b of saPanel.querySelectorAll('.sa-act'))
 // On click, not pointerdown: the panel resizes under the finger once the new size applies.
 for (const b of saPanel.querySelectorAll('.sa-scale'))
   b.addEventListener('click', e => { e.stopPropagation(); cfgSend('display.uiScale', b.dataset.scale); });
+// Guidance bar (#479): the vehicle's AutoSteer settings, not display.*. The style buttons
+// pick one of two; On/Off is apart from them.
+for (const b of saPanel.querySelectorAll('.sa-opt[data-val]'))
+  b.addEventListener('pointerdown', e => { e.stopPropagation(); cfgSend(b.dataset.key, b.dataset.val); });
+const saBarOn = document.getElementById('sa-baron'), saCmpp = document.getElementById('sa-cmpp');
+saBarOn.addEventListener('pointerdown', e => { e.stopPropagation(); cfgSend(saBarOn.dataset.key, saBarOn.classList.contains('active') ? '0' : '1'); });
+saCmpp.addEventListener('change', () => { const v = parseInt(saCmpp.value); if (Number.isFinite(v)) cfgSend('autosteer.cmPerPixel', v); });
 const saExtra = document.getElementById('sa-extracount');
 saExtra.addEventListener('change', () => { const v = parseInt(saExtra.value); if (Number.isFinite(v)) cfgSend('display.extraGuidelinesCount', v); });
 function populateScreenAlerts() {
@@ -2754,6 +2890,13 @@ function populateScreenAlerts() {
   if (document.activeElement !== saExtra) saExtra.value = d.extraGuidelinesCount;
   document.getElementById('sa-quality').textContent = d.resolutionLabel || '—';
   for (const b of saPanel.querySelectorAll('.sa-scale')) b.classList.toggle('active', +b.dataset.scale === (d.uiScale || 100));
+  const a = config.autosteer;
+  if (a) {
+    for (const b of saPanel.querySelectorAll('.sa-opt[data-val]'))
+      b.classList.toggle('active', (b.dataset.val === '1') === !!a.steerBarEnabled);
+    saBarOn.classList.toggle('active', !!a.lightbarEnabled);
+    if (document.activeElement !== saCmpp) saCmpp.value = a.cmPerPixel;
+  }
 }
 // Vehicle config panel — full native VehicleConfigDialog surface (Vehicle/GPS/Roll).
 // Generic config controls keyed by data-key="<section>.<field>"; reused by later
@@ -3175,21 +3318,171 @@ function renderNetworkIo() {
   if (!nioO3.value && document.activeElement !== nioO3) nioO3.value = 5;
   document.getElementById('nio-hostips').textContent = s.hostIps || '—';
   document.getElementById('nio-ntrip-dot').style.background = s.ntripConnected ? '#22c55e' : '#6b7280';
-  document.getElementById('nio-ntrip-status').textContent = !s.ntripEnabled ? tr('Off') : (s.ntripStatus || tr('Not Connected'));
+  document.getElementById('nio-ntrip-status').textContent = ntripHeadline(s);
+  const who = document.getElementById('nio-ntrip-who'), ns0 = s.ntripSession;
+  who.textContent = s.ntripEnabled && ns0 && ns0.state !== 0 ? ntripWho(ns0) : '';
+  who.hidden = !who.textContent;
   document.getElementById('nio-ntrip-bytes').textContent = Math.floor((s.ntripBytes || 0) / 1024).toLocaleString() + ' KB';
   // Where the corrections go: the GPS module's own address, or the subnet broadcast.
   document.getElementById('nio-ntrip-dest').textContent = !s.ntripDestination ? ''
     : s.ntripUnicast ? tr('Corrections go to the GPS module at {ip}', { ip: s.ntripDestination })
     : tr('Corrections are broadcast to {ip}', { ip: s.ntripDestination });
+  const p100 = document.getElementById('nio-pgn100');
+  if (document.activeElement !== p100) p100.checked = !!s.sendCorrectedPosition;
+  renderNtripRx(s);
+  renderNtripSwitch(s);
+  nioSubnetBtn.classList.toggle('disabled', !iHoldControl);
+}
+
+// The NTRIP session (NTRIP plan, Phase 4): a plain headline and what to do about it, the
+// service in use with the switch, the last switch notice, the checks and the mode. state is
+// NtripState (0 stopped, 1 connecting, 2 connected, 3 streaming, 4 waiting, 5 gave up),
+// lastError NtripCategory (1 no network, 2 unreachable, 3 login, 4 mount point, 5 busy,
+// 6 no corrections, 7 stream lost, 8 not understood; -1 none).
+const NT_OPEN = 2, NT_STREAMING = 3, NT_WAITING = 4, NT_GAVE_UP = 5;
+function ntripHeadline(s) {
+  const ns = s.ntripSession;
+  if (!s.ntripEnabled) return tr('Off');
+  if (!ns || ns.state === 0) return s.ntripStatus || tr('Not Connected');
+  if (ns.state === NT_STREAMING) return ns.usingFallback ? tr('Corrections arriving (fallback)') : tr('Corrections arriving');
+  if (ns.state === 1) return tr('Connecting…');
+  if (ns.state === NT_OPEN) return tr('Connected, waiting for corrections');
+  if (ns.lastError < 0) return s.ntripStatus || tr('Not Connected');
+  switch (ns.lastError) {
+    case 3: return tr('Login refused');
+    case 4: return tr('Mount point not found');
+    case 5: return tr('Service is busy');
+    case 2: return tr('Cannot reach the service');
+    case 1: return tr('No network');
+    case 6: return tr('Connected, but no corrections');
+    case 7: return tr('Corrections stopped');
+    default: return tr('Service not understood');
+  }
+}
+function ntripAdvice(s) {
+  const ns = s.ntripSession;
+  if (!s.ntripEnabled || !ns || (ns.state !== NT_WAITING && ns.state !== NT_GAVE_UP)) return '';
+  const again = ns.state === NT_WAITING ? ' ' + tr('Trying again in {n} s.', { n: Math.round(ns.retrySeconds) }) : '';
+  switch (ns.lastError) {
+    case 3: return tr('Check the user name and password.') + ' ' + tr('Some casters also answer like this when the mount point is wrong.') + again;
+    case 4: return tr('Check the mount point. Capitals matter.') + again;
+    case 5: return tr('The service is busy, starting up, or this login is already in use.') + again;
+    case 2: return tr('Check the address and the internet connection.') + again;
+    case 1: return tr('There is no network connection.') + again;
+    case 6: return tr('Some services need the position: check that the GPS has one.') + again;
+    case 7: return tr('The connection dropped.') + again;
+    default: return tr('Check the address, port and mount point.') + again;
+  }
+}
+// What works and what does not, in the order a connection is made.
+function ntripChecks(s) {
+  const ns = s.ntripSession, r = s.ntripRtcm, open = ns.state === NT_OPEN || ns.state === NT_STREAMING, err = ns.lastError;
+  const newest = pred => r ? r.types.filter(x => pred(x.type)).reduce((m, x) => Math.min(m, x.last), Infinity) : Infinity;
+  const obs = newest(rtcmIsObs), base = newest(t => t === 1005 || t === 1006), session = r ? r.sessionSeconds : 0;
+  // Nothing yet is "still waiting" until the stream has run for a while; once there is one, it is late when it is old.
+  const late = (age, soon, old) => Number.isFinite(age) ? age > old : session > soon;
+  const c = (ok, bad, text) => ({ cls: ok ? 'ok' : bad ? 'bad' : 'wait', text });
+  return [
+    c(open, err === 1 || err === 2, open ? tr('Connected to the service') : err === 1 || err === 2 ? tr('Cannot connect to the service') : tr('Connecting to the service')),
+    c(open, err === 3, open ? tr('Logged in') : err === 3 ? tr('Login refused') : tr('Login not checked yet')),
+    c(open, err === 4, open ? tr('Mount point found') : err === 4 ? tr('Mount point not found') : tr('Mount point not checked yet')),
+    c(obs <= 5, open && (err === 6 || err === 7 || late(obs, 10, 10)),
+      obs <= 5 ? tr('Corrections arriving') : open && late(obs, 10, 10) ? tr('No corrections arriving') : tr('Waiting for corrections')),
+    c(base <= 60, open && late(base, 30, 60),
+      base <= 60 ? tr('Base station position received') : open && late(base, 30, 60) ? tr('No base station position') : tr('Waiting for the base station position')),
+    c(Number.isFinite(s.age) && s.age <= 5 && open, open && Number.isFinite(s.age) && s.age > 5,
+      Number.isFinite(s.age) ? tr('Correction age {n} s', { n: s.age.toFixed(0) }) : tr('Correction age unknown')),
+  ];
+}
+// The one switch of the Network IO card, only with a fallback. It always asks first: RTK may be lost.
+function renderNtripSwitch(s) {
+  const ns = s.ntripSession, btn = document.getElementById('nio-svc-switch');
+  btn.hidden = !(s.ntripEnabled && ns && ns.hasFallback);
+  if (btn.hidden) return;
+  btn.textContent = ns.usingFallback ? tr('Switch to main') : tr('Switch to fallback');
+  btn.classList.toggle('disabled', !iHoldControl);
+}
+// The profile and the service in use, as one line: "Home · MOUNT@caster.example:2101".
+const ntripWho = ns => [ns.profile, ns.service].filter(Boolean).join(' · ');
+function renderNtripSession(s) {
+  const ns = s.ntripSession, on = !!s.ntripEnabled && !!ns;
+  const advice = document.getElementById('nio-ntrip-advice');
+  advice.textContent = ntripAdvice(s);
+  advice.hidden = !advice.textContent;
+
+  // Which service is in use (only with a fallback); the switch itself is on the Network IO card.
+  const svcText = document.getElementById('nio-svc-text');
+  const who = on ? ntripWho(ns) : '';
+  svcText.hidden = !(on && (ns.hasFallback || who));
+  if (!svcText.hidden) svcText.textContent = (ns.hasFallback ? (ns.usingFallback ? tr('Using the fallback service') : tr('Using the main service')) + (who ? ': ' : '') : '') + who;
+  const note = document.getElementById('nio-ntrip-notice');
+  const text = ns && ns.mainIsBack && !ns.notice ? tr('The main service answers again.') : (ns ? ns.notice : '');
+  note.hidden = !text;
+  note.textContent = text;
+
+  const box = document.getElementById('nio-checks');
+  const showChecks = on && ns.state !== 0;
+  box.hidden = !showChecks;
+  if (showChecks) {
+    const rows = ntripChecks(s);
+    document.getElementById('nio-checks-sum').textContent = tr('Checks: {ok} of {n} fine', { ok: rows.filter(x => x.cls === 'ok').length, n: rows.length });
+    if (box.open) document.getElementById('nio-checks-rows').innerHTML = rows.map(x =>
+      '<div class="nio-chk-row ' + x.cls + '"><span class="mark">' + (x.cls === 'ok' ? '✓' : x.cls === 'bad' ? '✕' : '…') + '</span><span>' + esc(x.text) + '</span></div>').join('');
+  }
+
+  const mode = ns && ns.profilePerField ? 1 : 0;
+  for (const b of document.querySelectorAll('#nio-mode .cfg-act')) {
+    b.classList.toggle('active', +b.dataset.v === mode);
+    b.classList.toggle('disabled', !iHoldControl);
+  }
+  document.getElementById('nio-mode-hint').textContent = mode
+    ? tr('A loaded field uses its own profile. The fallback service is not used.')
+    : tr('One profile is in use, with its fallback service. Loading a field changes nothing.');
+}
+document.getElementById('nio-checks').addEventListener('toggle', () => { if (statusBar) renderNtripSession(statusBar); });
+document.getElementById('nio-svc-switch').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  const ns = statusBar && statusBar.ntripSession;
+  if (!iHoldControl || !ns) return;
+  const toMain = ns.usingFallback;
+  showConfirm(toMain ? tr('Switch to the main service') : tr('Switch to the fallback service'),
+    tr('GPS may lose RTK and the position may shift a little.') + ' ' + (toMain ? tr('Switch to the main service?') : tr('Switch to the fallback service?')),
+    () => {
+      // The service may have changed while the question was open (an automatic switch): then there is nothing left to do.
+      const now = statusBar && statusBar.ntripSession;
+      if (now && now.usingFallback === toMain) transport.send('ntrip.switch|' + (toMain ? 'main' : 'fallback'));
+    });
+});
+for (const b of document.querySelectorAll('#nio-mode .cfg-act'))
+  b.addEventListener('pointerdown', e => { e.stopPropagation(); if (iHoldControl) cfgSend('conn.ntripProfilePerField', b.dataset.v); });
+
+
+// NTRIP Settings — chain sub-panel of Network IO: the connection in detail, the mode, the options and the
+// profiles. The Network IO card keeps only the first lines and the two buttons.
+const ntsPanel = document.getElementById('ntripsettings');
+function openNtripSettings() { lnOpen('ntripsettings', 'ln-network', renderNtripSettings); }
+document.getElementById('nio-ntset').addEventListener('pointerdown', e => { e.stopPropagation(); openNtripSettings(); });
+document.getElementById('nts-back').addEventListener('pointerdown', e => { e.stopPropagation(); lnOpen('networkio', 'ln-network', renderNetworkIo); });
+document.getElementById('nts-x').addEventListener('pointerdown', e => { e.stopPropagation(); lnCloseAll(); });
+for (const cb of ntsPanel.querySelectorAll('.nio-chk'))
+  cb.addEventListener('change', () => cfgSend(cb.dataset.key, cb.checked ? '1' : '0'));
+function renderNtripSettings() {
+  const s = statusBar; if (!s) return;
+  document.getElementById('nts-dot').style.background = s.ntripConnected ? '#22c55e' : '#6b7280';
+  document.getElementById('nts-status').textContent = ntripHeadline(s);
+  renderNtripSession(s);
+  renderNtripRtcm(s);
   const bc = document.getElementById('nio-rtcm-bc');
   if (document.activeElement !== bc) bc.checked = !!s.rtcmBroadcast;
   const nen = document.getElementById('nio-ntrip-on');
-  if (document.activeElement !== nen) nen.checked = !!s.ntripEnabled;
-  const p100 = document.getElementById('nio-pgn100');
-  if (document.activeElement !== p100) p100.checked = !!s.sendCorrectedPosition;
-  renderNtripRtcm(s);
-  nioSubnetBtn.classList.toggle('disabled', !iHoldControl);
+  nen.textContent = s.ntripEnabled ? tr('NTRIP active') : tr('NTRIP disabled');
+  nen.style.borderColor = s.ntripEnabled ? '#22c55e' : '';
 }
+// Active connects the default profile (even when its auto-connect is off), Disabled drops the connection.
+document.getElementById('nio-ntrip-on').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  if (statusBar) cfgSend('conn.ntripEnabled', statusBar.ntripEnabled ? '0' : '1');
+});
 
 // What the caster is sending (RTCM plan, Phase 5): the receiver's fix and correction age,
 // a plain warning when the base position or the observations are missing, and the message
@@ -3229,13 +3522,18 @@ function ntripRtcmWarning(r) {
   if (base > 60) return tr('No base position received for {n} s.', { n: Math.round(base) });
   return '';
 }
-function renderNtripRtcm(s) {
+// The receiver's fix and the age of its corrections: the line of the Network IO card.
+function renderNtripRx(s) {
   const r = s.ntripConnected ? s.ntripRtcm : null;
-  const rx = document.getElementById('nio-ntrip-rx'), warn = document.getElementById('nio-ntrip-warn');
-  const box = document.getElementById('nio-rtcm');
-  box.hidden = !r;
+  const rx = document.getElementById('nio-ntrip-rx');
   rx.textContent = r ? tr('Receiver: {fix}, correction age {age} s', { fix: s.fixText || '—', age: Number.isFinite(s.age) ? s.age.toFixed(0) : '—' }) : '';
   rx.classList.toggle('nio-aged', !!r && s.age > 5);
+}
+function renderNtripRtcm(s) {
+  const r = s.ntripConnected ? s.ntripRtcm : null;
+  const warn = document.getElementById('nio-ntrip-warn');
+  const box = document.getElementById('nio-rtcm');
+  box.hidden = !r;
   const w = r ? ntripRtcmWarning(r) : '';
   warn.hidden = !w;
   warn.textContent = w;
@@ -3321,7 +3619,7 @@ function renderSystemData() {
 // Back reopens the parent fly-out (Network IO); Close → map.
 let ntSelId = null;
 function openNtripProfiles() { lnOpen('ntripprofiles', 'ln-network', renderNtripList); }
-document.getElementById('nt-back').addEventListener('pointerdown', e => { e.stopPropagation(); lnOpen('networkio', 'ln-network', renderNetworkIo); });
+document.getElementById('nt-back').addEventListener('pointerdown', e => { e.stopPropagation(); openNtripSettings(); });
 document.getElementById('nt-x').addEventListener('pointerdown', e => { e.stopPropagation(); lnCloseAll(); });
 document.getElementById('nt-add').addEventListener('pointerdown', e => { e.stopPropagation(); openNtripEditor(null); });
 document.getElementById('nt-edit').addEventListener('pointerdown', e => { e.stopPropagation(); const p = selectedNtProfile(); if (p) openNtripEditor(p); });
@@ -3332,6 +3630,24 @@ document.getElementById('nt-del').addEventListener('pointerdown', e => {
 });
 document.getElementById('nt-default').addEventListener('pointerdown', e => {
   e.stopPropagation(); const p = selectedNtProfile(); if (p) transport.send('ntrip.setDefault|' + p.id);
+});
+let _ntripUseKey = '';
+// The profile the client is connected with: by its name, which the host sends with the session.
+function ntripProfileInUse(p) {
+  const s = statusBar, ns = s && s.ntripSession;
+  return !!(s && s.ntripEnabled && ns && ns.state !== 0 && ns.profile && ns.profile === p.name);
+}
+// Use: connect with the selected profile now. It asks first when a session is running: RTK may be lost.
+document.getElementById('nt-use').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  const p = selectedNtProfile(), s = statusBar;
+  if (!p || !iHoldControl) return;
+  if (!s || !s.ntripEnabled) { showToast(tr('NTRIP is disabled. Switch it on in NTRIP Settings first.')); return; }
+  if (ntripProfileInUse(p)) return;
+  const go = () => transport.send('ntrip.use|' + p.id);
+  const ns = s.ntripSession;
+  if (ns && ns.state !== 0) showConfirm(tr('Use this profile'), tr('GPS may lose RTK and the position may shift a little.') + ' ' + tr('Connect with {name}?', { name: p.name }), go);
+  else go();
 });
 function selectedNtProfile() { return (ntripProfiles && ntripProfiles.profiles.find(p => p.id === ntSelId)) || null; }
 function renderNtripList() {
@@ -3345,8 +3661,18 @@ function renderNtripList() {
     row.innerHTML = '<div><div class="nt-name"></div><div class="nt-mount"></div></div>'
       + '<div class="nt-caster"></div><div class="nt-def">' + (p.isDefault ? '★' : '') + '</div>';
     row.querySelector('.nt-name').textContent = p.name;
-    row.querySelector('.nt-mount').textContent = p.mountPoint;
-    row.querySelector('.nt-caster').textContent = p.casterHost;
+    const inUse = ntripProfileInUse(p);
+    row.querySelector('.nt-mount').textContent = p.mountPoint + (inUse ? ' · ' + tr('in use') : '');
+    if (inUse) row.querySelector('.nt-name').style.color = '#22c55e';
+    // With a fallback the column names both services; without one it is just the caster.
+    const caster = row.querySelector('.nt-caster');
+    const fbHost = p.fallback && p.fallback.host;
+    for (const [label, host] of fbHost ? [[tr('Main:') + ' ', p.casterHost], [tr('FB:') + ' ', fbHost]] : [['', p.casterHost]]) {
+      const line = document.createElement('div');
+      line.textContent = label + host;
+      line.title = line.textContent;
+      caster.appendChild(line);
+    }
     row.addEventListener('pointerdown', ev => { ev.stopPropagation(); ntSelId = p.id; renderNtripList(); });
     list.appendChild(row);
   }
@@ -3355,7 +3681,7 @@ function renderNtripList() {
 // Edit NTRIP Profile — chain sub-panel of the profiles list (mirrors
 // NtripProfileEditorPanel). Opening REPLACES the list; Back reopens the list; Close →
 // map; Save returns to the list (native NavigateBack). Client-side buffer.
-let nteBuf = null, _nteTestActive = false;
+let nteBuf = null, _nteTestActive = false, _nteTestWhich = '';   // which Test button ran: '' main, 'fb' fallback
 function openNtripEditor(p) {
   nteBuf = p
     ? { id: p.id, associatedFields: (p.associatedFields || []).slice() }
@@ -3369,8 +3695,18 @@ function openNtripEditor(p) {
   document.getElementById('nte-pass').value = p ? p.password : '';
   document.getElementById('nte-auto').checked = p ? !!p.autoConnect : true;
   document.getElementById('nte-default').checked = p ? !!p.isDefault : false;
+  const fb = p && p.fallback;
+  document.getElementById('nte-fb-host').value = fb ? fb.host : '';
+  document.getElementById('nte-fb-port').value = fb ? fb.port : 2101;
+  document.getElementById('nte-fb-mount').value = fb ? fb.mount : '';
+  document.getElementById('nte-fb-user').value = fb ? fb.username : '';
+  document.getElementById('nte-fb-pass').value = fb ? fb.password : '';
+  document.getElementById('nte-fb-auto').checked = fb ? !!fb.autoSwitch : false;
+  document.getElementById('nte-fb-after').value = fb ? fb.after : 2;
   document.getElementById('nte-teststatus').textContent = '';
+  document.getElementById('nte-fb-teststatus').textContent = '';
   _nteTestActive = false;
+  _nteTestWhich = '';
   lnOpen('ntripeditor', 'ln-network', renderNteFields);
 }
 document.getElementById('nte-back').addEventListener('pointerdown', e => { e.stopPropagation(); openNtripProfiles(); });
@@ -3392,6 +3728,65 @@ function renderNteFields() {
     box.appendChild(lbl);
   }
 }
+// Find mount points — the host reads the caster's source table and sends it nearest first; a tap fills the
+// Mount field of the main service or the fallback.
+let _ntmFor = '';
+function findMounts(fb) {
+  const p = fb ? 'nte-fb-' : 'nte-';
+  const host = document.getElementById(p + 'host').value.trim();
+  const port = document.getElementById(p + 'port').value || '2101';
+  const user = document.getElementById(p + 'user').value, pass = document.getElementById(p + 'pass').value;
+  _ntmFor = fb ? 'fallback' : 'main';
+  document.getElementById('ntm-filter').value = '';
+  if (!host) {
+    ntripMounts = { seq: 0, forService: _ntmFor, status: 'error:' + tr('Error: Caster host is required'), items: [] };
+  } else {
+    ntripMounts = { seq: ntripMounts.seq, forService: _ntmFor, status: 'loading', items: [] };
+    // pass is the host's mask for a stored password; the id lets the host use that one (#397)
+    transport.send('ntrip.mountpoints|' + [host, port, user, pass, (nteBuf && nteBuf.id) || '', fb ? '1' : '0'].join('\t'));
+  }
+  renderNtripMounts();
+  openDialog('dlg-ntmounts');
+}
+function renderNtripMounts() {
+  const card = document.getElementById('dlg-ntmounts');
+  if (!card.classList.contains('open') || ntripMounts.forService !== _ntmFor) return;
+  const loading = ntripMounts.status === 'loading';
+  const filter = document.getElementById('ntm-filter').value.trim().toLowerCase();
+  const items = ntripMounts.items.filter(m => !filter || (m.mount + ' ' + m.name + ' ' + m.country).toLowerCase().includes(filter));
+  const MAX_ROWS = 200;   // a big network has over a thousand: the nearest first, the rest through the search
+  const shown = items.slice(0, MAX_ROWS);
+  const partial = ntripMounts.status === 'partial';   // the list is shown all the same
+  const count = items.length > MAX_ROWS ? tr('{n} mount points, showing {m}. Search to narrow it down.', { n: items.length, m: MAX_ROWS })
+    : tr('{n} mount points', { n: items.length });
+  document.getElementById('ntm-status').textContent = loading ? tr('Loading...')
+    : partial ? count + ' ' + tr('Only part of the list arrived.')
+    : ntripMounts.status.startsWith('error:') ? ntripMounts.status.slice(6)   // the caster's own reason, as the host worded it
+    : count;
+  const list = document.getElementById('ntm-list');
+  list.innerHTML = '';
+  for (const m of shown) {
+    const row = document.createElement('button');
+    row.className = 'ntm-row';
+    const km = Number.isFinite(m.km) ? (m.km < 10 ? m.km.toFixed(1) : Math.round(m.km)) + ' km' : '';
+    row.innerHTML = '<span class="ntm-top"><span class="ntm-mount" translate="no"></span><span class="ntm-km" translate="no"></span></span><span class="ntm-sub"></span>';
+    row.querySelector('.ntm-mount').textContent = m.mount;
+    row.querySelector('.ntm-km').textContent = km;
+    row.querySelector('.ntm-sub').textContent = [m.name, m.format, m.systems, m.country, m.needsPosition ? tr('needs your position') : ''].filter(Boolean).join(' · ');
+    row.addEventListener('pointerdown', e => {
+      e.stopPropagation();
+      document.getElementById(_ntmFor === 'fallback' ? 'nte-fb-mount' : 'nte-mount').value = m.mount;
+      closeNtripMounts();
+    });
+    list.appendChild(row);
+  }
+}
+document.getElementById('ntm-filter').addEventListener('input', renderNtripMounts);
+// Closing the list also tells the host to drop it: it is not kept, and a client that connects later is not sent it.
+function closeNtripMounts() { closeDialog(); transport.send('ntrip.mountpoints.clear'); }
+document.getElementById('ntm-close').addEventListener('pointerdown', e => { e.stopPropagation(); closeNtripMounts(); });
+document.getElementById('nte-find').addEventListener('pointerdown', e => { e.stopPropagation(); findMounts(false); });
+document.getElementById('nte-fb-find').addEventListener('pointerdown', e => { e.stopPropagation(); findMounts(true); });
 document.getElementById('nte-test').addEventListener('pointerdown', e => {
   e.stopPropagation();
   const host = document.getElementById('nte-host').value.trim();
@@ -3402,9 +3797,26 @@ document.getElementById('nte-test').addEventListener('pointerdown', e => {
   if (!host) { st.textContent = tr('Error: Caster host is required'); return; }
   if (!mount) { st.textContent = tr('Error: Mount point is required'); return; }
   _nteTestActive = true;
+  _nteTestWhich = '';
+  for (const id of ['nte-teststatus', 'nte-fb-teststatus']) document.getElementById(id).textContent = '';
   st.textContent = tr('Testing connection...');
   // pass is the host's mask for a stored password; the id lets the host use that one (#397)
-  transport.send('ntrip.test|' + [host, port, mount, user, pass, (nteBuf && nteBuf.id) || ''].join('\t'));
+  transport.send('ntrip.test|' + [host, port, mount, user, pass, (nteBuf && nteBuf.id) || '', '0'].join('\t'));
+});
+document.getElementById('nte-fb-test').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  const host = document.getElementById('nte-fb-host').value.trim();
+  const port = document.getElementById('nte-fb-port').value || '2101';
+  const mount = document.getElementById('nte-fb-mount').value.trim();
+  const user = document.getElementById('nte-fb-user').value, pass = document.getElementById('nte-fb-pass').value;
+  const st = document.getElementById('nte-fb-teststatus');
+  if (!host) { st.textContent = tr('Error: Caster host is required'); return; }
+  if (!mount) { st.textContent = tr('Error: Mount point is required'); return; }
+  _nteTestActive = true;
+  _nteTestWhich = 'fb';
+  for (const id of ['nte-teststatus', 'nte-fb-teststatus']) document.getElementById(id).textContent = '';
+  st.textContent = tr('Testing connection...');
+  transport.send('ntrip.test|' + [host, port, mount, user, pass, (nteBuf && nteBuf.id) || '', '1'].join('\t'));
 });
 document.getElementById('nte-save').addEventListener('pointerdown', e => {
   e.stopPropagation();
@@ -3420,6 +3832,15 @@ document.getElementById('nte-save').addEventListener('pointerdown', e => {
     document.getElementById('nte-auto').checked ? '1' : '0',
     document.getElementById('nte-default').checked ? '1' : '0',
     nteBuf.associatedFields.join(','),
+    // The fallback service; no host means none (the host removes it).
+    document.getElementById('nte-fb-host').value.trim() ? '1' : '0',
+    document.getElementById('nte-fb-host').value.trim(),
+    document.getElementById('nte-fb-port').value || '2101',
+    document.getElementById('nte-fb-mount').value.trim(),
+    document.getElementById('nte-fb-user').value,
+    document.getElementById('nte-fb-pass').value,
+    document.getElementById('nte-fb-auto').checked ? '1' : '0',
+    document.getElementById('nte-fb-after').value || '2',
   ];
   transport.send('ntrip.save|' + fields.join('\t'));
   openNtripProfiles(); // native SaveNtripProfileCommand ends in NavigateBack → list
@@ -4220,10 +4641,14 @@ function renderSettings() {
   if (profilesDirty) { profilesDirty = false; if (document.getElementById('vehtoolhub').classList.contains('open')) refreshHub(); }
   // Network IO panel: module/NTRIP readouts ride the Status frame → refresh each frame.
   if (nioPanel.classList.contains('open')) renderNetworkIo();
+  if (ntsPanel.classList.contains('open')) renderNtripSettings();
   if (sdPanel.classList.contains('open')) renderSystemData();
+  // The profile list marks the one in use: redrawn only when that changes, not on every frame.
+  const useKey = ntripProfiles ? ntripProfiles.profiles.map(ntripProfileInUse).join() : '';
+  if (useKey !== _ntripUseKey) { _ntripUseKey = useKey; if (document.getElementById('ntripprofiles').classList.contains('open')) renderNtripList(); }
   // NTRIP test result rides the Status frame while a test is in flight.
   if (_nteTestActive && document.getElementById('ntripeditor').classList.contains('open') && statusBar)
-    document.getElementById('nte-teststatus').textContent = statusBar.ntripTestStatus || '';
+    document.getElementById(_nteTestWhich === 'fb' ? 'nte-fb-teststatus' : 'nte-teststatus').textContent = statusBar.ntripTestStatus || '';
   // Re-read the NTRIP list/editor fields when a fresh profiles frame arrives.
   if (ntripDirty) {
     ntripDirty = false;
@@ -4728,30 +5153,46 @@ const lbEl = document.getElementById('lb');
 // Arrow + text as two spans, so the arrow can take the colour of the lit cells.
 const lbArrow = lbEl.appendChild(document.createElement('span'));
 const lbText = lbEl.appendChild(document.createElement('span'));
+// Light bar style: AgOpenGPS's small yellow figure, a slow average of the error that shows
+// while it stays under 15 cm. Beside the distance, not under it: the pass HUD is there.
+const lbAvg = lbEl.appendChild(document.createElement('span'));
+lbAvg.className = 'lb-avg';
+let lbAvgTick = null, lbAvgM = 0.15;
+let lbHalfW = 0; // half the readout's width, for the light bar's cells either side of it
+let lbCy = 70, steerCy = 84; // screen y of the readout row's and the steer bar slot's centres
+let lbSteerH = -1;
+const lbSteer = document.getElementById('lb-steer');
 const LB_LEFT = '#ff7a3d', LB_RIGHT = '#39FF6A'; // as lightbarSk: steer left / steer right, on line
 function updateLightbarText() {
   const cfg = config && config.autosteer;
-  if (!tick || !tick.guidanceActive || !cfg || !cfg.guidanceBarOn) { lbEl.style.display = 'none'; return; }
-  // AgOpenGPS: "Light bar" is on/off, "Steer bar" picks the style. In light-bar style the
-  // distance text shows even with the bar off; in steer-bar style it all goes (#111).
-  if (cfg.steerBarEnabled && !cfg.lightbarEnabled) { lbEl.style.display = 'none'; return; }
-  if (cfg.steerBarEnabled) {
-    // Steer bar: steer-angle error (deg) with dead-zone.
-    let err = tick.steerAngleError || 0;
-    const dz = (tick.op && tick.op.autoSteer) ? 0.5 : 0.2;
-    if (Math.abs(err) < dz) err = 0;
-    lbArrow.textContent = err === 0 ? '' : err > 0 ? '◀ ' : '▶ ';
-    lbArrow.style.color = err > 0 ? LB_LEFT : LB_RIGHT;
-    lbText.textContent = err === 0 ? '> 0 <' : `${Math.abs(err).toFixed(1)}°`;
-  } else {
-    // Light bar: cross-track distance.
-    const xte = tick.crossTrackError || 0;
-    const onLine = Math.abs(xte) < 0.05;
-    lbArrow.textContent = (onLine ? '●' : xte > 0 ? '◀' : '▶') + ' '; // arrow = steer direction
-    lbArrow.style.color = !onLine && xte > 0 ? LB_LEFT : LB_RIGHT;
-    lbText.textContent = fmtUnit(Math.abs(xte) * 100, 'cm', 0);
+  // AgOpenGPS: On/Off shows or hides the bar, whatever its style; light bar or steer bar
+  // is the style, and both show the distance from the line here (#479).
+  const shown = !!(tick && tick.guidanceActive && cfg && cfg.guidanceBarOn && cfg.lightbarEnabled);
+  document.body.classList.toggle('steerbar', shown && !!cfg.steerBarEnabled);
+  document.body.classList.toggle('lightbar', shown && !cfg.steerBarEnabled);
+  // The steer bar is drawn into #lb-steer's slot under the readout; open it only for that style.
+  const steerH = shown && cfg.steerBarEnabled ? Math.round(24 * hudScale) : 0;
+  if (steerH !== lbSteerH) { lbSteerH = steerH; lbSteer.style.height = steerH + 'px'; }
+  if (!shown) { lbEl.style.display = 'none'; lbAvgTick = null; lbAvgM = 0.15; return; }
+  const xte = tick.crossTrackError || 0;
+  const onLine = Math.abs(xte) < 0.05;
+  lbArrow.textContent = (onLine ? '●' : xte > 0 ? '◀' : '▶') + ' '; // arrow = steer direction
+  lbArrow.style.color = !onLine && xte > 0 ? LB_LEFT : LB_RIGHT;
+  lbText.textContent = fmtUnit(Math.abs(xte) * 100, 'cm', 0);
+  if (cfg.steerBarEnabled) lbAvg.style.display = 'none';
+  else {
+    // Once per tick (AgOpenGPS: once per GPS fix), not per frame.
+    if (tick !== lbAvgTick) { lbAvgTick = tick; lbAvgM = Math.min(lbAvgM * 0.98 + Math.abs(xte) * 0.02, 0.15); }
+    lbAvg.textContent = fmtUnit(lbAvgM * 100, 'cm', 1);
+    lbAvg.style.display = lbAvgM < 0.15 ? 'inline' : 'none';
   }
   lbEl.style.display = 'block';
+  // Screen pixels (the canvas isn't zoomed): the readout's half width and its row's centre, for
+  // the light bar's cells; the steer bar's slot centre.
+  lbHalfW = (zoomRect(lbArrow).width + zoomRect(lbText).width + (lbAvg.style.display === 'none' ? 0 : zoomRect(lbAvg).width + 10 * hudK)) / 2;
+  const row = zoomRect(lbEl);
+  lbCy = row.top + row.height / 2;
+  if (steerH) { const st = zoomRect(lbSteer); steerCy = st.top + st.height / 2; }
 }
 
 // Tram lights (#451): AgOpenGPS's two dots, left and right of the light bar. The host sends
@@ -4771,15 +5212,20 @@ function updateTramLights() {
 }
 
 // Pass HUD → DOM overlay under the lightbar readout, as AgOpenGPS's DrawTrackInfo: shown
-// with any track, whatever the Light bar / Steer bar settings. The reference line is the
-// edge between two passes (PassGeometry), so each side counts from 1: pass 0 is "1R" (first
-// pass right of A→B), pass −1 is "1L". The side is fixed in the field, whichever way you drive.
+// with any track, whatever the Light bar / Steer bar settings. The host's label is an arrow
+// for the way you drive (↑ A→B, ↓ B→A) and the pass: the reference line is the edge between
+// two passes (PassGeometry), so each side counts from 1: pass 0 is "1R" (first pass right of
+// A→B), pass −1 is "1L". The side is fixed in the field, whichever way you drive. A nudge
+// follows, with its side as the nudge window shows it: "<12 cm" left, "12 cm>" right.
 const passHud = document.getElementById('pass-hud');
 function updatePassHud() {
   // No passes on a contour (#110).
   if (!tick || !tick.guidanceActive || !tick.op || tick.op.contour) { passHud.style.display = 'none'; return; }
   const pass = tick.op.passNumber | 0;
-  const label = pass >= 0 ? `${pass + 1}R` : `${-pass}L`;
+  const nudgeM = tick.op.nudgeOffset || 0;
+  const nudge = Math.round(Math.abs(nudgeM) * (isMetric() ? 100 : 39.3701));
+  const nudgeText = nudge === 0 ? '' : nudgeM < 0 ? ` <${nudge} ${unitLabel('cm')}` : ` ${nudge} ${unitLabel('cm')}>`;
+  const label = (tick.lineLabel || (pass >= 0 ? `${pass + 1}R` : `${-pass}L`)) + nudgeText;
   if (passHud.textContent !== label) passHud.textContent = label;
   passHud.style.display = 'block';
 }
@@ -5306,10 +5752,11 @@ function renderBottomNav() {
   applyOnScreenButtons(); // U-Turn / Lateral glyphs follow field-open + display toggles
   const visible = !!(scene && scene.hasField); // native gate: IsFieldOpen
   bottomNav.classList.toggle('open', visible);
-  if (!visible) { bnFlags.classList.remove('open'); bnAb.classList.remove('open'); return; }
+  if (!visible) { bnFlags.classList.remove('open'); bnAb.classList.remove('open'); renderRefNudge(false); return; }
   // AB-line-dependent buttons appear only with an active track.
   const hasTrack = !!(tick && tick.activeTrackName);
   for (const el of bottomNav.querySelectorAll('.bn-abdep')) el.classList.toggle('hide', !hasTrack);
+  renderRefNudge(hasTrack);
   const t = (tick && tick.tools) || {};
   document.getElementById('bn-skipnum').textContent = t.skipRows || 0;
   // Nudge readout (#93): driver-relative offset, cm (metric) / in (imperial), L/R side.
@@ -6550,9 +6997,9 @@ function tickClock() {
 }
 setInterval(tickClock, 1000); tickClock();
 
-// Reference grid + origin axes (procedural, client-side — no wire). Spacing is a
-// tool-width multiple on a 1-2-5 series keyed to zoom, matching the native grid
-// (#417). Axes through the field origin (local 0,0): X (N=0) red, Y (E=0) green.
+// Reference grid (procedural, client-side — no wire). Spacing is a tool-width multiple on a
+// 1-2-5 series keyed to zoom, matching the native grid (#417). One line style, 1 px wide at any
+// zoom, no major lines and no coloured axes, as AgOpenGPS (#496).
 // Matches native NiceStep125 exactly: ≤1 → 1, then 2, 5, 10, 20 … (no 1.5 step).
 function niceStep125(x) {
   if (x <= 1) return 1;
@@ -6789,6 +7236,61 @@ function drawAbDrawPreviewSk(canvas) {
     canvas.drawCircle(xy[0], xy[1], rad, SKP.flagOutline);
   }
 }
+// AgOpenGPS's shadow on the current line (CABLine.DrawABLines): the tool's width along the pass
+// shown, so you see where the tool will land. The host sends the pass's centre (the tool offset
+// already in it); on a curve it follows the pass, corners rounded as the tractor drives them. One
+// path of quads along it, skipping any behind the camera, so a tilted view draws no ghost.
+function drawToolBandSk(canvas) {
+  const c = scene && scene.toolPass;
+  const w = toolWidthM();
+  if (!c || c.length < 2 || w < 0.1 || !(tick && tick.guidanceActive)) return;
+  let pts = extendAbLine(c);
+  if (pts.length === 2) {                  // a straight line: pieces, so the far ones can be skipped
+    const [a, b] = pts, len = Math.hypot(b.e - a.e, b.n - a.n), k = Math.max(1, Math.ceil(len / 20));
+    pts = Array.from({ length: k + 1 }, (_, i) => ({ e: a.e + (b.e - a.e) * i / k, n: a.n + (b.n - a.n) * i / k }));
+  }
+  const n = pts.length, half = w / 2, L = new Array(n), R = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+    const dx = b.e - a.e, dy = b.n - a.n, len = Math.hypot(dx, dy) || 1;
+    const re = dy / len, rn = -dx / len;   // right of the way the line runs
+    L[i] = { e: pts[i].e - re * half, n: pts[i].n - rn * half };
+    R[i] = { e: pts[i].e + re * half, n: pts[i].n + rn * half };
+  }
+  const cmds = [];
+  for (let i = 0; i + 1 < n; i++) {
+    const q = [L[i], L[i + 1], R[i + 1], R[i]];
+    if (q.some(p => pw(p.e, p.n) < 1.0)) continue; // behind the camera
+    q.forEach((p, k) => { const xy = w2s(p.e, p.n); cmds.push(k ? CK.LINE_VERB : CK.MOVE_VERB, xy[0], xy[1]); });
+    cmds.push(CK.CLOSE_VERB);
+  }
+  if (cmds.length) {
+    const path = CK.Path.MakeFromCmds(cmds);
+    if (path) { canvas.drawPath(path, SKP.toolBand); path.delete(); }
+  }
+  strokePtsSk(canvas, L, false, SKP.toolBandEdge);
+  strokePtsSk(canvas, R, false, SKP.toolBandEdge);
+}
+// The active line's A and B, as AgOpenGPS marks them: a red A and a cyan B at its ends (labels
+// in renderAbDotLabels), so you see which way A→B runs. Not while a line is being made.
+const ACTIVE_A_COLOR = 'rgb(242,0,0)', ACTIVE_B_COLOR = 'rgb(0,230,242)'; // CABLine pointARed / pointBCyan
+function activeAbPoints() {
+  if (drawPts.length || abFlow || !scene || !scene.tracks || !scene.tracks.length) return null;
+  const p = scene.tracks[0].points;
+  return p && p.length >= 2 ? [p[0], p[p.length - 1]] : null;
+}
+function drawActiveAbPointsSk(canvas) {
+  const ab = activeAbPoints();
+  if (!ab) return;
+  const rad = Math.max(4, 0.4 * pxPerM);
+  ab.forEach((p, i) => {
+    if (pw(p.e, p.n) < 1.0) return;
+    const xy = w2s(p.e, p.n);
+    SKP.flagFill.setColor(ckColor(i ? ACTIVE_B_COLOR : ACTIVE_A_COLOR));
+    canvas.drawCircle(xy[0], xy[1], rad, SKP.flagFill);
+    canvas.drawCircle(xy[0], xy[1], rad, SKP.flagOutline);
+  });
+}
 // Tram lines (wheel tracks) generated from the tram systems. Drawn when the tram display is
 // on (bottom-nav tram mode > 0) or while the Field Builder Tram tab is open (so you see the
 // effect of edits). Orange polylines; the host owns the geometry.
@@ -6836,7 +7338,7 @@ function drawHeadlandDrawSk(canvas) {
 // finish/cancel. Cyan line through the points + an outlined dot at each.
 function drawDrawingSk(canvas) {
   if (!drawMode || !drawPts.length) return;
-  if (drawPts.length >= 2) strokePtsSk(canvas, drawPts, false, SKP.track);
+  if (drawPts.length >= 2) strokePtsSk(canvas, abFlow === 'curve' ? drawnCurvePreview() : drawPts, false, SKP.track);
   const rad = Math.max(4, 0.5 * pxPerM);
   SKP.flagFill.setColor(ckColor('#40E0FF'));
   for (const p of drawPts) {
@@ -6870,29 +7372,22 @@ function drawGridSk(canvas) {
   const toolW = toolWidthM() || 1; // no tool width: plain metres
   // Spacing = tool-width × NiceStep125(viewSpan / (toolW·30)) — same as native.
   const spacing = toolW * niceStep125(Math.max(vw, vh) / pxPerM / (toolW * 30));
-  const major = k => k % 10 === 0 ? SKP.gridMajor : SKP.gridMinor;
-  const gm = 6; // gridMult = BaseStrokeMult 3 × GridExtraStrokeMult 2
 
   // Draw in WORLD coords under the perspective matrix so Skia GPU-clips at the near
   // plane. (Per-vertex screen projection garbles any line crossing behind a tilted
-  // camera.) Stroke widths in world metres (native: 0.3 px floor + 0.05 m floor).
-  const wpp = 1 / pxPerM;
-  SKP.gridMinor.setStrokeWidth(Math.max(0.3 * wpp, 0.05) * gm);
-  SKP.gridMajor.setStrokeWidth(Math.max(0.6 * wpp, 0.1) * gm);
-  SKP.axisX.setStrokeWidth(Math.max(0.9 * wpp, 0.15) * gm);
-  SKP.axisY.setStrokeWidth(Math.max(0.9 * wpp, 0.15) * gm);
+  // camera.) Every line is 1 CSS px wide at any zoom, as AgOpenGPS's 1 px grid: the width is one
+  // pixel in world metres (1 / pxPerM), with no metre floor, so zooming in doesn't thicken it (#496).
+  SKP.gridMinor.setStrokeWidth(1 / pxPerM);
   canvas.save();
   canvas.concat(perspM);
-  const line = (e1, n1, e2, n2, paint) => {
+  const line = (e1, n1, e2, n2) => {
     const c = clipNear(e1, n1, e2, n2); // returns WORLD coords
-    if (c) canvas.drawLine(c[0] - camE, c[1] - camN, c[2] - camE, c[3] - camN, paint); // camera-relative
+    if (c) canvas.drawLine(c[0] - camE, c[1] - camN, c[2] - camE, c[3] - camN, SKP.gridMinor); // camera-relative
   };
   for (let k = Math.ceil(minE / spacing); k * spacing <= maxE; k++)
-    line(k * spacing, minN, k * spacing, maxN, major(k));
+    line(k * spacing, minN, k * spacing, maxN);
   for (let k = Math.ceil(minN / spacing); k * spacing <= maxN; k++)
-    line(minE, k * spacing, maxE, k * spacing, major(k));
-  if (0 >= minE && 0 <= maxE) line(0, minN, 0, maxN, SKP.axisY);
-  if (0 >= minN && 0 <= maxN) line(minE, 0, maxE, 0, SKP.axisX);
+    line(minE, k * spacing, maxE, k * spacing);
   canvas.restore();
 }
 // Implement hitch line: yellow line from the vehicle hitch pivot to the tool, drawn
@@ -6977,6 +7472,7 @@ function updateLineWidths() {
   SKP.boundaryInner.setStrokeWidth(wb(3.0)); // boundaryInner 1 × 3
   SKP.headland.setStrokeWidth(w(3.0));   // headland 1 × 3
   SKP.guidance.setStrokeWidth(w(1.5));   // trackActive 0.5 × 3
+  SKP.guidanceOutline.setStrokeWidth(w(1.5) * 3); // AgOpenGPS draws the current line over black, 3 × its width
   SKP.reference.setStrokeWidth(w(0.9));  // trackBaseDash 0.3 × 3
   SKP.next.setStrokeWidth(w(1.2));       // trackNext 0.4 × 3
   SKP.uturn.setStrokeWidth(w(3.0));      // youTurn 1 × 3
@@ -7577,43 +8073,75 @@ function toolFootprintSk(canvas) {
 // bundled), so here we draw only the LEDs. Drawn in CSS px
 // (under renderSkia's scale(dpr)), so it must run before canvas.restore().
 function lightbarSk(canvas) {
-  // GuidanceBarOn is the master; SteerBarEnabled picks the mode (steer-angle error vs
-  // cross-track). Mirrors the native LightBarPanel.
+  // The Light bar / Steer bar style picks what's drawn (AgOpenGPS isLightBarNotSteerBar);
+  // On/Off hides either (isLightbarOn, #479). GuidanceBarOn has no control and stays on.
   const cfg = config && config.autosteer;
   if (!tick || !tick.guidanceActive || !cfg || !cfg.guidanceBarOn) return;
-  if (!cfg.lightbarEnabled) return; // the Light bar toggle (AgOpenGPS isLightbarOn, #111)
-  const SEG = 15, W = 18, H = 16, GAP = 4;
-  const mid = (SEG - 1) / 2;
-  const steerMode = !!cfg.steerBarEnabled;
-  let val, PER, onThresh;
-  if (steerMode) {
-    val = tick.steerAngleError || 0;                          // actual − commanded (deg)
-    const dz = (tick.op && tick.op.autoSteer) ? 0.5 : 0.2;    // AgOpen dead-zone
-    if (Math.abs(val) < dz) val = 0;
-    PER = 12 / mid; onThresh = dz;                            // ±12° full deflection
-  } else {
-    // AutoSteer › cm per pixel (AgOpenGPS lightbarCmPerPixel): cm of XTE per lit cell (#110).
-    const cpp = Math.max(1, (cfg.cmPerPixel | 0) || 5);
-    val = tick.crossTrackError || 0; PER = cpp / 100; onThresh = 0.05; // + = right of line
-  }
-  const totalW = SEG * (W + GAP) - GAP;
-  const x0 = (vw - totalW) / 2, top = 54; // below the top status bar
-  const lit = Math.min(Math.round(Math.abs(val) / PER), mid);
-  const onLine = Math.abs(val) < onThresh;
+  if (!cfg.lightbarEnabled) return;
+  if (cfg.steerBarEnabled) { steerBarSk(canvas, steerCy); return; } // in #lb-steer, under the readout
+  // As AgOpenGPS: the cells either side of the readout, on its row (body.lightbar #lb), lit
+  // outwards from it on the side to steer. No centre cell: the readout's ● is on the line.
+  const SIDE = 7, W = 18, H = 16, GAP = 4;
+  // AutoSteer › cm per pixel (AgOpenGPS lightbarCmPerPixel): cm of XTE per lit cell (#110).
+  const cpp = Math.max(1, (cfg.cmPerPixel | 0) || 5);
+  const val = tick.crossTrackError || 0, PER = cpp / 100; // + = right of line
+  const lit = Math.min(Math.round(Math.abs(val) / PER), SIDE);
   const steerLeft = val > 0; // lights point the way to STEER (native convention)
   const litCol = steerLeft ? '#ff7a3d' : '#39FF6A';
+  // Scaled with the HUD (hudK), as the readout beside it, but never wider than the screen allows.
+  const inner0 = (k) => Math.max(40 * k, lbHalfW + 10 * k); // clear of the readout, however wide it is
+  let k = hudK;
+  while (k > 0.5 && inner0(k) + SIDE * (W + GAP) * k > 0.47 * vw) k -= 0.05;
+  const inner = inner0(k), w = W * k, h = H * k, g = GAP * k, top = lbCy - h / 2;
   const p = SKP.lbFill;
-  for (let i = 0; i < SEG; i++) {
-    const idx = i - mid;
-    const x = x0 + i * (W + GAP);
-    let on = false, col = '#1c2230';
-    if (idx === 0) { on = onLine; col = on ? '#39FF6A' : '#2a3550'; }
-    else if (steerLeft ? (idx < 0 && -idx <= lit) : (idx > 0 && idx <= lit)) { on = true; col = litCol; }
-    p.setColor(ckColor(on ? col : '#1c2230'));
-    canvas.drawRect(CK.XYWHRect(x, top, W, H), p);
+  for (let i = 1; i <= SIDE; i++) {
+    const off = inner + (i - 1) * (w + g);
+    for (const left of [true, false]) {
+      const on = left === steerLeft && i <= lit;
+      p.setColor(ckColor(on ? litCol : '#1c2230'));
+      canvas.drawRect(CK.XYWHRect(left ? vw / 2 - off - w : vw / 2 + off, top, w, h), p);
+    }
   }
-  // No arrow here: the readout under the strip (updateLightbarText) carries it, and one
-  // drawn here sat on top of that text (#219).
+}
+// Steer bar (AgOpenGPS DrawSteerBarText): the steer angle error (actual − commanded) as a
+// yellow bar from the centre, its length the error (up to 12°), lying on the side away from
+// the turn; an olive arrow at the centre and a green one at the bar's end point the way to
+// turn the wheel. Nothing inside the dead zone (0.2°, 0.5° under AutoSteer); smaller and at
+// half strength under AutoSteer.
+function steerBarSk(canvas, cy) {
+  const auto = !!(tick.op && tick.op.autoSteer);
+  const err = tick.steerAngleError || 0;
+  if (Math.abs(err) < (auto ? 0.5 : 0.2)) return;
+  const k = hudK;                                // HUD scale × UI zoom, as the light bar
+  const spacing = Math.max(28, vw / 50);
+  const cx = vw / 2;
+  const turn = err > 0 ? -1 : 1;                 // + error: turn left (as the light bar)
+  const endX = cx - turn * (Math.min(Math.abs(err), 12) * spacing + 35 * k);
+  // AgOpenGPS's shapes, sized to the light bar's strip so the readout under it stays clear.
+  const half = (auto ? 7 : 10) * k;                    // arrow half-height
+  const point = half + 14 * k;                       // arrow length (AgOpenGPS offset + pointy)
+  const a = auto ? 0.5 : 1;
+  const f = SKP.sbFill, l = SKP.sbLine;
+  // The bar: black under yellow.
+  l.setStrokeCap(CK.StrokeCap.Butt);
+  for (const [w, col] of [[(auto ? 5 : 9) * k, `rgba(0,0,0,${a})`], [(auto ? 3 : 6) * k, `rgba(242,251,102,${a})`]]) {
+    l.setStrokeWidth(w); l.setColor(ckColor(col));
+    canvas.drawLine(cx, cy, endX, cy, l);
+  }
+  l.setStrokeWidth(2); l.setColor(ckColor(`rgba(0,0,0,${a})`));
+  for (const [x, col] of [[endX, `rgba(0,252,0,${a})`], [cx, `rgba(201,201,0,${a})`]]) {
+    const path = CK.Path.MakeFromCmds([
+      CK.MOVE_VERB, x, cy - half,
+      CK.LINE_VERB, x + turn * point, cy,
+      CK.LINE_VERB, x, cy + half,
+      CK.CLOSE_VERB,
+    ]);
+    if (!path) continue;
+    f.setColor(ckColor(col));
+    canvas.drawPath(path, f);
+    canvas.drawPath(path, l);
+    path.delete();
+  }
 }
 function renderSkia(canvas, rp) {
   canvas.clear(ckColor(mapIsDay ? MAP_CLEAR.day : MAP_CLEAR.night));
@@ -7644,13 +8172,19 @@ function renderSkia(canvas, rp) {
     // (PassGeometry), so pass 0 lies half a width from it; only a track driven on the line
     // itself (boundary-follow) puts the magenta guidance on top of it, and then just the one
     // line shows. Matches the host's baseTrack = (display track is the reference) ? null : track.
+    drawToolBandSk(canvas); // where the tool will land, under the lines
     const _onRef = scene.guidanceLine && scene.tracks.some(t => onPolyline(scene.guidanceLine, t.points));
     if (!_onRef) for (const tr of scene.tracks)
       strokePtsSk(canvas, extendAbLine(tr.points), false, SKP.reference);
     // Magenta current pass, extended across the field. The host's DisplayLine is only ~track
     // length (a 2-point offset AB); extendAbLine spans it full-field, so an offset pass isn't a
     // short stub. Curves are >2 points and already host-extended, so they pass through unchanged.
-    if (scene.guidanceLine) strokePtsSk(canvas, extendAbLine(scene.guidanceLine), false, SKP.guidance);
+    if (scene.guidanceLine) {
+      const gl = extendAbLine(scene.guidanceLine);
+      strokePtsSk(canvas, gl, false, SKP.guidanceOutline);
+      strokePtsSk(canvas, gl, false, SKP.guidance);
+    }
+    drawActiveAbPointsSk(canvas);
     drawFlagsSk(canvas, scene.flags);
   }
   drawRecordingMarkersSk(canvas); // live recorded-path dots (independent of the Scene)
