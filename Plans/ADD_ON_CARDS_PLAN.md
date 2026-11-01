@@ -27,7 +27,7 @@ the pane. No web pages in a VT card, no VT screens in a web card.
 | # | Question | Decision |
 |---|---|---|
 | 1 | How AgOpenWeb learns about an add-on | A **list of bookmarks** (name + URL) kept on the host (`AppSettings.WebCards`), the same on every browser. Discovery later (§7). |
-| 2 | How a card picks its page | A card opens on its last page or empty; its header has a picker listing the bookmarks, ＋ (another card), ↗ (open in the system browser), ⤢, ⚙ (edit the bookmarks), ✕. |
+| 2 | How a card picks its page | A card opens on its last page or empty; its header has a picker listing the bookmarks, the page's zoom (67 to 150 %, the page laid out at 1/zoom of the card and scaled to fit, per page), ＋ (another card), ↗ (open in the system browser), ⤢, ⚙ (edit the bookmarks), ✕. |
 | 3 | An add-on on the AgOpenWeb box itself | `{host}` in a URL is the AgOpenWeb host as this browser reaches it (`location.hostname`), so `http://{host}/` works from the tablet and from the launcher alike. |
 | 4 | Proxying through AgOpenWeb | **No.** The page loads from the add-on, on its own origin. A proxy would put the add-on on AgOpenWeb's origin (its page could then script AgOpenWeb's and send commands), needs WebSocket proxying, and breaks pages that build URLs from their own host (the HAT's do). |
 | 5 | Observers (#397) | AgOpenWeb can't see inside another site's page, so a browser without control gets a cover over it: the page shows live, taps do nothing. The VT cards follow the same rule. |
@@ -109,7 +109,7 @@ a split layout the pane is a **drawer**.
 |---|---|---|
 | Web card bookmarks | Host, `AppSettings.WebCards` | the same list on every browser, kept with the install, not the vehicle |
 | VT gateway / adapter, number of terminals | Host, `AppSettings` | the implement bus is the host's |
-| Which cards are open, their page, size and place | Each browser (`localStorage`) | a tablet and a PC lay out their screens differently |
+| Which cards are open, their page, size and place; each page's zoom | Each browser (`localStorage`; the zoom in `web.zoom`) | a tablet and a PC lay out their screens differently |
 | Layout, pane width, drawer position | Each browser (`localStorage`, `cards.pane`) | the same |
 
 ## 5. Done
