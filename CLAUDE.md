@@ -390,8 +390,9 @@ one stack per process.
 from a bookmark list kept on the host (`AppSettings.WebCards`, `webcard.save` / `webcard.delete`,
 the `WebCards` frame); `{host}` in a URL is the AgOpenWeb host as the browser reaches it. The page
 loads from the add-on on its own origin, never through AgOpenWeb; observers get a cover over it.
-Which cards are open, and where, is the browser's (`localStorage`). `WebCards` in `js/web-cards.js`; plan:
-`Plans/ADD_ON_CARDS_PLAN.md`.
+Which cards are open, where, and each page's zoom are the browser's (`localStorage`); the zoom lays
+the page out at 1/zoom of the card and scales it to fit, so a page shows more or bigger with nothing
+done by the add-on. `WebCards` in `js/web-cards.js`; plan: `Plans/ADD_ON_CARDS_PLAN.md`.
 
 **Card pane** (#456): Screen & Alerts › VT & Web Cards sets Floating (the default), Left or Right,
 per browser. In a split layout the open VT and web cards sit in a pane on that side, two to a
