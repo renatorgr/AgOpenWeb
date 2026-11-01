@@ -315,8 +315,9 @@ body.maptap #ck { cursor: crosshair; }
 #sprayerbar .spr-val b { font-size: 16px; }
 #sprayerbar .spr-val b.on-target { color: #39FF6A; }
 #sprayerbar .spr-val b.off-target { color: #ffb74d; }
-:root[data-theme="day"] #sprayerbar .spr-val b.on-target { color: #17803a; }
-:root[data-theme="day"] #sprayerbar .spr-val b.off-target { color: #b45309; }
+/* Darker for the light day theme; not on the red alarm strip, which keeps them white. */
+:root[data-theme="day"] #sprayerbar:not(.alarm) .spr-val b.on-target { color: #17803a; }
+:root[data-theme="day"] #sprayerbar:not(.alarm) .spr-val b.off-target { color: #b45309; }
 #sprayerbar.alarm .spr-val b.on-target, #sprayerbar.alarm .spr-val b.off-target { color: inherit; }
 /* One small square per section, in the section buttons' colours (SECTION_COLORS). */
 #sprayerbar .spr-cells { display: flex; gap: 3px; }
@@ -329,7 +330,7 @@ body.maptap #ck { cursor: crosshair; }
 /* A section the module doesn't follow (app asks on, module reports closed, or the reverse). */
 #sprayerbar .spr-warn { color: #ffb74d; font: 700 13px system-ui, sans-serif; }
 #sprayerbar .spr-warn:empty { display: none; }
-:root[data-theme="day"] #sprayerbar .spr-warn { color: #b45309; }
+:root[data-theme="day"] #sprayerbar:not(.alarm) .spr-warn { color: #b45309; }
 #sprayerbar.alarm .spr-warn { color: inherit; }
 #sprayerbar .spr-msg { font: 700 13px system-ui, sans-serif; }
 #sprayerbar .spr-note { color: var(--text-muted); font: 600 11px system-ui, sans-serif; }
