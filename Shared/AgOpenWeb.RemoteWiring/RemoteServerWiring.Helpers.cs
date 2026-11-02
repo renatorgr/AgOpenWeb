@@ -759,8 +759,10 @@ public static partial class RemoteServerWiring
     // The web cards' "Search the network": one at a time, a new press while one runs is ignored.
     private static int _webScanSeq, _webScanRunning;
 
-    // Asks the host's own networks for web pages off the UI thread (WebPageScanner) and puts what it
-    // found in the state, for the bookmark editor to offer.
+    // Asks the host's own networks for web pages off the UI thread and puts what it found in the state,
+    // for the bookmark editor to offer: first the pages that announce themselves by mDNS (MdnsHttpBrowser,
+    // about a second, listed at once while the search goes on), then every address of the host's networks
+    // (WebPageScanner), for the pages that announce nothing; a page found both ways is listed once.
     private static async Task ScanWebPagesAsync(IUiDispatcher dispatcher,
         AgOpenWeb.Models.State.ApplicationState state, AgOpenWeb.Services.Interfaces.ILocalNetworkInfoProvider net)
     {
@@ -773,17 +775,32 @@ public static partial class RemoteServerWiring
             string nets = string.Join(", ", networks);
             state.Connections.WebPageScan = new AgOpenWeb.Models.WebPageScan(seq, "searching", nets, []);
             var own = new HashSet<System.Net.IPAddress>(local.Select(a => a.Address));
-            List<AgOpenWeb.Models.FoundWebPage> pages;
+            var pages = new List<AgOpenWeb.Models.FoundWebPage>();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             try
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                pages = await Task.Run(() => AgOpenWeb.Services.Network.WebPageScanner.ScanAsync(targets, own, cts.Token));
+                pages = await AgOpenWeb.Services.Network.MdnsHttpBrowser.BrowseAsync(local, own, cts.Token);
+                if (pages.Count > 0)
+                {
+                    var announced = pages;
+                    dispatcher.Post(() => state.Connections.WebPageScan = new AgOpenWeb.Models.WebPageScan(seq, "searching", nets, announced));
+                }
             }
             catch (Exception)
             {
                 pages = [];
             }
-            dispatcher.Post(() => state.Connections.WebPageScan = new AgOpenWeb.Models.WebPageScan(seq, "done", nets, pages));
+            try
+            {
+                var swept = await Task.Run(() => AgOpenWeb.Services.Network.WebPageScanner.ScanAsync(targets, own, cts.Token));
+                pages = AgOpenWeb.Services.Network.WebPageScanner.Merge(pages, swept);
+            }
+            catch (Exception)
+            {
+                // what mDNS found stays
+            }
+            var found = pages;
+            dispatcher.Post(() => state.Connections.WebPageScan = new AgOpenWeb.Models.WebPageScan(seq, "done", nets, found));
         }
         finally
         {

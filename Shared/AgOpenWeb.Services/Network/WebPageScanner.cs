@@ -116,6 +116,22 @@ public static class WebPageScanner
         return Encoding.UTF8.GetString(buf, 0, n);
     }
 
+    /// <summary>
+    /// The pages of both halves of the search in one list: <paramref name="announced"/> (what mDNS found, with
+    /// the names the pages' makers gave them, <see cref="MdnsHttpBrowser"/>) and then the pages of the sweep
+    /// not listed yet; a page is the same when its URL is, with or without the final slash.
+    /// </summary>
+    public static List<FoundWebPage> Merge(IReadOnlyList<FoundWebPage> announced, IEnumerable<FoundWebPage> swept)
+    {
+        var list = new List<FoundWebPage>(announced);
+        var seen = new HashSet<string>(announced.Select(p => Key(p.Url)), StringComparer.OrdinalIgnoreCase);
+        foreach (var p in swept)
+            if (seen.Add(Key(p.Url))) list.Add(p);
+        return list;
+    }
+
+    private static string Key(string url) => url.Trim().TrimEnd('/');
+
     /// <summary>A page's title as a bookmark name: entities decoded, spaces collapsed, at most
     /// <see cref="WebCardBookmarks.MaxName"/> characters; "" when it has none.</summary>
     public static string TitleOf(string html)
