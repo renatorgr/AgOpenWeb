@@ -216,12 +216,16 @@ window.RemoteTransport = {
               state: u8(), lastError: i32(), attempts: i32(), retrySeconds: f32(), notice: str(), profile: str(), service: str() };
           }
           // Sprayer readout (append-only): PGN 160 from the machine module; null until heard.
-          // alarms = SprayerAlarms bits; expectedFlowLpm NaN = no flow check.
+          // alarms = SprayerAlarms bits; expectedFlowLpm NaN = no flow check. moduleChecks: the
+          // module checks the sprayer itself (PGN 161); rateLha, targetLha, pressureNeededBar,
+          // minPressureBar, maxPressureBar are then its values (NaN = none).
           let sprayer = null;
           if (u8()) {
             const f64 = () => { const v = dv.getFloat64(o, true); o += 8; return v; };
             sprayer = { pressureBar: f32(), flowLpm: f32(), totalLitres: f64(), masterOn: !!u8(), sections: u8(),
-                        openNozzles: u8(), openWidthM: f32(), expectedFlowLpm: f32(), alarms: u8() };
+                        openNozzles: u8(), openWidthM: f32(), expectedFlowLpm: f32(), alarms: u8(),
+                        moduleChecks: !!u8(), rateLha: f32(), targetLha: f32(), pressureNeededBar: f32(),
+                        minPressureBar: f32(), maxPressureBar: f32() };
           }
           handlers.onStatusBar && handlers.onStatusBar({
             fixQuality, fixText, age, sats, isMetric,

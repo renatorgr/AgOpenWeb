@@ -11,20 +11,29 @@ using AgOpenWeb.Services.Interfaces;
 namespace AgOpenWeb.Services.Sprayer;
 
 /// <summary>
-/// Sprayer readout from the machine module (renatorgr Pulverizador_Nano).
+/// Sprayer readout from the machine module (renatorgr Sprayer_ESP32, before it Pulverizador_Nano).
 ///
 /// <list type="bullet">
 /// <item><b>PGN 160 (0xA0)</b> from the machine module (source 123) once a second:
 /// { 0x80, 0x81, 123, 0xA0, 10, pressure cbar u16, flow cL/min u16, total dL u32,
 /// master u8, sections u8, CRC }.</item>
+/// <item><b>PGN 161 (0xA1)</b> right after it, from a module that checks the sprayer itself
+/// (Sprayer_ESP32 0.10 and newer): ISOBUS Process Data Messages, 8 bytes each { command (low
+/// 4 bits, 3 = value) + element bits 0-3, element bits 4-11, DDI u16, value i32 }, see
+/// <see cref="TryParseProcessData"/>.</item>
 /// </list>
 ///
-/// The expected flow is the nozzles of the open sections times one nozzle's flow, scaled
-/// to the measured pressure (flow grows with the square root of the pressure). A section's
-/// nozzles are its width (Tool tab) over the nozzle spacing (Machine tab). An alarm counts
-/// once its condition has held for <see cref="ConfirmMessages"/> messages in a row, and the
-/// flow check waits as long again after the sections change, while the valves open and the
-/// flow meter catches up.
+/// Without PGN 161 the app checks the sprayer with the Machine tab's settings: the expected
+/// flow is the nozzles of the open sections times one nozzle's flow, scaled to the measured
+/// pressure (flow grows with the square root of the pressure). A section's nozzles are its
+/// width (Tool tab) over the nozzle spacing (Machine tab). An alarm counts once its condition
+/// has held for <see cref="ConfirmMessages"/> messages in a row, and the flow check waits as
+/// long again after the sections change, while the valves open and the flow meter catches up.
+///
+/// With PGN 161 carrying the module's alarms (DDI 57344), the module does those checks with
+/// its own settings (target rate, nozzles, pressure limits, flow tolerance, set on its page),
+/// and the app shows the module's rate, target, pressure for the target and alarms, and sounds
+/// the alarms. The Machine tab's sprayer settings are then not used.
 /// </summary>
 public sealed class SprayerService : ISprayerService
 {
@@ -43,6 +52,17 @@ public sealed class SprayerService : ISprayerService
     /// <summary>Flow below this counts as none, L/min (the flow meter's noise).</summary>
     public const double NoFlowLpm = 0.5;
 
+    /// <summary>The DDIs read from PGN 161 (ISO 11783-11 data dictionary; 57344 is in the
+    /// proprietary range).</summary>
+    public const ushort DdiSetpointRate = 1, DdiActualRate = 2, DdiActualFlow = 37,
+        DdiWorkState = 141, DdiCondensedWorkState = 161, DdiSetpointPressure = 193,
+        DdiActualPressure = 194, DdiMinPressure = 195, DdiMaxPressure = 196,
+        DdiTotalVolumeMl = 351, DdiSprayerAlarms = 57344;
+
+    /// <summary>The alarm bits a module may report (NoData is the app's own).</summary>
+    private const SprayerAlarms ModuleAlarmBits = SprayerAlarms.PressureLow | SprayerAlarms.PressureHigh
+        | SprayerAlarms.FlowLow | SprayerAlarms.FlowHigh | SprayerAlarms.FlowSectionsOff;
+
     private readonly ConfigurationStore _config;
     private readonly IAudioService _audio;
     private readonly object _lock = new();
@@ -54,6 +74,8 @@ public sealed class SprayerService : ISprayerService
     private readonly int[] _held = new int[5];   // messages in a row per condition (bits 0–4)
     private SprayerAlarms _alarms;
     private DateTime _lastSound;
+    private DateTime _lastProcessData;  // default = never; only messages with the module's alarms count
+    private SprayerProcessData _module;
 
     public SprayerService(IUdpCommunicationService udp, ConfigurationStore config, IAudioService audio)
     {
@@ -69,15 +91,42 @@ public sealed class SprayerService : ISprayerService
             lock (_lock)
             {
                 if (_lastMessage == default) return null;
-                return Clock.Current.Now - _lastMessage < NoDataTimeout
-                    ? _status
-                    : _status with { Alarms = _status.Alarms | SprayerAlarms.NoData };
+                DateTime now = Clock.Current.Now;
+                var s = _status;
+                if (ModuleChecks(now))
+                {
+                    s = s with
+                    {
+                        ModuleChecks = true,
+                        RateLha = _module.RateLha,
+                        TargetLha = _module.TargetLha,
+                        PressureNeededBar = _module.PressureNeededBar,
+                        MinPressureBar = _module.MinPressureBar,
+                        MaxPressureBar = _module.MaxPressureBar,
+                        Alarms = _module.Alarms ?? SprayerAlarms.None,
+                        // The Machine tab's nozzles are not this sprayer's: no app-side expected flow.
+                        OpenNozzles = 0,
+                        ExpectedFlowLpm = double.NaN,
+                    };
+                }
+                return now - _lastMessage < NoDataTimeout
+                    ? s
+                    : s with { Alarms = s.Alarms | SprayerAlarms.NoData };
             }
         }
     }
 
+    /// <summary>A PGN 161 with the module's alarms came in the last <see cref="NoDataTimeout"/>.</summary>
+    private bool ModuleChecks(DateTime now) =>
+        _lastProcessData != default && now - _lastProcessData < NoDataTimeout;
+
     private void OnUdpDataReceived(object? sender, UdpDataReceivedEventArgs e)
     {
+        if (e.PGN == PgnNumbers.SPRAYER_PROCESS_DATA)
+        {
+            OnProcessData(e.Data);
+            return;
+        }
         if (e.PGN != PgnNumbers.SPRAYER_DATA) return;
         if (!TryParse(e.Data, out double pressure, out double flow, out double total, out bool master, out int sections))
             return;
@@ -87,6 +136,21 @@ public sealed class SprayerService : ISprayerService
             DateTime now = Clock.Current.Now;
             _lastMessage = now;
             var m = _config.Machine;
+
+            if (ModuleChecks(now))
+            {
+                // The module checks the sprayer itself (PGN 161): only the width of the open
+                // sections here, from the Tool tab; the alarms and their sound come with PGN 161.
+                double w = 0;
+                for (int i = 0; i < 8; i++)
+                    if ((sections & (1 << i)) != 0) w += _config.Tool.GetSectionWidth(i) / 100.0;
+                Array.Clear(_held);
+                _lastSections = sections;
+                _sinceSectionChange = 0;
+                _alarms = SprayerAlarms.None;
+                _status = new SprayerStatus(pressure, flow, total, master, sections, 0, w, double.NaN, SprayerAlarms.None);
+                return;
+            }
 
             int nozzles = 0;
             double width = 0;
@@ -139,6 +203,77 @@ public sealed class SprayerService : ISprayerService
 
             _status = new SprayerStatus(pressure, flow, total, master, sections, nozzles, width, expected, on);
         }
+    }
+
+    private void OnProcessData(byte[] data)
+    {
+        if (!TryParseProcessData(data, out var pd) || pd.Alarms is not { } alarms) return;
+        lock (_lock)
+        {
+            DateTime now = Clock.Current.Now;
+            var before = ModuleChecks(now) ? _module.Alarms ?? SprayerAlarms.None : SprayerAlarms.None;
+            _lastProcessData = now;
+            _module = pd;
+
+            // Sound when one of the module's alarms comes on, and again every RepeatInterval.
+            if (alarms != SprayerAlarms.None
+                && ((alarms & ~before) != SprayerAlarms.None || now - _lastSound >= RepeatInterval))
+            {
+                _lastSound = now;
+                _audio.Play(SoundEffect.SprayerAlarm);
+            }
+        }
+    }
+
+    /// <summary>
+    /// PGN 161 as the module sends it: ISOBUS Process Data Messages, 8 bytes each, little-endian:
+    /// byte 0 = command (bits 0-3; only 3, "value", is read) + element bits 0-3 (bits 4-7),
+    /// byte 1 = element bits 4-11, bytes 2-3 = DDI, bytes 4-7 = value (int32). Only elements 0
+    /// (the sprayer) and 1 (its boom) are read. The CRC is not checked (as for the other module PGNs).
+    /// </summary>
+    public static bool TryParseProcessData(byte[] data, out SprayerProcessData values)
+    {
+        values = default;
+        if (data.Length < 6 || data[0] != PgnMessage.HEADER1 || data[1] != PgnMessage.HEADER2) return false;
+        if (data[2] != MachineSource || data[3] != PgnNumbers.SPRAYER_PROCESS_DATA) return false;
+        int length = data[4];
+        if (length % 8 != 0 || data.Length < 5 + length) return false;
+
+        double pressure = double.NaN, flow = double.NaN, total = double.NaN, rate = double.NaN, target = double.NaN;
+        double need = double.NaN, min = double.NaN, max = double.NaN;
+        bool? master = null;
+        int? sections = null;
+        SprayerAlarms? alarms = null;
+        for (int o = 5; o + 8 <= 5 + length; o += 8)
+        {
+            int command = data[o] & 0x0F, element = (data[o] >> 4) | (data[o + 1] << 4);
+            if (command != 3 || element > 1) continue;
+            int ddi = data[o + 2] | data[o + 3] << 8;
+            int v = data[o + 4] | data[o + 5] << 8 | data[o + 6] << 16 | data[o + 7] << 24;
+            switch (ddi)
+            {
+                case DdiActualPressure: pressure = v / 1_000_000.0; break;     // 0.1 Pa
+                case DdiActualFlow: flow = v * 60.0 / 1_000_000.0; break;      // mm³/s
+                case DdiTotalVolumeMl: total = v / 1000.0; break;               // ml
+                case DdiWorkState: master = v == 1; break;
+                case DdiCondensedWorkState:
+                {
+                    int bits = 0;
+                    for (int i = 0; i < 16; i++)
+                        if (((uint)v >> (2 * i) & 3) == 1) bits |= 1 << i;   // 01 = on; 11 = not there
+                    sections = bits;
+                    break;
+                }
+                case DdiActualRate: rate = v / 10_000.0; break;                // 0.01 mm³/m²
+                case DdiSetpointRate: target = v / 10_000.0; break;
+                case DdiSetpointPressure: need = v / 1_000_000.0; break;
+                case DdiMinPressure: min = v / 1_000_000.0; break;
+                case DdiMaxPressure: max = v / 1_000_000.0; break;
+                case DdiSprayerAlarms: alarms = (SprayerAlarms)v & ModuleAlarmBits; break;
+            }
+        }
+        values = new SprayerProcessData(pressure, flow, total, master, sections, rate, target, need, min, max, alarms);
+        return true;
     }
 
     /// <summary>

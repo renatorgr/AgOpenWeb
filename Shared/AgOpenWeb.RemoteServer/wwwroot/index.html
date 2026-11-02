@@ -624,7 +624,8 @@
               <label>User 4</label><input class="cfg-num" data-key="machine.user4" type="number" step="1">
             </div>
             <div class="cfg-label" title="Pressure and flow from the machine module (PGN 160). Nozzles per section = section width / nozzle spacing.">Sprayer</div>
-            <div class="cfg-grid">
+            <div id="cfg-sprayer-module" class="cfg-note" hidden>The sprayer module checks the sprayer itself: set the target rate, nozzles, pressure limits and flow tolerance on its page (Settings tab). The section widths stay here, in the Tool tab.</div>
+            <div id="cfg-sprayer-grid" class="cfg-grid">
               <label>Nozzle spacing (m)</label><input class="cfg-num" data-key="machine.sprayerNozzleSpacing" type="number" step="0.05" min="0">
               <label>Nozzle flow (L/min)</label><input class="cfg-num" data-key="machine.sprayerNozzleFlow" type="number" step="0.01" min="0" title="One nozzle at the reference pressure, from the nozzle chart. 0 = no flow alarm.">
               <label>at pressure (bar)</label><input class="cfg-num" data-key="machine.sprayerReferencePressure" type="number" step="0.1" min="0.1">
