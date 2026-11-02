@@ -877,7 +877,9 @@ public static class WireCodec
         }
         // Sprayer readout (append-only): [u8 present] then f32 pressure (bar), f32 flow
         // (L/min), f64 total (L), u8 master, u8 sections, u8 open nozzles, f32 open width (m),
-        // f32 expected flow (L/min, NaN = no check), u8 alarms.
+        // f32 expected flow (L/min, NaN = no check), u8 alarms, u8 module checks, f32 module
+        // rate (L/ha), f32 module target (L/ha), f32 pressure for the target, f32 min and
+        // f32 max pressure (bar); NaN = none.
         var sp = s.Sprayer;
         w.Write((byte)(sp != null ? 1 : 0));
         if (sp != null)
@@ -891,6 +893,12 @@ public static class WireCodec
             w.Write((float)sp.OpenWidthM);
             w.Write((float)sp.ExpectedFlowLpm);
             w.Write((byte)Math.Clamp(sp.Alarms, 0, 255));
+            w.Write((byte)(sp.ModuleChecks ? 1 : 0));
+            w.Write((float)sp.RateLha);
+            w.Write((float)sp.TargetLha);
+            w.Write((float)sp.PressureNeededBar);
+            w.Write((float)sp.MinPressureBar);
+            w.Write((float)sp.MaxPressureBar);
         }
         return ms.ToArray();
     }

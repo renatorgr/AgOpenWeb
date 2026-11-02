@@ -642,6 +642,7 @@ public class UdpCommunicationService : IUdpCommunicationService, IDisposable
                 break;
 
             case PgnNumbers.SPRAYER_DATA: // 160 - sprayer readings from the machine module; SprayerService reads it
+            case PgnNumbers.SPRAYER_PROCESS_DATA: // 161 - the module's own rate, target and alarms; SprayerService reads it
                 _machineIp = remoteIp;
                 break;
 

@@ -339,9 +339,13 @@ public record IsobusDto(bool SectionControl, int Sections, int Clients, ulong Re
 
 /// <summary>The sprayer readout (PGN 160 from the machine module): bar, L/min, litres, the
 /// sections the module has open (section 1 in bit 0), the nozzles and width (m) they cover,
-/// the flow they should spray (L/min, NaN = no check) and the alarms on (SprayerAlarms bits).</summary>
+/// the flow they should spray (L/min, NaN = no check) and the alarms on (SprayerAlarms bits).
+/// With ModuleChecks (PGN 161 from a module that checks the sprayer itself) the rate and target
+/// (L/ha), the pressure for the target and the pressure limits (bar) are the module's; NaN = none.</summary>
 public record SprayerDto(double PressureBar, double FlowLpm, double TotalLitres, bool MasterOn, int Sections,
-    int OpenNozzles, double OpenWidthM, double ExpectedFlowLpm, int Alarms);
+    int OpenNozzles, double OpenWidthM, double ExpectedFlowLpm, int Alarms,
+    bool ModuleChecks = false, double RateLha = double.NaN, double TargetLha = double.NaN,
+    double PressureNeededBar = double.NaN, double MinPressureBar = double.NaN, double MaxPressureBar = double.NaN);
 
 /// <summary>GPS values for the System Data card that ride no other frame: attitude, the
 /// heading sources before fusion, the sentence rate and counters, and the latest raw

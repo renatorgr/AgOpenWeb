@@ -1018,6 +1018,7 @@
   "The report is being sent; try again in a moment": "The report is being sent; try again in a moment",
   "The service is busy, starting up, or this login is already in use.": "The service is busy, starting up, or this login is already in use.",
   "The simulator is supplying the position; no sentence is being received.": "The simulator is supplying the position; no sentence is being received.",
+  "The sprayer module checks the sprayer itself: set the target rate, nozzles, pressure limits and flow tolerance on its page (Settings tab). The section widths stay here, in the Tool tab.": "The sprayer module checks the sprayer itself: set the target rate, nozzles, pressure limits and flow tolerance on its page (Settings tab). The section widths stay here, in the Tool tab.",
   "The terminal could not start.": "The terminal could not start.",
   "There is no network connection.": "There is no network connection.",
   "This card connects when the other terminal lets it go.": "This card connects when the other terminal lets it go.",
