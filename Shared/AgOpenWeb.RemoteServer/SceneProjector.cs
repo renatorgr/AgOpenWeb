@@ -525,7 +525,7 @@ public sealed class SceneProjector
         long h = 17;
         foreach (var b in _settings.Settings.WebCards) h = h * 31 + HashCode.Combine(b.Name, b.Url);
         var scan = _state.Connections.WebPageScan;
-        return h * 31 + HashCode.Combine(scan.Seq, scan.Status);
+        return h * 31 + HashCode.Combine(scan.Seq, scan.Status, scan.Pages.Count);   // the pages mDNS found come while it still searches
     }
 
     // Re-send the NTRIP profiles frame on add / edit / delete / set-default.

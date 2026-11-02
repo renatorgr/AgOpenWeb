@@ -163,9 +163,10 @@ const WebCards = (() => {
     renderSearch(el, btn);
   }
 
-  // "Search the network": the host asks every address of its own networks for a page and reads its
-  // title; each page found can be added as a bookmark with one tap. The host's last search: status
-  // '' (none yet), 'searching' or 'done', and the pages found.
+  // "Search the network": the host first asks the network for the pages that announce themselves
+  // (mDNS, about a second: they are listed while the search goes on), then asks every address of its
+  // own networks for a page and reads its title; each page found can be added as a bookmark with one
+  // tap. The host's last search: status '' (none yet), 'searching' or 'done', and the pages found so far.
   let scan = { seq: 0, status: '', networks: '', pages: [] };
   function renderSearch(el, btn) {
     const searching = scan.status === 'searching', done = scan.status === 'done';
@@ -174,8 +175,8 @@ const WebCards = (() => {
     const note = document.createElement('span');
     note.textContent = searching ? tr('Searching {nets}…', { nets })
       : !done ? tr('Find the pages of the modules on this network.')
+      : scan.pages.length ? (nets ? tr('Found on {nets}:', { nets }) : tr('Found:'))
       : !nets ? tr('No network to search.')
-      : scan.pages.length ? tr('Found on {nets}:', { nets })
       : tr('No pages found on {nets}.', { nets });
     const go = btn(searching ? tr('Searching…') : tr('Search the network'), () => {
       if (scan.status === 'searching') return;
@@ -185,7 +186,7 @@ const WebCards = (() => {
     go.disabled = searching;
     head.append(note, go);
     el.appendChild(head);
-    if (!done) return;
+    if (!done && !searching) return;
     const bare = u => u.trim().replace(/\/+$/, '').toLowerCase();
     for (const p of scan.pages) {
       const addr = resolve(p.url).replace(/^https?:\/\//, '').replace(/\/$/, '');
