@@ -338,12 +338,12 @@ public record FieldDataDto(double BoundaryAreaSqM, double ActualAreaSqM, double 
 public record IsobusDto(bool SectionControl, int Sections, int Clients, ulong Reported);
 
 /// <summary>The sprayer readout (PGN 160 from the machine module): bar, L/min, litres, the
-/// sections the module has open (section 1 in bit 0), the nozzles and width (m) they cover,
-/// the flow they should spray (L/min, NaN = no check) and the alarms on (SprayerAlarms bits).
-/// With ModuleChecks (PGN 161 from a module that checks the sprayer itself) the rate and target
-/// (L/ha), the pressure for the target and the pressure limits (bar) are the module's; NaN = none.</summary>
+/// sections the module has open (section 1 in bit 0), the width (m) they cover and the alarms on
+/// (SprayerAlarms bits). With ModuleChecks (PGN 161 from the module, which checks the sprayer with
+/// its own settings) the rate and target (L/ha), the pressure for the target and the pressure
+/// limits (bar) are the module's; NaN = none.</summary>
 public record SprayerDto(double PressureBar, double FlowLpm, double TotalLitres, bool MasterOn, int Sections,
-    int OpenNozzles, double OpenWidthM, double ExpectedFlowLpm, int Alarms,
+    double OpenWidthM, int Alarms,
     bool ModuleChecks = false, double RateLha = double.NaN, double TargetLha = double.NaN,
     double PressureNeededBar = double.NaN, double MinPressureBar = double.NaN, double MaxPressureBar = double.NaN);
 
@@ -488,11 +488,7 @@ public record TramConfigDto(int Passes, bool Display, int Line, double Width, bo
 /// <summary>Machine Control tab (ConfigStore.Machine). PinAssignments: 24 PinFunction ints.</summary>
 public record MachineConfigDto(
     bool HydraulicLiftEnabled, int RaiseTime, double LookAhead, int LowerTime, bool InvertRelay,
-    int User1, int User2, int User3, int User4, IReadOnlyList<int> PinAssignments,
-    // Sprayer readout (SprayerService): m, L/min, bar, bar, bar, %, L/ha (0 = no target).
-    double SprayerNozzleSpacing = 0.5, double SprayerNozzleFlow = 1.6, double SprayerReferencePressure = 3.0,
-    double SprayerMinPressure = 1.0, double SprayerMaxPressure = 6.0, int SprayerFlowTolerance = 20,
-    double SprayerTargetRate = 0);
+    int User1, int User2, int User3, int User4, IReadOnlyList<int> PinAssignments);
 
 /// <summary>Vehicle &amp; Tool picker hub (Phase 9): available profiles (name + preview)
 /// and the active pair. Seeded on connect, re-sent when the list/active/config changes.</summary>

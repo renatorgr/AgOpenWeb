@@ -10,11 +10,10 @@ The official README follows [below](#agopenweb).
 - Raises an alarm, with a sound, for low or high pressure, for a flow that doesn't match the open nozzles, and for flow with every section closed.
 - Warns when the module doesn't open or close a section that AgOpenWeb asked for.
 - With a target rate set, shows the pressure that gives that rate at the current speed. It only advises: nothing is regulated.
-- Settings are in **Tool → Machine → Sprayer**: nozzle spacing, nozzle flow at a reference pressure, minimum and maximum pressure, flow tolerance and target rate.
-- A module that checks the sprayer itself ([Sprayer_ESP32](https://github.com/renatorgr/Boards/tree/main/Sprayer/Sprayer_ESP32) 0.10 and newer) has those settings on its own web page. It works out the rate, the pressure for the target and the alarms, and AgOpenWeb shows and sounds what it sends; the settings above are then hidden. The section widths stay in AgOpenWeb.
+- The settings (target rate, nozzles, pressure limits, flow tolerance) are on the module's own web page ([Sprayer_ESP32](https://github.com/renatorgr/Boards/tree/main/Sprayer/Sprayer_ESP32) 0.10 and newer, Settings tab), not in AgOpenWeb. The module works out the rate, the pressure for the target and the alarms; AgOpenWeb shows and sounds what it sends, as the official AgOpenWeb leaves the rate settings to the rate controllers. The section widths stay in AgOpenWeb (Tool tab). With an older module program (PGN 160 only) the strip shows the pressure, flow and sections, without a rate or alarms.
 - The strip only appears while a sprayer module is sending data. Without one, AgOpenWeb works exactly like the official version.
 
-The module sends PGN 160 to port 9999 once a second, and a module that checks itself also PGN 161 with ISOBUS process data (DDIs), see [Docs/PGN.md](Docs/PGN.md#sprayer-readout). Firmware is in [renatorgr/Boards](https://github.com/renatorgr/Boards/tree/main/Sprayer): Sprayer_ESP32 for an ESP32 relay board, and the older Sprayer_Nano for an Arduino Nano with a relay board.
+The module sends PGN 160 to port 9999 once a second, then PGN 161 with ISOBUS process data (DDIs), see [Docs/PGN.md](Docs/PGN.md#sprayer-readout). Firmware is in [renatorgr/Boards](https://github.com/renatorgr/Boards/tree/main/Sprayer): Sprayer_ESP32 for an ESP32 relay board, and the older Sprayer_Nano for an Arduino Nano with a relay board.
 
 The readout was proposed to the official project in [AgOpenGPS-Official/AgOpenWeb#390](https://github.com/AgOpenGPS-Official/AgOpenWeb/issues/390). The maintainers would rather handle sprayer data the ISOBUS way, so it lives in this fork for now.
 

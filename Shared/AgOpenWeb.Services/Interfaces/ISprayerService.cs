@@ -27,21 +27,19 @@ public enum SprayerAlarms
 }
 
 /// <summary>
-/// What the sprayer's machine module last reported in PGN 160, and what the app makes of it.
+/// What the sprayer's machine module last reported: PGN 160 (readings), and PGN 161 (its rate,
+/// target and alarms, worked out on the module with its own settings).
 /// </summary>
 /// <param name="PressureBar">Boom pressure, bar.</param>
 /// <param name="FlowLpm">Measured flow, L/min.</param>
 /// <param name="TotalLitres">Litres counted since the module started.</param>
 /// <param name="MasterOn">The master switch is on.</param>
 /// <param name="Sections">The sections the module has open, section 1 in bit 0.</param>
-/// <param name="OpenNozzles">Nozzles on the open sections.</param>
-/// <param name="OpenWidthM">Width of the open sections, m.</param>
-/// <param name="ExpectedFlowLpm">The flow the open nozzles should spray at this pressure,
-/// L/min; NaN with the flow check off.</param>
-/// <param name="Alarms">The alarms on now.</param>
-/// <param name="ModuleChecks">The module checks the sprayer itself (PGN 161 with its alarms):
-/// the rate, target, pressure for the target, limits and alarms below are the module's, and
-/// the Machine tab's sprayer settings are not used.</param>
+/// <param name="OpenWidthM">Width of the open sections, m (Tool tab).</param>
+/// <param name="Alarms">The alarms on now: the module's (PGN 161), and NoData when it stops sending.</param>
+/// <param name="ModuleChecks">PGN 161 with the module's alarms came in the last 3 s: the rate,
+/// target, pressure for the target and limits below are the module's. Without it (an older
+/// module program) only the readings are shown.</param>
 /// <param name="RateLha">The module's actual rate, L/ha; NaN = none (stopped, or not sent).</param>
 /// <param name="TargetLha">The module's target rate, L/ha; NaN = none.</param>
 /// <param name="PressureNeededBar">The pressure that gives the target at this speed, from the
@@ -54,9 +52,7 @@ public readonly record struct SprayerStatus(
     double TotalLitres,
     bool MasterOn,
     int Sections,
-    int OpenNozzles,
     double OpenWidthM,
-    double ExpectedFlowLpm,
     SprayerAlarms Alarms,
     bool ModuleChecks = false,
     double RateLha = double.NaN,
@@ -79,8 +75,7 @@ public readonly record struct SprayerStatus(
 /// <param name="PressureNeededBar">DDI 193, setpoint pressure: what gives the target now.</param>
 /// <param name="MinPressureBar">DDI 195, minimum pressure.</param>
 /// <param name="MaxPressureBar">DDI 196, maximum pressure.</param>
-/// <param name="Alarms">DDI 57344 (proprietary), the module's sprayer alarms; null = the module
-/// does not check (then the app checks with the Machine tab's settings).</param>
+/// <param name="Alarms">DDI 57344 (proprietary), the module's sprayer alarms; null = not sent.</param>
 public readonly record struct SprayerProcessData(
     double PressureBar,
     double FlowLpm,
@@ -95,11 +90,10 @@ public readonly record struct SprayerProcessData(
     SprayerAlarms? Alarms);
 
 /// <summary>
-/// Reads the sprayer data the machine module sends once a second (PGN 160: pressure, flow,
-/// litres, master switch, open sections), checks it against the nozzles of the open
-/// sections, and sounds the alarm when something is wrong. A module that checks the sprayer
-/// itself also sends PGN 161 (ISOBUS process data: rate, target, pressure for the target,
-/// limits, alarms); then its values and alarms are used instead.
+/// Reads the sprayer data the machine module sends once a second: PGN 160 (pressure, flow,
+/// litres, master switch, open sections) and PGN 161 (ISOBUS process data: rate, target,
+/// pressure for the target, limits, alarms). The module checks the sprayer with the settings
+/// on its own page; the app shows its values and sounds its alarms.
 /// </summary>
 public interface ISprayerService
 {

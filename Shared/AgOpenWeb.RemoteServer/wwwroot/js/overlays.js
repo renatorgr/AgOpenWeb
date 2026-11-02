@@ -632,23 +632,17 @@ function renderIsobusSections() {
   const cells = row.querySelectorAll('.sec-iso-cell');
   for (let i = 0; i < cells.length; i++) cells[i].classList.toggle('on', !!iso.reported[i]);
 }
-// Sprayer readout (PGN 160 from the machine module): pressure, flow, L/ha and the sections
-// the module has open, checked by the host against the nozzles of those sections. The
-// alarm turns the strip red; the host sounds it. Shown while the module is heard.
-// A module that checks the sprayer itself (PGN 161, sp.moduleChecks) sends its own rate,
-// target, pressure for the target, pressure limits and alarms: those are shown instead, and
-// the Machine tab's sprayer settings are hidden (they are set on the module's page).
+// Sprayer readout from the machine module: pressure, flow and the sections it has open (PGN 160),
+// and the rate, target, pressure for the target, pressure limits and alarms it works out with
+// the settings on its own page (PGN 161, sp.moduleChecks). The app has no sprayer settings.
+// The alarm turns the strip red; the host sounds it. Shown while the module is heard.
 const sprayerBar = document.getElementById('sprayerbar');
 const SPRAYER_ALARMS = [ // SprayerAlarms bits, in order
   [1, tr('Low pressure')], [2, tr('High pressure')], [4, tr('Flow too low')], [8, tr('Flow too high')],
   [16, tr('Flow with the sections off')], [32, tr('No data from the sprayer')],
 ];
-// Target rate (Machine tab, L/ha; 0 = off): only shown, the valves are on / off and the
-// pressure is set by hand. The actual rate is green within SPRAYER_RATE_TOLERANCE of it,
-// orange outside. The hint is the pressure that gives the target at this speed with the
-// open nozzles: flow grows with the square root of the pressure, so P = Pref × (Q / Qref)²,
-// from the nozzle chart, or from the measured flow and pressure without one. Outside the
-// min / max pressure it gives the speed that hits the target at that limit instead.
+// The module's target rate (L/ha) is only shown: the valves are on / off and the pressure is
+// set by hand. The actual rate is green within SPRAYER_RATE_TOLERANCE of it, orange outside.
 const SPRAYER_RATE_TOLERANCE = 0.10;
 // Each section: what the app asks (the section's relay bit: manual on, auto on, turning
 // off) against what the module reports open. A small square per section in the section
@@ -673,31 +667,6 @@ function sprayerSections(sp, n) {
   if (notClosed.length) warn.push(tr('Module did not close section {s}', { s: notClosed.join(', ') }));
   return { states, warn };
 }
-function sprayerTarget(sp, speed) {
-  const m = config && config.machine;
-  const rate = m ? m.sprayerTargetRate : 0;
-  if (!(rate > 0)) return null;
-  const head = tr('target {r} L/ha', { r: Math.round(rate) });
-  if (!(sp.openWidthM > 0) || !(speed > 0.3)) return { rate, text: head };
-  // L/min the open width needs at this speed, and that flow at pressure p.
-  const need = rate * speed * sp.openWidthM * 60 / 10000;
-  const chart = m.sprayerNozzleFlow > 0 && m.sprayerReferencePressure > 0 && sp.openNozzles > 0;
-  let flowAt;
-  if (chart) flowAt = p => sp.openNozzles * m.sprayerNozzleFlow * Math.sqrt(p / m.sprayerReferencePressure);
-  else if (sp.flowLpm > 0.5 && sp.pressureBar > 0) flowAt = p => sp.flowLpm * Math.sqrt(p / sp.pressureBar);
-  else return { rate, text: head };
-  const pNeed = chart ? m.sprayerReferencePressure * (need / (sp.openNozzles * m.sprayerNozzleFlow)) ** 2
-                      : sp.pressureBar * (need / sp.flowLpm) ** 2;
-  // km/h that gives the target at pressure p.
-  const kmhAt = p => flowAt(p) * 10000 / (rate * sp.openWidthM * 60) * 3.6;
-  let hint;
-  if (m.sprayerMaxPressure > 0 && pNeed > m.sprayerMaxPressure)
-    hint = tr('{p} bar needed, slow down to {v} km/h', { p: pNeed.toFixed(1), v: kmhAt(m.sprayerMaxPressure).toFixed(1) });
-  else if (m.sprayerMinPressure > 0 && pNeed < m.sprayerMinPressure)
-    hint = tr('{p} bar needed, speed up to {v} km/h', { p: pNeed.toFixed(1), v: kmhAt(m.sprayerMinPressure).toFixed(1) });
-  else hint = tr('set {p} bar', { p: pNeed.toFixed(1) });
-  return { rate, text: head + ' · ' + hint };
-}
 // The target and the pressure hint from the module (PGN 161): the module works out the
 // pressure that gives its target at this speed; outside its limits, the speed that gives the
 // target at that limit (flow grows with the square root of the pressure, so at a fixed rate
@@ -717,17 +686,9 @@ function sprayerModuleTarget(sp, speed) {
   else hint = tr('set {p} bar', { p: p.toFixed(1) });
   return { rate, text: head + ' · ' + hint };
 }
-// Machine tab: the app's own sprayer settings only for a module that doesn't check itself.
-function syncSprayerSettings(sp) {
-  const own = !!(sp && sp.moduleChecks);
-  const grid = document.getElementById('cfg-sprayer-grid'), note = document.getElementById('cfg-sprayer-module');
-  if (grid) grid.hidden = own;
-  if (note) note.hidden = !own;
-}
 function renderSprayerBar() {
   const sp = statusBar && statusBar.sprayer;
   sprayerBar.classList.toggle('open', !!sp);
-  syncSprayerSettings(sp);
   if (!sp) return;
   const n = Math.max(1, Math.min(8, (config && config.tool && config.tool.numSections) || 5));
   if (+sprayerBar.dataset.n !== n) {
@@ -745,21 +706,18 @@ function renderSprayerBar() {
   const secs = sprayerSections(sp, n);
   const cells = sprayerBar.querySelectorAll('.spr-cell');
   for (let i = 0; i < cells.length; i++) cells[i].className = 'spr-cell ' + secs.states[i];
-  // L/ha = L/min ÷ (m/s × m) × 10000 m²/ha ÷ 60 s/min; not while (nearly) stopped.
+  // The module's L/ha (NaN while stopped, or from a module program without PGN 161).
   const speed = lastTick ? lastTick.speed : 0;
-  const lha = sp.moduleChecks ? sp.rateLha
-    : sp.openWidthM > 0 && speed > 0.3 ? sp.flowLpm / (speed * sp.openWidthM) * 10000 / 60 : NaN;
+  const lha = sp.moduleChecks ? sp.rateLha : NaN;
   sprayerBar.querySelector('.spr-p').textContent = sp.pressureBar.toFixed(1);
   sprayerBar.querySelector('.spr-f').textContent = sp.flowLpm.toFixed(1);
   const rateEl = sprayerBar.querySelector('.spr-r');
   rateEl.textContent = Number.isFinite(lha) ? Math.round(lha) : '—';
-  const target = sp.moduleChecks ? sprayerModuleTarget(sp, speed) : sprayerTarget(sp, speed);
+  const target = sp.moduleChecks ? sprayerModuleTarget(sp, speed) : null;
   rateEl.classList.toggle('on-target', !!target && Number.isFinite(lha) && Math.abs(lha - target.rate) <= target.rate * SPRAYER_RATE_TOLERANCE);
   rateEl.classList.toggle('off-target', !!target && Number.isFinite(lha) && Math.abs(lha - target.rate) > target.rate * SPRAYER_RATE_TOLERANCE);
   const note = [];
   if (target) note.push(target.text);
-  if (Number.isFinite(sp.expectedFlowLpm) && sp.sections)
-    note.push(tr('expected {f} L/min ({n} nozzles)', { f: sp.expectedFlowLpm.toFixed(1), n: sp.openNozzles }));
   note.push(sp.totalLitres.toFixed(0) + ' L');
   if (!sp.masterOn) note.push(tr('master off'));
   sprayerBar.querySelector('.spr-note').textContent = note.join(' · ');

@@ -216,14 +216,14 @@ window.RemoteTransport = {
               state: u8(), lastError: i32(), attempts: i32(), retrySeconds: f32(), notice: str(), profile: str(), service: str() };
           }
           // Sprayer readout (append-only): PGN 160 from the machine module; null until heard.
-          // alarms = SprayerAlarms bits; expectedFlowLpm NaN = no flow check. moduleChecks: the
-          // module checks the sprayer itself (PGN 161); rateLha, targetLha, pressureNeededBar,
-          // minPressureBar, maxPressureBar are then its values (NaN = none).
+          // alarms = SprayerAlarms bits. moduleChecks: PGN 161 from the module, which checks the
+          // sprayer with its own settings; rateLha, targetLha, pressureNeededBar, minPressureBar,
+          // maxPressureBar are then its values (NaN = none).
           let sprayer = null;
           if (u8()) {
             const f64 = () => { const v = dv.getFloat64(o, true); o += 8; return v; };
             sprayer = { pressureBar: f32(), flowLpm: f32(), totalLitres: f64(), masterOn: !!u8(), sections: u8(),
-                        openNozzles: u8(), openWidthM: f32(), expectedFlowLpm: f32(), alarms: u8(),
+                        openWidthM: f32(), alarms: u8(),
                         moduleChecks: !!u8(), rateLha: f32(), targetLha: f32(), pressureNeededBar: f32(),
                         minPressureBar: f32(), maxPressureBar: f32() };
           }
@@ -371,9 +371,6 @@ window.RemoteTransport = {
           const machine = {
             hydraulicLiftEnabled: !!u8(), raiseTime: i32(), lookAhead: f64(), lowerTime: i32(), invertRelay: !!u8(),
             user1: i32(), user2: i32(), user3: i32(), user4: i32(), pinAssignments: rdI32(),
-            sprayerNozzleSpacing: f64(), sprayerNozzleFlow: f64(), sprayerReferencePressure: f64(),
-            sprayerMinPressure: f64(), sprayerMaxPressure: f64(), sprayerFlowTolerance: i32(),
-            sprayerTargetRate: f64(),
           };
           const display = {
             gridVisible: !!u8(), fieldTextureVisible: !!u8(), fieldTextureMoveable: !!u8(), svennArrowVisible: !!u8(),

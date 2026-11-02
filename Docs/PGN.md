@@ -1086,24 +1086,23 @@ back with the other setting.
 ## Sprayer readout
 
 From a sprayer's machine module once a second, to port 9999 (the module subnet broadcast).
-AgOpenWeb shows it in a strip above the section buttons and checks it against the nozzles
-of the sections the module has open (Tool → Machine → Sprayer). Little-endian.
+AgOpenWeb shows it in a strip above the section buttons. The module checks the sprayer with
+the settings on its own web page (target rate, nozzles, pressure limits, flow tolerance) and
+sends its rate, target and alarms in PGN 161 below; AgOpenWeb has no sprayer settings of its
+own, as with the rate controllers above. Little-endian.
 
 | PGN Name | Src | PGN | Dec | Len | Bytes 5-6 | Bytes 7-8 | Bytes 9-12 | Byte 13 | Byte 14 | Last |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Sprayer data, from the machine module | 7B | A0 | 160 | 10 | pressure, bar × 100 | flow, L/min × 100 | total since start, L × 10 | master switch, 1 = on | sections open, section 1 in bit 0 | CRC |
 
-Nozzles of a section = its width over the nozzle spacing. Expected flow = open nozzles ×
-nozzle flow × √(pressure ÷ reference pressure). An alarm comes on after 3 messages in a
-row (low or high pressure, flow outside the tolerance, flow with every section closed),
-and the flow is not checked for 3 messages after the sections change. It sounds when it
-comes on and every 10 s while on. No message for 3 s shows "No data from the sprayer".
+With PGN 160 alone (an older module program) the strip shows the pressure, the flow, the
+litres and the sections, without a rate or alarms. No message for 3 s shows "No data from the
+sprayer".
 
-### Process data from a module that checks the sprayer itself
+### Process data: the module's rate, target and alarms
 
-Right after each PGN 160, a module that has its own sprayer settings (target rate, nozzles,
-pressure limits, flow tolerance; renatorgr Sprayer_ESP32 0.10 and newer, set on its web page)
-sends PGN 161 (0xA1): ISOBUS process data, as the Process Data Message of ISO 11783-10 that
+Right after each PGN 160, the module (renatorgr Sprayer_ESP32 0.10 and newer, its settings on
+its web page) sends PGN 161 (0xA1): ISOBUS process data, as the Process Data Message of ISO 11783-10 that
 the AgOpenGPS ISOBUS group proposes for modules. Each value is 8 bytes, little-endian:
 
 | Byte 0 | Byte 1 | Bytes 2-3 | Bytes 4-7 |
@@ -1130,10 +1129,9 @@ fitted, tractor stopped, no target) is left out of that message.
 While PGN 161 with DDI 57344 arrives (within 3 s), the strip shows the module's rate,
 target and alarms, and sounds the alarms (when one comes on and every 10 s while on); the
 hint is "set p bar" from DDI 193, or, when that is above the maximum (below the minimum),
-the speed that gives the target at that limit, speed × √(limit ÷ p). The app's own checks
-and the Machine tab's sprayer settings are then not used, and the settings are hidden. A
-PGN 161 without DDI 57344 changes nothing. The module computes the rate from the speed in
-PGN 239 and the section widths in PGN 235.
+the speed that gives the target at that limit, speed × √(limit ÷ p). A PGN 161 without
+DDI 57344 changes nothing. The module computes the rate from the speed in PGN 239 and the
+section widths in PGN 235.
 
 <br>
 <br>

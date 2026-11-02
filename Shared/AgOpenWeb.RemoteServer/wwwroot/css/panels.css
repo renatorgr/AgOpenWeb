@@ -86,7 +86,6 @@
   cursor: pointer; font: 600 12px system-ui, sans-serif; }
 .cfg-typebtn.active { background: #1f6fb2; color: #fff; }
 .cfg-grid { display: grid; grid-template-columns: auto max-content; gap: 7px 12px; align-items: center; }
-.cfg-grid[hidden] { display: none; } /* the sprayer settings, hidden for a module that checks itself */
 .cfg-grid label { color: var(--text-2); font: 500 13px system-ui, sans-serif; }
 /* Right-sized to expected data (#41): ~5-6 digits (e.g. "12.34", "360.0", "-0.35").
    Wider boxes just waste horizontal space. Spinners removed (useless on touch, eat width). */

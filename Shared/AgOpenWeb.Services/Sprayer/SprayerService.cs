@@ -17,40 +17,29 @@ namespace AgOpenWeb.Services.Sprayer;
 /// <item><b>PGN 160 (0xA0)</b> from the machine module (source 123) once a second:
 /// { 0x80, 0x81, 123, 0xA0, 10, pressure cbar u16, flow cL/min u16, total dL u32,
 /// master u8, sections u8, CRC }.</item>
-/// <item><b>PGN 161 (0xA1)</b> right after it, from a module that checks the sprayer itself
-/// (Sprayer_ESP32 0.10 and newer): ISOBUS Process Data Messages, 8 bytes each { command (low
-/// 4 bits, 3 = value) + element bits 0-3, element bits 4-11, DDI u16, value i32 }, see
-/// <see cref="TryParseProcessData"/>.</item>
+/// <item><b>PGN 161 (0xA1)</b> right after it (Sprayer_ESP32 0.10 and newer): ISOBUS Process
+/// Data Messages, 8 bytes each { command (low 4 bits, 3 = value) + element bits 0-3, element
+/// bits 4-11, DDI u16, value i32 }, see <see cref="TryParseProcessData"/>.</item>
 /// </list>
 ///
-/// Without PGN 161 the app checks the sprayer with the Machine tab's settings: the expected
-/// flow is the nozzles of the open sections times one nozzle's flow, scaled to the measured
-/// pressure (flow grows with the square root of the pressure). A section's nozzles are its
-/// width (Tool tab) over the nozzle spacing (Machine tab). An alarm counts once its condition
-/// has held for <see cref="ConfirmMessages"/> messages in a row, and the flow check waits as
-/// long again after the sections change, while the valves open and the flow meter catches up.
-///
-/// With PGN 161 carrying the module's alarms (DDI 57344), the module does those checks with
-/// its own settings (target rate, nozzles, pressure limits, flow tolerance, set on its page),
-/// and the app shows the module's rate, target, pressure for the target and alarms, and sounds
-/// the alarms. The Machine tab's sprayer settings are then not used.
+/// The module checks the sprayer with its own settings (target rate, nozzles, pressure limits,
+/// flow tolerance, set on its page): the app shows the module's rate, target, pressure for the
+/// target and alarms, and sounds the alarms. The app has no sprayer settings of its own (as the
+/// official AgOpenWeb's rate controllers, Docs/PGN.md "Rate controllers"); it only adds the
+/// width of the open sections (Tool tab) and <see cref="SprayerAlarms.NoData"/> when the module
+/// stops sending. A module that sends only PGN 160 (an older program) gets the readings shown,
+/// without a rate or alarms.
 /// </summary>
 public sealed class SprayerService : ISprayerService
 {
     /// <summary>The source address the machine module sends from.</summary>
     public const byte MachineSource = 123;
 
-    /// <summary>Messages in a row (one a second) before an alarm comes on.</summary>
-    public const int ConfirmMessages = 3;
-
     /// <summary>No message for this long = <see cref="SprayerAlarms.NoData"/>.</summary>
     public static readonly TimeSpan NoDataTimeout = TimeSpan.FromSeconds(3);
 
     /// <summary>The alarm sounds again this often while one is on.</summary>
     public static readonly TimeSpan RepeatInterval = TimeSpan.FromSeconds(10);
-
-    /// <summary>Flow below this counts as none, L/min (the flow meter's noise).</summary>
-    public const double NoFlowLpm = 0.5;
 
     /// <summary>The DDIs read from PGN 161 (ISO 11783-11 data dictionary; 57344 is in the
     /// proprietary range).</summary>
@@ -69,10 +58,6 @@ public sealed class SprayerService : ISprayerService
 
     private DateTime _lastMessage;     // default = never
     private SprayerStatus _status;
-    private int _lastSections = -1;
-    private int _sinceSectionChange;
-    private readonly int[] _held = new int[5];   // messages in a row per condition (bits 0–4)
-    private SprayerAlarms _alarms;
     private DateTime _lastSound;
     private DateTime _lastProcessData;  // default = never; only messages with the module's alarms count
     private SprayerProcessData _module;
@@ -104,9 +89,6 @@ public sealed class SprayerService : ISprayerService
                         MinPressureBar = _module.MinPressureBar,
                         MaxPressureBar = _module.MaxPressureBar,
                         Alarms = _module.Alarms ?? SprayerAlarms.None,
-                        // The Machine tab's nozzles are not this sprayer's: no app-side expected flow.
-                        OpenNozzles = 0,
-                        ExpectedFlowLpm = double.NaN,
                     };
                 }
                 return now - _lastMessage < NoDataTimeout
@@ -133,75 +115,13 @@ public sealed class SprayerService : ISprayerService
 
         lock (_lock)
         {
-            DateTime now = Clock.Current.Now;
-            _lastMessage = now;
-            var m = _config.Machine;
-
-            if (ModuleChecks(now))
-            {
-                // The module checks the sprayer itself (PGN 161): only the width of the open
-                // sections here, from the Tool tab; the alarms and their sound come with PGN 161.
-                double w = 0;
-                for (int i = 0; i < 8; i++)
-                    if ((sections & (1 << i)) != 0) w += _config.Tool.GetSectionWidth(i) / 100.0;
-                Array.Clear(_held);
-                _lastSections = sections;
-                _sinceSectionChange = 0;
-                _alarms = SprayerAlarms.None;
-                _status = new SprayerStatus(pressure, flow, total, master, sections, 0, w, double.NaN, SprayerAlarms.None);
-                return;
-            }
-
-            int nozzles = 0;
+            _lastMessage = Clock.Current.Now;
+            // The width of the open sections, from the Tool tab (the module's L/ha uses the same
+            // widths, sent to it in PGN 235).
             double width = 0;
             for (int i = 0; i < 8; i++)
-            {
-                if ((sections & (1 << i)) == 0) continue;
-                double w = _config.Tool.GetSectionWidth(i) / 100.0;
-                width += w;
-                if (m.SprayerNozzleSpacing > 0) nozzles += (int)Math.Round(w / m.SprayerNozzleSpacing);
-            }
-
-            bool flowCheck = m.SprayerNozzleSpacing > 0 && m.SprayerNozzleFlow > 0 && m.SprayerReferencePressure > 0;
-            double expected = flowCheck
-                ? nozzles * m.SprayerNozzleFlow * Math.Sqrt(Math.Max(pressure, 0) / m.SprayerReferencePressure)
-                : double.NaN;
-
-            if (sections != _lastSections) _sinceSectionChange = 0;
-            else _sinceSectionChange++;
-            _lastSections = sections;
-            bool settled = _sinceSectionChange >= ConfirmMessages;
-
-            bool spraying = sections != 0;
-            double tol = Math.Max(m.SprayerFlowTolerance, 1) / 100.0;
-            var raw = SprayerAlarms.None;
-            if (spraying && m.SprayerMinPressure > 0 && pressure < m.SprayerMinPressure) raw |= SprayerAlarms.PressureLow;
-            if (m.SprayerMaxPressure > 0 && pressure > m.SprayerMaxPressure) raw |= SprayerAlarms.PressureHigh;
-            if (spraying && flowCheck && settled && expected > NoFlowLpm)
-            {
-                if (flow < expected * (1 - tol)) raw |= SprayerAlarms.FlowLow;
-                else if (flow > expected * (1 + tol)) raw |= SprayerAlarms.FlowHigh;
-            }
-            if (!spraying && settled && flow > NoFlowLpm) raw |= SprayerAlarms.FlowSectionsOff;
-
-            var on = SprayerAlarms.None;
-            for (int b = 0; b < _held.Length; b++)
-            {
-                var a = (SprayerAlarms)(1 << b);
-                _held[b] = (raw & a) != 0 ? _held[b] + 1 : 0;
-                if (_held[b] >= ConfirmMessages) on |= a;
-            }
-
-            // Sound when an alarm comes on, and again every RepeatInterval while one is on.
-            if (on != SprayerAlarms.None
-                && ((on & ~_alarms) != SprayerAlarms.None || now - _lastSound >= RepeatInterval))
-            {
-                _lastSound = now;
-                _audio.Play(SoundEffect.SprayerAlarm);
-            }
-            _alarms = on;
-
-            _status = new SprayerStatus(pressure, flow, total, master, sections, nozzles, width, expected, on);
+                if ((sections & (1 << i)) != 0) width += _config.Tool.GetSectionWidth(i) / 100.0;
+            _status = new SprayerStatus(pressure, flow, total, master, sections, width, SprayerAlarms.None);
         }
     }
 

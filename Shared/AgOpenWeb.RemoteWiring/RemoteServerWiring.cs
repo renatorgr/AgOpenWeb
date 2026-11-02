@@ -1011,7 +1011,7 @@ public static partial class RemoteServerWiring
                     var sprayerSvc = services.GetRequiredService<AgOpenWeb.Services.Interfaces.ISprayerService>();
                     server.SprayerProvider = () => sprayerSvc.Status is { } sp
                         ? new AgOpenWeb.RemoteServer.SprayerDto(sp.PressureBar, sp.FlowLpm, sp.TotalLitres, sp.MasterOn,
-                            sp.Sections, sp.OpenNozzles, sp.OpenWidthM, sp.ExpectedFlowLpm, (int)sp.Alarms,
+                            sp.Sections, sp.OpenWidthM, (int)sp.Alarms,
                             sp.ModuleChecks, sp.RateLha, sp.TargetLha, sp.PressureNeededBar, sp.MinPressureBar, sp.MaxPressureBar)
                         : null;
 
