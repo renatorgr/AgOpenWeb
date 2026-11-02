@@ -862,9 +862,7 @@ public sealed class SceneProjector
             new TramConfigDto(g.TramPasses, g.TramDisplay, _config.Tram.StartPass + 1, _config.Tram.TramWidth,
                 _config.Tram.IsOuterInverted),
             new MachineConfigDto(m.HydraulicLiftEnabled, m.RaiseTime, m.LookAhead, m.LowerTime, m.InvertRelay,
-                m.User1Value, m.User2Value, m.User3Value, m.User4Value, pins,
-                m.SprayerNozzleSpacing, m.SprayerNozzleFlow, m.SprayerReferencePressure,
-                m.SprayerMinPressure, m.SprayerMaxPressure, m.SprayerFlowTolerance, m.SprayerTargetRate),
+                m.User1Value, m.User2Value, m.User3Value, m.User4Value, pins),
             BuildDisplay(), BuildAutoSteer());
     }
 
@@ -973,10 +971,6 @@ public sealed class SceneProjector
         h = h * 31 + (_config.Tram.IsOuterInverted ? 1 : 0); // #451
         h = h * 31 + (mc.HydraulicLiftEnabled ? 1 : 0) + mc.RaiseTime * 7 + mc.LowerTime * 11 + (mc.InvertRelay ? 64 : 0)
               + mc.User1Value + mc.User2Value * 3 + mc.User3Value * 5 + mc.User4Value * 7;
-        h = h * 31 + mc.SprayerNozzleSpacing.GetHashCode() + mc.SprayerNozzleFlow.GetHashCode() * 3
-              + mc.SprayerReferencePressure.GetHashCode() * 5 + mc.SprayerMinPressure.GetHashCode() * 7
-              + mc.SprayerMaxPressure.GetHashCode() * 11 + mc.SprayerFlowTolerance * 13
-              + mc.SprayerTargetRate.GetHashCode() * 17;
         for (int i = 0; i < 24; i++) h = h * 31 + (int)mc.GetPinAssignment(i);
         // Screen & Alerts (Display).
         var dp = _config.Display;
