@@ -60,7 +60,9 @@ public sealed class YouTurnStateMachine
 
     private readonly YouTurnCreationService _creation;
     // U-turn sound latches (AgOpenGPS turnTooCloseTrigger / isBoundAlarming) (#110).
-    private bool _creationFailSounded, _approachAlarmed;
+    // _missedSounded: a missed turn sounds once (#570). Not re-armed by a new plan, which a
+    // missed turn is followed by at once: only when a turn starts or U-turn is switched off.
+    private bool _creationFailSounded, _approachAlarmed, _missedSounded;
     private readonly YouTurnPathingService _pathing;
     private readonly PolygonIndexCache _headlandIndex = new(); // the zone test, every GPS cycle
     private readonly ILogger<YouTurnStateMachine> _logger;
@@ -263,6 +265,8 @@ public sealed class YouTurnStateMachine
             {
                 turn.IsTriggered = true;
                 turn.IsExecuting = true;
+                _missedSounded = false;
+                ForgetDirectionChoice(turn);
                 effects.StatusMessage = "YouTurn triggered!";
                 _logger.LogDebug("[YouTurn] Triggered on the path, {Dist:F1}m from the arc", distToArcStart);
             }
@@ -282,6 +286,8 @@ public sealed class YouTurnStateMachine
                     turn.YouTurnCounter = 0;
                     turn.IsTriggered = true;
                     turn.IsExecuting = true;
+                    _missedSounded = false;
+                    ForgetDirectionChoice(turn);
                     effects.StatusMessage = "YouTurn started from here: the planned arc was already behind the tractor";
                     _logger.LogDebug("[YouTurn] Arc start {Dist:F1}m behind the tractor - turning from here ({Count} points)",
                         distToArcStart, fromHere.Count);
@@ -291,7 +297,7 @@ public sealed class YouTurnStateMachine
                     _logger.LogDebug("[YouTurn] Arc start {Dist:F1}m behind the tractor and no room to turn from here - turn missed",
                         distToArcStart);
                     DiscardPlannedTurn(turn);
-                    effects.TurnCreationFailedSound = true;
+                    SoundMissed(effects);
                     effects.StatusMessage = "U-turn missed: too close to the headland to turn. Take over manually.";
                 }
                 effects.SyncTurnPathToMap = true;
@@ -306,7 +312,7 @@ public sealed class YouTurnStateMachine
                 // tractor then enters the headland on its pass before it reaches the path.
                 _logger.LogDebug("[YouTurn] In the headland past the path's start without joining it - turn missed");
                 DiscardPlannedTurn(turn);
-                effects.TurnCreationFailedSound = true;
+                SoundMissed(effects);
                 effects.StatusMessage = "U-turn missed: entered the headland off the turn path. Take over manually.";
                 effects.SyncTurnPathToMap = true;
                 effects.SyncNextTrackToMap = true;
@@ -640,6 +646,8 @@ public sealed class YouTurnStateMachine
             // Manual turns trigger immediately — no proximity check against the turn start.
             turn.IsTriggered = true;
             turn.IsExecuting = true;
+            _missedSounded = false;
+            ForgetDirectionChoice(turn);
             effects.StatusMessage = $"Manual {(turnLeft ? "left" : "right")} U-turn started";
         }
         else
@@ -655,6 +663,7 @@ public sealed class YouTurnStateMachine
     /// </summary>
     public static void ClearState(YouTurnWorkingState turn)
     {
+        ForgetDirectionChoice(turn);
         DiscardPlannedTurn(turn);
         turn.IsExecuting = false;
         turn.YouTurnCounter = 0;
@@ -672,6 +681,16 @@ public sealed class YouTurnStateMachine
         turn.NextTrack = null;
         turn.IsTriggered = false;
         turn.ReturnPassTargetPath = null;
+        // The operator's side from the U-turn arrow goes into the next plan too (#577).
+        if (!turn.IsExecuting && turn.HeldDirectionLeft is { } held)
+            turn.NextUTurnDirectionLeftOverride ??= held;
+    }
+
+    /// <summary>A turn has started: the arrow's side was for this turn, not the next.</summary>
+    private static void ForgetDirectionChoice(YouTurnWorkingState turn)
+    {
+        turn.HeldDirectionLeft = null;
+        turn.NextUTurnDirectionLeftOverride = null;
     }
 
     // ── Private helpers ─────────────────────────────────────────────────
@@ -761,6 +780,7 @@ public sealed class YouTurnStateMachine
         {
             _logger.LogDebug("[YouTurn] Snake sequence complete — field done");
             effects.StatusMessage = "Field complete — all tracks worked";
+            SoundCreationFailed(effects);
             return;
         }
 
@@ -920,6 +940,7 @@ public sealed class YouTurnStateMachine
         if (!_pathing.IsPathInsideCultivated(track, abHeading, nextPath, ctx.Boundary, ctx.HeadlandLine))
         {
             effects.StatusMessage = "End of field reached";
+            SoundCreationFailed(effects);
             return;
         }
         CreateTurnToPath(in ctx, track, abHeading, headingRadians, guidance, turn, effects, nextPath, "Alternative");
@@ -959,6 +980,7 @@ public sealed class YouTurnStateMachine
         {
             _logger.LogDebug("[YouTurn] Next line would be outside boundary - stopping U-turns");
             effects.StatusMessage = "End of field reached";
+            SoundCreationFailed(effects);
             return;
         }
 
@@ -1003,12 +1025,39 @@ public sealed class YouTurnStateMachine
     {
         if (turn.NextUTurnDirectionLeftOverride is not { } overrideLeft) return false;
         turn.NextUTurnDirectionLeftOverride = null;
+        turn.HeldDirectionLeft = overrideLeft;
         // Same rule as CreateTurnToPath: a higher pass number lies right of the AB heading.
         bool plannedLeft = (plannedPath > guidance.HowManyPathsAway) ^ guidance.IsHeadingSameWay;
         return overrideLeft != plannedLeft;
     }
 
     /// <summary>The swapped side has no pass inside the field: keep the planned turn.</summary>
+    /// <summary>The missed-turn sound, once until a turn starts or U-turn is switched off (#570).</summary>
+    private void SoundMissed(YouTurnEffects effects)
+    {
+        if (_missedSounded) return;
+        _missedSounded = true;
+        effects.TurnCreationFailedSound = true;
+    }
+
+    /// <summary>U-turn switched off: the next missed or failed turn sounds again (AgOpenGPS
+    /// resets turnTooCloseTrigger on the U-turn button).</summary>
+    public void OnYouTurnSwitchedOff() => _missedSounded = _creationFailSounded = false;
+
+    /// <summary>
+    /// No turn can be made: the turn would not build, or there is no pass to turn onto (the end of
+    /// the field, every pass worked). Sounds once until a turn is built or U-turn is switched off,
+    /// as AgOpenGPS plays sndUTurnTooClose for every FailCreate, the next pass outside the field
+    /// included. Before, the end of the field showed only a status line and the tractor drove into
+    /// the headland in silence.
+    /// </summary>
+    private void SoundCreationFailed(YouTurnEffects effects)
+    {
+        if (_creationFailSounded) return;
+        _creationFailSounded = true;
+        effects.TurnCreationFailedSound = true;
+    }
+
     private void RefuseDirectionSwap(int swappedPath, YouTurnEffects effects)
     {
         _logger.LogDebug("[YouTurn] Direction swap refused: path {Path} is outside the field", swappedPath);
@@ -1035,7 +1084,7 @@ public sealed class YouTurnStateMachine
 
         if (result.Path == null)
         {
-            if (!_creationFailSounded) { _creationFailSounded = true; effects.TurnCreationFailedSound = true; }
+            SoundCreationFailed(effects);
             return;
         }
         _creationFailSounded = false;
@@ -1115,6 +1164,7 @@ public sealed class YouTurnStateMachine
             guidance.HowManyPathsAway, widthMinusOverlap * guidance.HowManyPathsAway);
 
         turn.LastTurnWasLeft = turn.IsTurnLeft;
+        ForgetDirectionChoice(turn);
         turn.HasCompletedFirstTurn = true;
         turn.IsTriggered = false;
         turn.IsExecuting = false;
