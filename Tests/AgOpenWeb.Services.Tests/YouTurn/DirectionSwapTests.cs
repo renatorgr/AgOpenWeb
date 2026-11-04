@@ -106,6 +106,86 @@ public class DirectionSwapTests
         });
     }
 
+    // #585: the skip (and the skip mode) changed while the turn was being driven. The turn was
+    // built to land on one pass; completing it must put guidance on that pass, not on the pass
+    // the new skip would have chosen from where the turn started.
+    [TestCase(false)]
+    [TestCase(true)]
+    public void Normal_SkipChangedDuringTheTurn_LandsOnThePassTheTurnWasBuiltFor(bool alternateToo)
+    {
+        var bench = new Bench(skipRows: 3);
+        var (guidance, turn) = bench.OnPass(-1);
+        bench.Tick(guidance, turn);
+        double plannedX = turn.NextTrack!.Points[0].Easting;
+        int planned = (int)Math.Round((plannedX - Width / 2) / Width); // PassX inverted
+        Assert.That(Math.Abs(planned - -1), Is.EqualTo(4), "the scenario: skip 3 moves four passes");
+
+        turn.IsTriggered = turn.IsExecuting = true; // driving the turn
+        bench.SkipRows = 0;
+        bench.Alternate = alternateToo;
+        bench.Complete(guidance, turn);
+
+        Assert.That(guidance.HowManyPathsAway, Is.EqualTo(planned),
+            "on the pass the turn reached, not one picked with the new skip");
+    }
+
+    [Test]
+    public void Normal_SkipChangedDuringTheTurn_AppliesFromTheNextTurn()
+    {
+        var bench = new Bench(skipRows: 3);
+        var (guidance, turn) = bench.OnPass(-1);
+        bench.Tick(guidance, turn);
+        turn.IsTriggered = turn.IsExecuting = true;
+        bench.SkipRows = 0;
+        bench.Complete(guidance, turn);
+        int landed = guidance.HowManyPathsAway;
+
+        int next = bench.TurnAndComplete(guidance, turn);
+        Assert.That(Math.Abs(next - landed), Is.EqualTo(1), "the next turn moves by the new skip");
+    }
+
+    // #588: stopped in the turn and reversed back out of it. Guidance reports the path left;
+    // the turn didn't happen, so guidance stays on the pass and the turn is planned again.
+    [Test]
+    public void ReversedOutOfTheTurn_StaysOnThePass_AndPlansTheTurnAgain()
+    {
+        var bench = new Bench(skipRows: 3);
+        var (guidance, turn) = bench.OnPass(-1);
+        bench.Tick(guidance, turn);
+        turn.IsTriggered = turn.IsExecuting = true;
+
+        guidance.IsReverse = true;
+        var effects = bench.Complete(guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(guidance.HowManyPathsAway, Is.EqualTo(-1), "still on the pass it backed out to");
+            Assert.That(turn.IsExecuting, Is.False);
+            Assert.That(turn.TurnPath, Is.Null);
+            Assert.That(effects.TurnCompleted, Is.False, "nothing was completed");
+        });
+
+        guidance.IsReverse = false;
+        bench.Tick(guidance, turn);
+        Assert.That(turn.TurnPath, Is.Not.Null, "driving forward again, the turn is planned again");
+        int planned = (int)Math.Round((turn.NextTrack!.Points[0].Easting - Width / 2) / Width);
+        Assert.That(Math.Abs(planned - -1), Is.EqualTo(4), "to the same pass as before");
+    }
+
+    [Test]
+    public void KTurn_InReverse_StillCompletes()
+    {
+        var bench = new Bench(skipRows: 0);
+        ConfigurationStore.Instance.Guidance.UTurnStyle = 1;
+        var (guidance, turn) = bench.OnPass(-1);
+        bench.Tick(guidance, turn);
+        turn.IsTriggered = turn.IsExecuting = true;
+
+        guidance.IsReverse = true;
+        bench.Complete(guidance, turn);
+        Assert.That(guidance.HowManyPathsAway, Is.Not.EqualTo(-1), "a K-turn's reversing is part of the turn");
+    }
+
     [Test]
     public void Normal_Swap_IsForTheOneTurn()
     {
@@ -302,7 +382,10 @@ public class DirectionSwapTests
         private readonly YouTurnStateMachine _sm;
         private readonly Boundary _boundary;
         private readonly List<Vec3> _turnLine;
-        private readonly bool _skipWorked, _alternate;
+        private readonly bool _skipWorked;
+
+        /// <summary>Alternative skip mode; the operator can switch it at any time.</summary>
+        public bool Alternate { get; set; }
 
         /// <summary>The skip; changing it is what the pipeline does on the skip buttons.</summary>
         public int SkipRows { get; set; }
@@ -341,7 +424,7 @@ public class DirectionSwapTests
             Track = Models.Track.Track.FromABLine("AB", new Vec3(0, -100, 0), new Vec3(0, 100, 0));
             SkipRows = skipRows;
             _skipWorked = skipWorked;
-            _alternate = alternate;
+            Alternate = alternate;
         }
 
         /// <summary>The tractor on pass <paramref name="pass"/>, heading north, 64 m before the turn line.</summary>
@@ -356,7 +439,7 @@ public class DirectionSwapTests
             Track, _boundary, _turnLine,
             UTurnSkipRows: SkipRows, IsSkipWorkedMode: _skipWorked,
             HeadlandCalculatedWidth: 16.0, HeadlandDistance: 16.0,
-            IsAlternateSkipMode: _alternate);
+            IsAlternateSkipMode: Alternate);
 
         public YouTurnEffects Tick(GuidanceWorkingState guidance, YouTurnWorkingState turn)
         {
@@ -367,7 +450,7 @@ public class DirectionSwapTests
 
         public void SwitchedOff() => _sm.OnYouTurnSwitchedOff();
 
-        public void Complete(GuidanceWorkingState guidance, YouTurnWorkingState turn) =>
+        public YouTurnEffects Complete(GuidanceWorkingState guidance, YouTurnWorkingState turn) =>
             _sm.CompleteFromGuidance(Ctx(), guidance, turn);
 
         /// <summary>Plan a turn (swapped to the other side if asked), drive it, and stand on the
