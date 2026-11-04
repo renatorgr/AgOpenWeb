@@ -81,6 +81,7 @@ public sealed class YouTurnStateMachine
     // the field and a swapped turn (the U-turn arrow) carries on to the new side (#523).
     private int _lastStep;
     private string? _lastStepTrack;
+    private int _lastStepPass; // the pass that turn landed on
 
     public YouTurnStateMachine(
         YouTurnCreationService creation,
@@ -148,7 +149,11 @@ public sealed class YouTurnStateMachine
         double headingDiff = headingRadians - abHeading;
         while (headingDiff > Math.PI) headingDiff -= 2 * Math.PI;
         while (headingDiff < -Math.PI) headingDiff += 2 * Math.PI;
-        guidance.IsHeadingSameWay = Math.Abs(headingDiff) < Math.PI / 2;
+        bool headingSameWay = Math.Abs(headingDiff) < Math.PI / 2;
+        // Held while a turn is driven, as the pipeline holds it: the turn and the old pass's
+        // line were placed for the old direction, and flipping it halfway round the arc moved
+        // that line by twice the tool offset (#591). The first cycle after the turn takes the new one.
+        if (!turn.IsExecuting) guidance.IsHeadingSameWay = headingSameWay;
 
         bool alignedForward = Math.Abs(headingDiff) < AlignmentTolerance;
         bool alignedReverse = Math.Abs(headingDiff) > (Math.PI - AlignmentTolerance);
@@ -157,14 +162,14 @@ public sealed class YouTurnStateMachine
         // Distance-to-headland raycast is valid only when the tractor is aligned with the track;
         // otherwise heading swings mid-turn create spurious proximity readings.
         double travelHeading = abHeading;
-        if (!guidance.IsHeadingSameWay)
+        if (!headingSameWay)
         {
             travelHeading += Math.PI;
             if (travelHeading >= Math.PI * 2) travelHeading -= Math.PI * 2;
         }
 
         turn.DistanceToHeadland = isAlignedWithABLine
-            ? RaycastDistanceToHeadland(currentPosition, travelHeading, ctx.HeadlandLine, guidance.IsHeadingSameWay, turn.YouTurnCounter)
+            ? RaycastDistanceToHeadland(currentPosition, travelHeading, ctx.HeadlandLine, headingSameWay, turn.YouTurnCounter)
             : double.MaxValue;
 
         turn.CurrentZone = DetermineZone(currentPosition.Easting, currentPosition.Northing, ctx.Boundary, ctx.HeadlandLine);
@@ -694,6 +699,19 @@ public sealed class YouTurnStateMachine
     }
 
     /// <summary>
+    /// The active track changed: everything planned or driven on the old one goes (the turn,
+    /// the pass it lands on, the snake order, the alternate pattern, the worked-pass cache).
+    /// </summary>
+    public void ForgetTrack(YouTurnWorkingState turn)
+    {
+        ClearState(turn);
+        turn.SnakeSequence = null;
+        turn.SnakeIndex = -1;
+        turn.AltSign = 0;
+        _coveredPasses.Clear();
+    }
+
+    /// <summary>
     /// Drop a planned turn that isn't being driven yet: the path, the next track and the
     /// snake / alternate target pass (#1203). The next tick plans a fresh one. Without the
     /// target reset, a later Normal or manual turn would complete onto the stale pass.
@@ -800,6 +818,14 @@ public sealed class YouTurnStateMachine
         // Never onto a worked pass: the next pass of the order that is still to do.
         var isWorked = WorkedPasses(in ctx, track, guidance, turn);
         int? nextPath = _pathing.GetNextSnakePath(turn, isWorked);
+        // An order planned before the headland or boundary changed can go on to a pass that is
+        // no longer in the field: plan it again for the field as it is.
+        if (nextPath is { } stale && !_pathing.IsPathInsideCultivated(track, abHeading, stale, ctx.Boundary, ctx.HeadlandLine))
+        {
+            _logger.LogDebug("[YouTurn] Snake pass {Pass} is outside the field - planning the snake again", stale);
+            _pathing.BuildSnakeSequence(track, abHeading, guidance, turn, ctx.Boundary, ctx.HeadlandLine);
+            nextPath = _pathing.GetNextSnakePath(turn, isWorked);
+        }
         if (nextPath == null)
         {
             _logger.LogDebug("[YouTurn] Snake sequence complete — field done");
@@ -875,7 +901,8 @@ public sealed class YouTurnStateMachine
         double widthMinusOverlap = config.ActualToolWidth - config.Tool.Overlap;
         // The next pass is driven the other way: the tool shift changes sign (#446).
         double toolShift = Models.Track.PassGeometry.ToolShift(config.Tool.Offset, guidance.IsHeadingSameWay);
-        double nextDistAway = Models.Track.PassGeometry.Offset(track, nextPath, widthMinusOverlap, 0, -toolShift);
+        // With the nudge, as the exit leg and the line steered after the turn (#591).
+        double nextDistAway = Models.Track.PassGeometry.Offset(track, nextPath, widthMinusOverlap, guidance.NudgeOffset, -toolShift);
         int pathDiff = nextPath - guidance.HowManyPathsAway;
 
         // The planned path dictates pathDiff (snake / alternative), not the regular skip logic.
@@ -1000,6 +1027,16 @@ public sealed class YouTurnStateMachine
             track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, ctx.UTurnSkipRows, keepPositive);
 
         _logger.LogDebug("[YouTurn] Creating turn? nextLineInside={Inside} positiveDir={Dir}", nextLineInside, positiveDirection);
+        // The turns step one way across the field (#523). When that side has no pass left, the
+        // turn back lands on the pass it came from, just worked: the field is done, as AgOpenGPS
+        // ends it (the next pass out of bounds: FailCreate). Before the first turn on this track
+        // the inside side is the way to go, and the operator's arrow still turns either way.
+        // Skipped passes are filled with the alternative or ignore-worked modes. Only on the pass
+        // the last turn landed on: moved to another pass, or the field opened again, the tractor
+        // may start from this edge.
+        if (nextLineInside && keepPositive is { } stepping && guidance.HowManyPathsAway == _lastStepPass
+            && positiveDirection != stepping && turn.NextUTurnDirectionLeftOverride is null)
+            nextLineInside = false;
         if (!nextLineInside)
         {
             _logger.LogDebug("[YouTurn] Next line would be outside boundary - stopping U-turns");
@@ -1191,6 +1228,7 @@ public sealed class YouTurnStateMachine
 
         _lastStep = Math.Sign(guidance.HowManyPathsAway - passBefore);
         _lastStepTrack = ctx.SelectedTrack?.Name;
+        _lastStepPass = guidance.HowManyPathsAway;
 
         double widthMinusOverlap = config.ActualToolWidth - config.Tool.Overlap;
         _logger.LogDebug("[YouTurn] Now on path {Path} ({Off:F1}m from reference)",

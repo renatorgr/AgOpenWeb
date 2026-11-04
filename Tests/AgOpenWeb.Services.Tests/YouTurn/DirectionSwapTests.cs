@@ -374,6 +374,155 @@ public class DirectionSwapTests
         });
     }
 
+    // ── The lines shown with a turn (#591) ──────────────────────────────
+
+    // An alternative-skip turn: the next pass shown (cyan) is where the turn ends and the line
+    // steered after it, nudge included. It used to leave the nudge out and sat beside the turn.
+    [TestCase(false)]
+    [TestCase(true)]
+    public void PlannedPass_NextPassShown_HasTheNudge(bool alternate)
+    {
+        var bench = new Bench(skipRows: 1, skipWorked: !alternate, alternate: alternate);
+        var (guidance, turn) = bench.OnPass(0);
+        guidance.NudgeOffset = 2.0;
+
+        bench.Tick(guidance, turn);
+        int target = turn.ReturnPassTargetPath!.Value;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.NextTrack!.Points[0].Easting, Is.EqualTo(PassX(target) + 2.0).Within(0.01));
+            Assert.That(turn.TurnPath![^1].Easting, Is.EqualTo(PassX(target) + 2.0).Within(0.5), "the turn ends there too");
+        });
+    }
+
+    // Halfway round the turn the tractor heads the other way. Which way the pass is driven stays
+    // as it was until the turn completes: it places the old pass's line with a tool offset, which
+    // jumped by twice the offset halfway round the arc.
+    [Test]
+    public void DrivingTheTurn_TheDirectionIsHeldUntilItCompletes()
+    {
+        var bench = new Bench(skipRows: 0);
+        var (guidance, turn) = bench.OnPass(0);
+        bench.Tick(guidance, turn);
+        Assert.That(guidance.IsHeadingSameWay, Is.True, "the scenario: heading north along the line");
+
+        turn.IsTriggered = turn.IsExecuting = true;
+        bench.Heading = 180; // round the arc, heading south
+        bench.TickAny(guidance, turn);
+
+        Assert.That(guidance.IsHeadingSameWay, Is.True);
+    }
+
+    [Test]
+    public void AfterTheTurn_TheNewDirectionIsTaken()
+    {
+        var bench = new Bench(skipRows: 0);
+        var (guidance, turn) = bench.OnPass(0);
+        bench.Heading = 180;
+        bench.TickAny(guidance, turn);
+        Assert.That(guidance.IsHeadingSameWay, Is.False);
+    }
+
+    // ── A snake order made for another field ────────────────────────────
+
+    // The order was planned before the headland or boundary changed: its next pass (9, x = 57)
+    // is now outside the turn line (passes -7..6 are inside). The turn must not go there: the
+    // snake is planned again for the field as it is.
+    [Test]
+    public void Snake_NextPassOfTheOrderOutsideTheField_PlansTheOrderAgain()
+    {
+        var bench = new Bench(skipRows: 0, skipWorked: true);
+        var (guidance, turn) = bench.OnPass(0);
+        turn.SnakeSequence = new List<int> { 0, 9, -1 };
+        turn.SnakeIndex = 0;
+
+        bench.Tick(guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.ReturnPassTargetPath, Is.Not.EqualTo(9));
+            Assert.That(turn.ReturnPassTargetPath, Is.InRange(-7, 6), "a pass inside the field");
+            Assert.That(turn.SnakeSequence, Does.Not.Contain(9));
+        });
+    }
+
+    // ── The end of the field ────────────────────────────────────────────
+
+    // Pass 6 is the last inside. Turning onto it from 5, the next pass that way (7) is outside:
+    // the only pass inside is 5, just worked. The field is done; the turn used to go back onto 5.
+    [Test]
+    public void Normal_LastPass_EndsTheFieldInsteadOfTurningBackOntoTheWorkedPass()
+    {
+        var bench = new Bench(skipRows: 0);
+        var (guidance, turn) = bench.OnPass(5);
+        Assert.That(bench.TurnAndComplete(guidance, turn), Is.EqualTo(6), "the scenario: 5 -> 6, the last pass");
+
+        var effects = bench.Tick(guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null, "no turn back onto pass 5");
+            Assert.That(effects.StatusMessage, Is.EqualTo("End of field reached"));
+        });
+    }
+
+    [Test]
+    public void Normal_LastPass_TheArrowStillTurnsBack()
+    {
+        var bench = new Bench(skipRows: 0);
+        var (guidance, turn) = bench.OnPass(5);
+        bench.TurnAndComplete(guidance, turn);
+
+        bench.Tick(guidance, turn);
+        turn.NextUTurnDirectionLeftOverride = true; // left, heading north: toward pass 5
+        bench.Tick(guidance, turn);
+
+        Assert.That(turn.TurnPath, Is.Not.Null);
+    }
+
+    // Skip 1 from pass 4: onto 6, the last. Turning back goes two passes, onto 4, just worked.
+    [Test]
+    public void SkipRows_LastPass_EndsTheFieldToo()
+    {
+        var bench = new Bench(skipRows: 1);
+        var (guidance, turn) = bench.OnPass(4);
+        Assert.That(bench.TurnAndComplete(guidance, turn), Is.EqualTo(6));
+
+        var effects = bench.Tick(guidance, turn);
+
+        Assert.That(turn.TurnPath, Is.Null, "no turn back onto pass 4");
+        Assert.That(effects.StatusMessage, Is.EqualTo("End of field reached"));
+    }
+
+    // After a turn the operator moved to the last pass (a snap, or drove there): it was not
+    // reached by a turn, so the inside side is the way.
+    [Test]
+    public void Normal_MovedToTheLastPass_TurnsInward()
+    {
+        var bench = new Bench(skipRows: 0);
+        var (guidance, turn) = bench.OnPass(4);
+        Assert.That(bench.TurnAndComplete(guidance, turn), Is.EqualTo(5));
+        var (_, fresh) = bench.OnPass(6);
+        guidance.HowManyPathsAway = 6;
+
+        bench.Tick(guidance, fresh);
+
+        Assert.That(fresh.PlannedNextPath, Is.EqualTo(5));
+    }
+
+    // The tractor starts on the last pass: before any turn, the inside side is the way.
+    [Test]
+    public void Normal_StartingOnTheLastPass_TurnsInward()
+    {
+        var bench = new Bench(skipRows: 0);
+        var (guidance, turn) = bench.OnPass(6);
+
+        bench.Tick(guidance, turn);
+
+        Assert.That(turn.PlannedNextPath, Is.EqualTo(5));
+    }
+
     // ── Bench ────────────────────────────────────────────────────────────
 
     /// <summary>The real planner on a 120 m square field (6 m tool, 8 m radius, 16 m legs).</summary>
@@ -390,6 +539,9 @@ public class DirectionSwapTests
         /// <summary>The skip; changing it is what the pipeline does on the skip buttons.</summary>
         public int SkipRows { get; set; }
         private double _x;
+
+        /// <summary>The tractor's heading (degrees); north, along the line, unless a test turns it.</summary>
+        public double Heading { get; set; }
 
         public Models.Track.Track Track { get; }
 
@@ -435,7 +587,7 @@ public class DirectionSwapTests
         }
 
         private YouTurnStateMachine.TickContext Ctx() => new(
-            new Position { Easting = _x, Northing = -20, Heading = 0, Speed = 2.78 },
+            new Position { Easting = _x, Northing = -20, Heading = Heading, Speed = 2.78 },
             Track, _boundary, _turnLine,
             UTurnSkipRows: SkipRows, IsSkipWorkedMode: _skipWorked,
             HeadlandCalculatedWidth: 16.0, HeadlandDistance: 16.0,
@@ -447,6 +599,9 @@ public class DirectionSwapTests
             Assert.That(turn.IsExecuting, Is.False, "the tractor is still far short of the turn");
             return effects;
         }
+
+        /// <summary>One cycle, whatever the turn is doing.</summary>
+        public YouTurnEffects TickAny(GuidanceWorkingState guidance, YouTurnWorkingState turn) => _sm.Tick(Ctx(), guidance, turn);
 
         public void SwitchedOff() => _sm.OnYouTurnSwitchedOff();
 
