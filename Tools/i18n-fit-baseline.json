@@ -1,11 +1,18 @@
 {
+ "bg": [
+  "Field Texture",
+  "Right",
+  "Steer Wizard"
+ ],
+ "cs": [
+  "Off"
+ ],
  "de": [
   "AgShare Download",
   "Delete Applied Area",
   "Drive In",
   "Lat/Lon + Heading",
   "Latitude (−90 to 90)",
-  "Left",
   "Longest Edge",
   "Next Boundary Dist",
   "Off",
@@ -18,5 +25,45 @@
   "Save to Job",
   "✎ Edit",
   "＋ Add"
+ ],
+ "fi": [
+  "Right"
+ ],
+ "hr": [
+  "Off",
+  "Right"
+ ],
+ "ja": [
+  "Field Texture",
+  "Off",
+  "Remove Offset",
+  "Steer Response"
+ ],
+ "nl": [
+  "Coupling type",
+  "Latitude (−90 to 90)",
+  "Place on Map",
+  "Playback",
+  "Right",
+  "✎ Edit"
+ ],
+ "pl": [
+  "Delete Applied Area",
+  "Right"
+ ],
+ "ru": [
+  "Area",
+  "Offset Fix",
+  "Right"
+ ],
+ "sr": [
+  "Off",
+  "Right"
+ ],
+ "sv": [
+  "Right"
+ ],
+ "ta": [
+  "Off"
  ]
 }
