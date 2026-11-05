@@ -476,6 +476,7 @@ public sealed class MapBroadcaster : IAsyncDisposable
         {
             try { await _snapshotTask.ConfigureAwait(false); } catch { /* ignore */ }
         }
+        _projector.Dispose(); // its folder watchers
         _cts.Dispose();
     }
 }
