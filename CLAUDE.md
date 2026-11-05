@@ -468,7 +468,7 @@ turns from the on-screen buttons) with paths built by `YouTurnCreationService`:
 - Rows wider than twice the turn radius (a wide spreader, skipped rows) get AgOpenGPS's wide turn (`CreateCurveWideTurn`): a quarter circle out of the pass, tangent to the turn line, the turn line itself, a quarter circle into the next pass, so the distance from the boundary holds on an angled headland (#544). The omega turn (one shape square to the track) is the fallback when it can't be built.
 - Manual: a Dubins path at the configured `UTurnRadius` from 4 m ahead of the tractor to the point abreast on the target pass (an omega when the radius exceeds half the pass offset), laid out along the track's local heading (the curve's heading at the nearest point); the path's first point is the tractor itself. Like AgOpenGPS `BuildManualYouTurn`.
 - The turn hands back to line guidance with 4 m of arc remaining (`EarlyCompletionLookahead`).
-- Obstacles (inner boundaries) chosen as *U-turn* (`AtObstacle == Turn`) get a turn line of their own, the obstacle offset outward by `UTurnDistanceFromBoundary` (`YouTurnCreationService.Obstacles.cs`), like AgOpenGPS with Drive thru = No: the turn-area test returns -1 outside the outer turn line, 0 in the workable area, k inside obstacle turn line k. A turn at an obstacle has no simple fallback and is never "turned from here" when missed; a hard obstacle keeps the implement outside. *Go round* and *Drive through* obstacles are driven through.
+- Obstacles (inner boundaries) chosen as *U-turn* (`AtObstacle == Turn`) get a turn line of their own, the obstacle offset outward by `UTurnDistanceFromBoundary` (`YouTurnCreationService.Obstacles.cs`), like AgOpenGPS with Drive thru = No: the turn-area test returns -1 outside the outer turn line, 0 in the workable area, k inside obstacle turn line k. A turn at an obstacle has no simple fallback and is never "turned from here" when missed; a hard obstacle keeps the implement outside. *Drive through* obstacles are driven through, and *Go around* ones are bent round by the line steered (below).
 
 Key parameters:
 - `HeadlandDistance` - width of headland zone (green to yellow line)
@@ -476,6 +476,22 @@ Key parameters:
 - Arc positioning: `headlandLegLength = max(HeadlandDistance - turnRadius, 2.0)`
 
 The arc must fit between the headland boundary (green line) and outer boundary (yellow line). If the headland is too narrow for the turn radius, the arc will extend past the outer boundary.
+
+## Going around obstacles
+Inner boundaries chosen as *Go around* (`ObstacleAction.GoRound`) bend the pass round them
+(`ObstacleDetour` in `Services/Track`). Each is grown by half the implement (and its offset, or half
+the tractor's track if wider) plus the safety margin, and the pass is moved sideways as far as the
+grown outline reaches across it, on the side needing the smaller move; obstacles close together
+along the pass are gone round together, on one side. The sideways offset rises no steeper than 45°
+and is rounded (Lasry-Lions: parabolas of 2R over it, then of R under it) so the bend is as short
+as the curve radius allows and never less than the obstacle needs. The radius and the margin are
+U-turn settings saved with the tool profile (`GuidanceConfig.GoAroundRadius` / `GoAroundMargin`,
+`uturn.goAroundRadius` / `uturn.goAroundMargin`; 6 m and 1 m by default). A
+bend that enters another grown obstacle, a *U-turn* obstacle, or comes closer to the field's edge
+tries the other side; with no room either way the obstacle is driven through and the operator gets a
+toast (`GpsCycleResult.ObstacleNotice`). The bend is built once per pass and cached; it is the line
+steered (`CalculateTrackGuidance`), the line shown and the light bar's line, AutoSteer on or off.
+U-turn planning and pass numbering keep the straight pass. Closed tracks are not bent.
 
 ## CI/CD
 
