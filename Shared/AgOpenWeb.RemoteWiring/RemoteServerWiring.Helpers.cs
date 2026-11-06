@@ -15,7 +15,7 @@ namespace AgOpenWeb.RemoteWiring;
 public static partial class RemoteServerWiring
 {
     // A browser without control is an observer: it sees everything and changes nothing
-    // (#397). Only these ids run for it; the hub handles control.* and diag.ping itself.
+    // (#397). Only these ids run for it; the hub handles control.*, diag.ping and diag.client itself.
     // Fail-closed: a new id needs control unless it is added here, and only a request
     // that changes no setting, data or machine state belongs here.
     internal static readonly System.Collections.Generic.HashSet<string> ObserverIds = new()
@@ -51,21 +51,9 @@ public static partial class RemoteServerWiring
         var tool = store.Tool;
         bool harvester = store.Vehicle.Type == AgOpenWeb.Models.VehicleType.Harvester;
         bool wasFront = tool.IsToolFrontFixed;
-        int sections = store.NumSections;
-        int widthIdx = key == "tool.sectionWidth" && int.TryParse(val.Split(',')[0], System.Globalization.NumberStyles.Integer,
-            System.Globalization.CultureInfo.InvariantCulture, out var wi) ? wi : -1;
-        double width = widthIdx >= 0 ? tool.GetSectionWidth(widthIdx) : 0;
 
         ApplyConfigSet(store, cfg, key, val);
 
-        // Fewer or narrower sections must still leave the passes apart (the overlap is less
-        // than the implement): otherwise put the section back.
-        if ((key == "tool.numSections" || widthIdx >= 0) && store.ActualToolWidth - tool.Overlap <= 0.01)
-        {
-            if (widthIdx >= 0) tool.SetSectionWidth(widthIdx, width);
-            else store.NumSections = sections;
-            return "The implement must stay wider than the overlap: lower the overlap first";
-        }
         // A harvester's header is front-mounted (#111): say so rather than ignore the choice.
         if (key == "tool.type" && harvester && !string.Equals(val, "front", System.StringComparison.OrdinalIgnoreCase))
             return "A combine takes only a front implement (its header)";
@@ -578,7 +566,8 @@ public static partial class RemoteServerWiring
 
     // File / Application Menu write-side. Reset (client-confirmed), hotkey edits, and bug-report
     // dump go straight to the services / ConfigStore (no native dialogs). Language rides the VM.
-    private static void ApplyAppCommand(IServiceProvider services, AgOpenWeb.ViewModels.MainViewModel vm, string cmd, string arg)
+    private static void ApplyAppCommand(IServiceProvider services, AgOpenWeb.ViewModels.MainViewModel vm, string cmd, string arg,
+        Func<string>? browsersSummary = null)
     {
         var configService = services.GetRequiredService<IConfigurationService>();
         var store = services.GetRequiredService<AgOpenWeb.Models.Configuration.ConfigurationStore>();
@@ -635,7 +624,8 @@ public static partial class RemoteServerWiring
                             services.GetService<INtripClientService>(), services.GetService<IGpsService>()),
                         ntripSessionReport: AgOpenWeb.Services.NtripSupportReport.Build(
                             services.GetService<INtripClientService>(), services.GetService<IGpsService>()),
-                        ntripSummary: AgOpenWeb.Services.NtripSupportReport.Summary(services.GetService<INtripClientService>()));
+                        ntripSummary: AgOpenWeb.Services.NtripSupportReport.Summary(services.GetService<INtripClientService>()),
+                        browsersSummary: browsersSummary?.Invoke());
                 }
                 catch (Exception ex) { state.BugReportStatus = "Error: " + ex.Message; return; }
                 var job = ActiveJobForDump(services, state);
