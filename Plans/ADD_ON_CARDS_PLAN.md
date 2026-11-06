@@ -136,9 +136,7 @@ a split layout the pane is a **drawer**.
    - the drawer in each position, a page keeping its state across Closed and Full, the strip at
      speed;
    - an observer.
-3. **Add-on author page** (`Docs/ADD_ON_WEB_CARDS.md`): what the card gives an add-on, `{host}`,
-   framing headers to avoid, what observers see, the sizes a page should work at (a half-window
-   slot, a quarter, full).
+3. **Add-on author page**: `Docs/ADD_ON_CARDS.md`, for web and VT cards. Done.
 4. Close #456; move this plan to `Completed/`.
 
 ## 7. Later
@@ -149,20 +147,14 @@ a split layout the pane is a **drawer**.
   2. `postMessage` both ways, with the target origin checked: to the page theme, language, units
      and whether this browser holds control, on change; from the page a title, an attention badge
      (an alarm while the card is closed, behind others or in a closed drawer), a preferred size.
-- **Discovery:** the bookmark editor's *Search the network* is built, in two steps on one press.
-  First the host asks the network by mDNS for the pages announcing themselves (DNS-SD `_http._tcp`,
-  the standard type every web server may announce, with `path=` in TXT honoured, RFC 6763 §6.4:
-  `MdnsHttpBrowser`, about 1 s) and lists them at once under the instance name their maker gave them
-  ("sprayer", "aio"). Then it asks every address of its own private networks (at most the /24 around
-  its address) for a page on port 80 (`WebPageScanner`, about 3 s) and adds each with its `<title>`,
-  so an add-on that announces nothing is found too; a page found both ways is listed once, with its
-  announced name. One tap adds a page as a bookmark. The mDNS question goes from an ordinary port and
-  is answered by unicast (RFC 6762 §6.7), so it needs no port 5353 and no multicast group, and works
-  next to the system's own mDNS; on iOS, where multicast needs an entitlement, it fails quietly and
-  the sweep alone finds the pages (an `NSNetServiceBrowser` for `_http._tcp`, with the type in
-  `NSBonjourServices`, could replace it there later, as `AowLinkBrowser` does for the VT gateways).
-  No AgOpenWeb-specific service type: a module that already announces its page the standard way is
-  found with nothing added.
+- **Discovery:** add-ons announcing themselves by DNS-SD as `_aowcard._tcp` (format fixed
+  2026-11-05 in `Docs/ADD_ON_CARDS.md`: instance name shown, TXT `v=1`, `path`, `scheme`) in the
+  picker without typing, as the VT gateways are. SharpIsoTerm's `AowLinkBrowser`
+  has `_aowlink._tcp` fixed and would need the service type as a parameter; iOS needs the type in
+  `NSBonjourServices`. Not before the bookmarks are in use.
+  This fork's `pulverizador` branch keeps its *Search the network* (an mDNS question for
+  `_http._tcp` pages plus a sweep of the /24 for a page on port 80, one tap adds a bookmark)
+  until the official picker lists the `_aowcard._tcp` add-ons; then the search goes.
 - **Moving cards between tabs**, if asked for.
 
 ## 8. Not doing
@@ -172,3 +164,5 @@ a split layout the pane is a **drawer**.
 - Add-ons sending AgOpenWeb commands. An add-on that needs guidance data talks to the modules'
   protocol (PGN / process data), not to the web client.
 - Opening or closing the drawer automatically (§3, decision 2).
+- Scanning the network (addresses or ports) for add-on pages (#543). AgOpenWeb is not a network
+  scanner; add-ons announce themselves by mDNS / DNS-SD (§7 Discovery).
