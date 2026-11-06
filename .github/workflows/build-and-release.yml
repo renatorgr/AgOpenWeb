@@ -245,6 +245,9 @@ jobs:
           done
 
   build-ios:
+    # Official repository only: GitHub's macOS runners are a fixed pool and the job is often
+    # cancelled here for lack of one. The official CI compiles iOS for every PR opened there.
+    if: github.repository == 'AgOpenGPS-Official/AgOpenWeb'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
