@@ -196,6 +196,7 @@ public static partial class RemoteServerWiring
             case "uturn.distanceFromBoundary": if (D(out var u5)) gd.UTurnDistanceFromBoundary = u5; return;
             case "uturn.goAroundRadius": if (D(out var u6)) gd.GoAroundRadius = Math.Clamp(u6, 1.0, 50.0); return;
             case "uturn.goAroundMargin": if (D(out var u7)) gd.GoAroundMargin = Math.Clamp(u7, 0.3, 10.0); return;
+            case "uturn.crossGap": if (D(out var u8)) gd.UTurnCrossGap = Math.Max(0, u8); return;
             // --- Tram (ConfigStore.Guidance + Tram.TramWidth; saved with the tool profile, #330) ---
             case "tram.passes": if (I(out var tp)) gd.TramPasses = tp; return;
             case "tram.display": gd.TramDisplay = B(); return;

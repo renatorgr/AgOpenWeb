@@ -177,6 +177,7 @@ public static class ToolProfileJsonService
                 TurnRadius = store.Guidance.UTurnRadius,
                 ExtensionLength = store.Guidance.UTurnExtension,
                 DistanceFromBoundary = store.Guidance.UTurnDistanceFromBoundary,
+                CrossGap = store.Guidance.UTurnCrossGap,
                 Style = store.Guidance.UTurnStyle,
                 Smoothing = store.Guidance.UTurnSmoothing,
                 GoAroundRadius = store.Guidance.GoAroundRadius,
@@ -299,6 +300,7 @@ public static class ToolProfileJsonService
         store.Guidance.UTurnRadius = dto.YouTurn?.TurnRadius ?? dg.UTurnRadius;
         store.Guidance.UTurnExtension = dto.YouTurn?.ExtensionLength ?? dg.UTurnExtension;
         store.Guidance.UTurnDistanceFromBoundary = dto.YouTurn?.DistanceFromBoundary ?? dg.UTurnDistanceFromBoundary;
+        store.Guidance.UTurnCrossGap = dto.YouTurn?.CrossGap ?? dg.UTurnCrossGap;
         store.Guidance.UTurnStyle = dto.YouTurn?.Style ?? dg.UTurnStyle;
         store.Guidance.UTurnSmoothing = dto.YouTurn?.Smoothing ?? dg.UTurnSmoothing;
         store.Guidance.GoAroundRadius = dto.YouTurn?.GoAroundRadius ?? dg.GoAroundRadius;
@@ -378,6 +380,7 @@ public static class ToolProfileJsonService
         public double? DistanceFromBoundary { get; set; }
         public double? GoAroundRadius { get; set; }
         public double? GoAroundMargin { get; set; }
+        public double? CrossGap { get; set; }
         public int? Style { get; set; }
         public int? Smoothing { get; set; }
     }
