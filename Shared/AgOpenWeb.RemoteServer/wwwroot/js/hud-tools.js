@@ -334,7 +334,7 @@ function renderRecPath() {
 
 // Boundary recording menu: the field's boundaries (Outer / Inner N). The outer one shows its
 // area and the Hard flag; each obstacle (inner boundary) its size and what the tractor does at
-// it: a U-turn, go round, or drive through, one lit cell of three. The obstacles are listed by
+// it: a U-turn, go around, or drive through, one lit cell of three. The obstacles are listed by
 // size, smallest first, so the few big ones sit together at the end. Tap a row to select it
 // (its obstacle is outlined on the map), a cell to give that obstacle the choice, a column
 // title to give it to all of them.
@@ -402,7 +402,8 @@ for (const h of document.querySelectorAll('#boundarymenu .bm-colhdr')) h.addEven
 // the diameter for new circles (kept per browser); a new circle takes what the box shows, so
 // the next tree gets the size of the one just placed. "+ Circles" stays armed: every tap on the
 // map puts a circle centred there, until it is tapped again or the menu closes. "Round" makes
-// the selected drawn obstacle the smallest circle that holds it, "Round all" every Go around one.
+// the selected drawn obstacle the smallest circle that holds it, "Round all" every one up to a
+// tree's size. A tap on an obstacle already there selects it instead of adding a circle on it.
 const CIRCLE_D_KEY = 'aow.newCircleDiameter';
 let bmNewD = 6;
 try { const v = parseFloat(localStorage.getItem(CIRCLE_D_KEY)); if (v >= 0.5 && v <= 100) bmNewD = v; } catch (_) {}
@@ -439,6 +440,8 @@ document.getElementById('bm-circ-add').addEventListener('pointerdown', ev => {
   startMapTap({
     bmTool: 'add', hint: tr('Tap the centre of each tree. Tap "+ Circles" again to stop.'), onCancel: endCircleTaps,
     onTap: (te, tn) => {
+      const there = obstacleRingAt(te, tn);
+      if (there >= 0) { transport.send('boundary.select|' + there); return; }
       const d = readUnitInput(bmCircD);
       transport.send('boundary.circle.add|' + te.toFixed(2) + ',' + tn.toFixed(2) + ',' + (circleDiameterOk(d) ? d : bmNewD));
     },
@@ -467,13 +470,24 @@ document.getElementById('bm-circ-round').addEventListener('pointerdown', ev => {
 });
 document.getElementById('bm-circ-all').addEventListener('pointerdown', ev => {
   ev.stopPropagation();
-  // There is no undo; a long, thin obstacle keeps its shape (the host decides, from its area).
-  const n = boundary ? boundary.items.filter(i => i.isInner && i.atObstacle === 1 && !(i.circleD > 0)).length : 0;
-  if (!n) { showToast(tr('No "Go around" obstacle to make round')); return; }
+  // There is no undo; a long, thin or big obstacle keeps its shape (the host decides).
+  const n = boundary ? boundary.items.filter(i => i.isInner && !(i.circleD > 0)).length : 0;
+  if (!n) { showToast(tr('No obstacle to make round')); return; }
   showConfirm(tr('Round obstacles'),
-    tr('Make the {n} "Go around" obstacles round? Each becomes the smallest circle that holds it; long, thin ones keep their shape. This cannot be undone.', { n }),
+    tr('Make the obstacles up to {d} across round? Each becomes the smallest circle that holds it; long, thin ones and bigger ones keep their shape. This cannot be undone.', { d: fmtUnit(30, 'm', 0) }),
     () => transport.send('boundary.circle.roundAll'));
 });
+// The scene ring of the smallest obstacle holding the point (world metres), or -1.
+function obstacleRingAt(e, n) {
+  if (!scene || !scene.boundaries) return -1;
+  let best = -1, bestArea = Infinity;
+  for (let i = 0; i < scene.boundaries.length; i++) {
+    if (!scene.boundaryInner[i] || !pointInRing(scene.boundaries[i], e, n)) continue;
+    const a = shoelace(scene.boundaries[i]);
+    if (a < bestArea) { bestArea = a; best = i; }
+  }
+  return best;
+}
 // With the boundary menu open, a tap on an obstacle on the map selects its row: the smallest
 // obstacle holding the point, else the one whose edge is within reach of the finger (a tree is
 // a few pixels across when zoomed out). The rings and the list share their index. True when

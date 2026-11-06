@@ -141,9 +141,9 @@ public class GuidanceConfig : ObservableObject
         set => SetProperty(ref _uTurnDistanceFromBoundary, value);
     }
 
-    // Going around obstacles chosen as Go around (ObstacleDetour): the tightest the line bends
-    // round one, and the room kept between the implement and the obstacle. Saved with the tool
-    // profile, as the U-turn settings are.
+    // Going around obstacles chosen as Go around (ObstacleDetour): the tightest the pass bends
+    // round one, and the room kept between the implement and the obstacle (0.3 m at least:
+    // GoAroundPasses.MinMargin). Saved with the tool profile, as the U-turn settings are.
     private double _goAroundRadius = 6.0;
     public double GoAroundRadius
     {

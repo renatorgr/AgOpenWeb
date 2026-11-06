@@ -700,7 +700,7 @@ function drawImageWorldSk(canvas, img, minE, minN, maxE, maxN, filter, mipMode) 
 }
 
 // The paint of scene ring bi: the outer boundary, or an obstacle by its choice (boundaryKind
-// 1 U-turn, 2 go round, 3 drive through).
+// 1 U-turn, 2 go around, 3 drive through).
 function boundaryRingPaint(bi) {
   const k = scene.boundaryKind ? scene.boundaryKind[bi] : (scene.boundaryInner[bi] ? 1 : 0);
   return k === 2 ? SKP.boundaryGoRound : k === 3 ? SKP.boundaryDriveThru : k ? SKP.boundaryInner : SKP.boundary;

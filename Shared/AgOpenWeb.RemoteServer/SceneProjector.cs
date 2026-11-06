@@ -939,7 +939,8 @@ public sealed class SceneProjector : System.IDisposable
         foreach (var d in new[] { t.HitchLength, t.TrailingHitchLength, t.TankTrailingHitchLength, t.Length,
                                   t.LookAheadOnSetting, t.LookAheadOffSetting, t.TurnOffDelay, t.Offset, t.Overlap,
                                   t.TrailingToolToPivotLength, t.DefaultSectionWidth, t.SlowSpeedCutoff, t.CoverageMargin,
-                                  g.UTurnExtension, g.UTurnRadius, g.UTurnDistanceFromBoundary, g.GoAroundRadius, g.GoAroundMargin, mc.LookAhead })
+                                  g.UTurnExtension, g.UTurnRadius, g.UTurnDistanceFromBoundary, g.GoAroundRadius, g.GoAroundMargin,
+                                  mc.LookAhead })
             h = h * 31 + d.GetHashCode();
         for (int i = 0; i < 16; i++) h = h * 31 + t.GetSectionWidth(i).GetHashCode() + (int)t.GetSectionColor(i);
         for (int i = 0; i < 9; i++) h = h * 31 + t.GetZoneEndSection(i);

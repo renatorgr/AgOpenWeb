@@ -43,7 +43,7 @@ public record SceneDto(
     string FieldName,
     bool HasField,
     IReadOnlyList<IReadOnlyList<Vec2Dto>> Boundaries, // outer ring first, then inner holes
-    IReadOnlyList<byte> BoundaryKind, // parallel to Boundaries: 0 = outer, else an obstacle: 1 + its ObstacleAction (turn, go round, drive through)
+    IReadOnlyList<byte> BoundaryKind, // parallel to Boundaries: 0 = outer, else an obstacle: 1 + its ObstacleAction (1 turn, 2 go round, 3 drive through)
     IReadOnlyList<TrackDto> Tracks,
     IReadOnlyList<Vec2Dto>? Headland, // inner headland ring (green line), if any
     IReadOnlyList<Vec2Dto>? GuidanceLine, // the followed offset line (magenta), if guiding
@@ -480,7 +480,7 @@ public record ToolConfigDto(
     double TotalWidth);
 
 /// <summary>U-Turn tab (ConfigStore.Guidance). Style: 0 Omega, 1 Sagitta.</summary>
-/// <param name="GoAroundRadius">The tightest a line bends round a Go around obstacle, m.</param>
+/// <param name="GoAroundRadius">The tightest a pass bends round a Go around obstacle, m.</param>
 /// <param name="GoAroundMargin">Room kept between the implement and a Go around obstacle, m.</param>
 public record UturnConfigDto(int Style, double Extension, int Smoothing, double Radius, double DistanceFromBoundary,
     double GoAroundRadius, double GoAroundMargin);

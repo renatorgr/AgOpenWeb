@@ -333,8 +333,8 @@ public static partial class RemoteServerWiring
                                 case "boundary.circle.round": // arg = row: the smallest circle holding it
                                     if (int.TryParse(arg, out var bro)) vm.RemoteMakeObstacleRound(bro);
                                     return;
-                                case "boundary.circle.roundAll": // every "Go around" obstacle
-                                    vm.RemoteMakeGoRoundObstaclesRound();
+                                case "boundary.circle.roundAll": // every obstacle up to a tree's size
+                                    vm.RemoteMakeObstaclesRound();
                                     return;
                                 case "boundary.setOffset": // arg = recording offset cm (Tier-1)
                                     if (double.TryParse(arg, num, inv, out var boff)) vm.BoundaryOffset = boff;

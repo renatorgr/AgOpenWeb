@@ -443,11 +443,11 @@ public static class ProfileJsonServiceV1
         public double TurnRadius { get; set; }
         public double ExtensionLength { get; set; }
         public double DistanceFromBoundary { get; set; }
-        public int Style { get; set; }
-        public int Smoothing { get; set; }
         // Going around obstacles; absent in profiles from before it.
         public double? GoAroundRadius { get; set; }
         public double? GoAroundMargin { get; set; }
+        public int Style { get; set; }
+        public int Smoothing { get; set; }
     }
 
     internal class GeneralDto
