@@ -23,10 +23,19 @@ namespace AgOpenWeb.Services.Track;
 /// obstacle reaches across the pass at that point, on the side that needs the smaller move.
 /// The offset then rises and falls no steeper than <see cref="MaxSlope"/> and is rounded so
 /// that its curves are no tighter than the given radius, as short as that allows; it is never
-/// less than what the obstacle needs. A bent line is checked against every obstacle and the field's edge: an
-/// obstacle with no room on either side is not gone round (<see cref="Bend.Blocked"/>).
+/// less than what the obstacle needs. A bent line is checked against every obstacle and the
+/// field's edge: an obstacle with no room on either side is not gone round
+/// (<see cref="Bend.Blocked"/>), and the U-turn planner makes a turn before it on this pass.
 /// </para>
-/// Built once per pass and kept while the pass, the boundary and the settings are the same.
+/// <para>
+/// The side chosen for an obstacle can be pinned (<see cref="GoAroundPasses"/> pins it while the
+/// tractor is beside the obstacle): a nudge, a snap or a changed setting then bends the new pass
+/// round the same side, never across the obstacle in front of the tractor; with no room on the
+/// pinned side the obstacle is blocked, not flipped.
+/// </para>
+/// Built once per pass and kept while the pass, the boundary, the pins and the settings are the
+/// same. Pure geometry: the one object the steered line, the shown line and the U-turn planner
+/// share (<see cref="GoAroundPasses"/>), so they see one and the same bent pass.
 /// </summary>
 public sealed class ObstacleDetour
 {
@@ -39,53 +48,84 @@ public sealed class ObstacleDetour
     /// <summary>A straight pass (an AB line, two points) is taken this far past its ends, metres.</summary>
     private const double LineExtension = 2000.0;
 
+    /// <summary>
+    /// The farthest a bend moves the line off its pass, metres: two implement widths (four times
+    /// the keep-out less its margin, so a trailed tool's cut-in widens nothing), never under 20 m.
+    /// An obstacle, or a row of them gone round together, that needs more on the side with room
+    /// is not gone round (<see cref="Bend.Blocked"/>) and the U-turn planner turns before it. On
+    /// a real field a 12.5 m rake was taken 47 m off its pass, nearly four passes, round two trees
+    /// in a row.
+    /// </summary>
+    public static double MaxOffset(double keepOut, double margin) => Math.Max(4 * (keepOut - Math.Max(0, margin)), 20.0);
+
     /// <param name="Points">The bent line, with headings.</param>
     /// <param name="GoneRound">The obstacles gone round, as indices in <see cref="Boundary.InnerBoundaries"/>.</param>
     /// <param name="Blocked">The obstacles the pass runs into with no room to go round.</param>
-    public sealed record Bend(List<Vec3> Points, IReadOnlyList<int> GoneRound, IReadOnlyList<int> Blocked);
+    /// <param name="Rounds">Each obstacle gone round: which side, and where the tractor counts as beside it.</param>
+    public sealed record Bend(List<Vec3> Points, IReadOnlyList<int> GoneRound, IReadOnlyList<int> Blocked,
+        IReadOnlyList<RoundedObstacle> Rounds);
+
+    /// <param name="InnerIndex">The obstacle's index in <see cref="Boundary.InnerBoundaries"/>.</param>
+    /// <param name="Side">+1 bent to the left of the pass (the way its points run), -1 to the right.</param>
+    /// <param name="Fence">The obstacle grown by the keep-out distance.</param>
+    /// <param name="Reach">How far from the grown obstacle the bend for it starts and ends, metres: a
+    /// tractor nearer than that is beside the obstacle.</param>
+    public sealed record RoundedObstacle(int InnerIndex, int Side, IReadOnlyList<Vec2> Fence, double Reach)
+    {
+        /// <summary>Whether a tractor at (<paramref name="e"/>, <paramref name="n"/>) is beside the obstacle.</summary>
+        public bool IsBeside(double e, double n) => DistanceToRing(Fence, e, n) <= Reach;
+    }
 
     private readonly IPolygonOffsetService _offset;
 
     public ObstacleDetour(IPolygonOffsetService offset) => _offset = offset;
 
     private readonly record struct Entry(object Track, object Points, double DistAway, Boundary Boundary, long Key,
-        double KeepOut, double Radius, double Margin, Bend? Result);
+        double KeepOut, double Radius, double Margin, long Pins, int PassCount, Vec3 PassStart, Vec3 PassEnd, Bend? Result);
 
     // The last few passes asked for: the line steered and the line shown can be two passes for
     // a moment, and each would otherwise throw the other's bend away.
-    private readonly Entry?[] _cache = new Entry?[4];
+    private readonly Entry?[] _cache = new Entry?[8];
     private int _next;
 
     /// <summary>
     /// The pass <paramref name="pass"/> (offset <paramref name="distAway"/> from
     /// <paramref name="track"/>) bent round its Go around obstacles, or null when it runs into
     /// none: the same result while the inputs are the same, so a cycle costs a comparison.
+    /// <paramref name="pinnedSides"/> holds the side (+1 left, -1 right) each pinned obstacle keeps.
     /// </summary>
     public Bend? For(Models.Track.Track track, double distAway, IReadOnlyList<Vec3> pass, Boundary? boundary,
-        double keepOut, double radius, double margin)
+        double keepOut, double radius, double margin, IReadOnlyDictionary<int, int>? pinnedSides = null)
     {
         if (boundary == null || boundary.InnerBoundaries.Count == 0) return null;
-        long key = ObstacleKey(boundary);
+        if (pass.Count < 2) return null;
+        long key = YouTurn.YouTurnCreationService.ObstacleStamp(boundary);
+        long pins = PinsKey(pinnedSides);
+        // The pass is part of the key by its shape: the pipeline's two-point AB pass and the
+        // planner's densified one get bends of their own (the same geometry, on different points),
+        // and the planner never walks the sparse one.
+        Vec3 start = pass[0], end = pass[^1];
         foreach (var e in _cache)
             if (e is { } c && ReferenceEquals(c.Track, track) && ReferenceEquals(c.Points, track.Points)
                 && c.DistAway == distAway && ReferenceEquals(c.Boundary, boundary) && c.Key == key
-                && c.KeepOut == keepOut && c.Radius == radius && c.Margin == margin)
+                && c.KeepOut == keepOut && c.Radius == radius && c.Margin == margin && c.Pins == pins
+                && c.PassCount == pass.Count && SamePlace(c.PassStart, start) && SamePlace(c.PassEnd, end))
                 return c.Result;
 
-        var result = Compute(pass, boundary, keepOut, radius, margin);
-        _cache[_next] = new Entry(track, track.Points, distAway, boundary, key, keepOut, radius, margin, result);
+        var result = Compute(pass, boundary, keepOut, radius, margin, pinnedSides);
+        _cache[_next] = new Entry(track, track.Points, distAway, boundary, key, keepOut, radius, margin, pins,
+            pass.Count, start, end, result);
         _next = (_next + 1) % _cache.Length;
         return result;
     }
 
-    private static long ObstacleKey(Boundary boundary)
+    private static bool SamePlace(Vec3 a, Vec3 b) => a.Easting == b.Easting && a.Northing == b.Northing;
+
+    private static long PinsKey(IReadOnlyDictionary<int, int>? pins)
     {
-        long h = boundary.InnerBoundaries.Count;
-        foreach (var inner in boundary.InnerBoundaries)
-        {
-            h = ((h * 31 + inner.Points.Count) * 31 + (int)inner.AtObstacle) * 31 + (inner.Circle?.GetHashCode() ?? 0);
-            if (inner.Points.Count > 0) h = h * 31 + inner.Points[0].Easting.GetHashCode() * 7 + inner.Points[0].Northing.GetHashCode();
-        }
+        if (pins == null || pins.Count == 0) return 0;
+        long h = pins.Count;
+        foreach (var (inner, side) in pins.OrderBy(p => p.Key)) h = (h * 31 + inner) * 31 + side;
         return h;
     }
 
@@ -159,7 +199,10 @@ public sealed class ObstacleDetour
     /// <param name="radius">The tightest the line may bend.</param>
     /// <param name="margin">The safety margin in <paramref name="keepOut"/>: the bend keeps half the
     /// implement (keepOut less the margin) inside the field's edge.</param>
-    public Bend? Compute(IReadOnlyList<Vec3> pass, Boundary boundary, double keepOut, double radius, double margin = 1.0)
+    /// <param name="pinnedSides">The side (+1 left, -1 right) each pinned obstacle keeps; one with no
+    /// room on that side is blocked, not gone round the other way.</param>
+    public Bend? Compute(IReadOnlyList<Vec3> pass, Boundary boundary, double keepOut, double radius, double margin = 1.0,
+        IReadOnlyDictionary<int, int>? pinnedSides = null)
     {
         if (pass.Count < 2 || keepOut <= 0) return null;
         var line = pass.Count == 2 ? ExtendLine(pass[0], pass[1]) : pass;
@@ -184,29 +227,46 @@ public sealed class ObstacleDetour
         if (hits.Count == 0) return null;
         radius = Math.Max(radius, 1.0);
         Group(hits, radius);
+        Pin(hits, pinnedSides);
 
         var outer = boundary.OuterBoundary is { IsValid: true } ob
             ? ob.Points.Select(p => new Vec2(p.Easting, p.Northing)).ToList() : null;
         double edge = Math.Max(0, keepOut - Math.Max(0, margin));
+        double most = MaxOffset(keepOut, margin);
 
         var blocked = new List<int>();
         for (int attempt = 0; attempt < 3 * fences.Count + 3 && hits.Count > 0; attempt++)
         {
+            // An obstacle whose bend would move the line further than a bend may is not gone round:
+            // its side is the one with the smaller need, the other one already tried, or pinned.
+            for (int i = hits.Count - 1; i >= 0; i--)
+            {
+                var h = hits[i];
+                if ((h.Side > 0 ? h.NeedLeft : h.NeedRight) <= most) continue;
+                blocked.Add(h.Fence.InnerIndex);
+                hits.RemoveAt(i);
+            }
+            if (hits.Count == 0) break;
+
             var (first, offsets) = Profile(hits, radius);
             var (points, bases) = BentLine(frame, first, offsets);
             var conflict = FirstConflict(points, bases, fences, others, outer, edge);
             if (conflict == null)
             {
                 CurveProcessing.CalculateHeadings(points);
-                return new Bend(points, hits.Select(h => h.Fence.InnerIndex).ToList(), blocked);
+                var rounds = hits.Select(h => new RoundedObstacle(h.Fence.InnerIndex, h.Side, h.Fence.Ring,
+                    Lead(Math.Max(h.NeedLeft, h.NeedRight), radius) + BesideSlack)).ToList();
+                return new Bend(points, hits.Select(h => h.Fence.InnerIndex).ToList(), blocked, rounds);
             }
 
             var (fenceHit, at, sideThere) = conflict.Value;
             Hit? culprit = fenceHit == null ? null : hits.FirstOrDefault(h => h.Fence == fenceHit);
             if (culprit == null && fenceHit != null && !blocked.Contains(fenceHit.InnerIndex)
-                && Across(frame, fenceHit, force: true) is { } more)
+                && Across(frame, fenceHit, force: true) is { } more
+                && (sideThere > 0 ? more.NeedLeft : more.NeedRight) <= most)
             {
-                // The way round one obstacle runs into the next: go round both, the same side.
+                // The way round one obstacle runs into the next: go round both, the same side
+                // (a next one that would take the line too far is a conflict like any other).
                 var by = Nearest(hits, at);
                 more.Side = sideThere;
                 more.Group = by.Group;
@@ -223,7 +283,22 @@ public sealed class ObstacleDetour
             else { blocked.Add(culprit.Fence.InnerIndex); hits.Remove(culprit); }
         }
         foreach (var h in hits) if (!blocked.Contains(h.Fence.InnerIndex)) blocked.Add(h.Fence.InnerIndex);
-        return new Bend(new List<Vec3>(pass), Array.Empty<int>(), blocked);
+        return new Bend(new List<Vec3>(pass), Array.Empty<int>(), blocked, Array.Empty<RoundedObstacle>());
+    }
+
+    /// <summary>Beyond the bend's lead, how much nearer than the start of the bend still counts as beside the obstacle.</summary>
+    private const double BesideSlack = 2.0;
+
+    // A pinned obstacle keeps its side, and so do the obstacles gone round with it; none of them
+    // is tried the other way (Flipped): no room there means blocked.
+    private static void Pin(List<Hit> hits, IReadOnlyDictionary<int, int>? pins)
+    {
+        if (pins == null || pins.Count == 0) return;
+        foreach (var h in hits)
+        {
+            if (!pins.TryGetValue(h.Fence.InnerIndex, out int side)) continue;
+            foreach (var g in hits.Where(x => x.Group == h.Group)) { g.Side = side; g.Flipped = true; }
+        }
     }
 
     // Obstacles close together along the pass are gone round in one bend, on one side: the side
@@ -419,30 +494,33 @@ public sealed class ObstacleDetour
         return (result, bases);
     }
 
-    // Where the bent line first goes wrong: into a grown Go around obstacle (which, and the side
-    // the line is on there), or, where it was moved, into a U-turn obstacle or closer to the
-    // field's edge than `edge` (unless it moved away from the edge). Null when it is clear.
+    // Where the bent line first goes wrong, among the points it moved: into a grown Go around
+    // obstacle (which, and the side the line is on there), into a U-turn obstacle, or closer to
+    // the field's edge than `edge` (unless it moved away from the edge). Null when it is clear.
+    // The pass's own points are not tested: a pass through an obstacle with no room (blocked) is
+    // the U-turn planner's business, not the bend's, and a dense pass has such points where a
+    // two-point line has none.
     private static (Fence? Fence, Vec3 At, int Side)? FirstConflict(List<Vec3> points,
         List<(double E, double N)?> bases, List<Fence> fences, List<List<Vec2>> others, List<Vec2>? outer, double edge)
     {
         for (int k = 0; k < points.Count; k++)
         {
+            if (bases[k] is not { } b) continue;
+            if (Math.Abs(points[k].Easting - b.E) + Math.Abs(points[k].Northing - b.N) < 1e-3) continue;
             var p = points[k];
-            int side = 0;
-            if (bases[k] is { } b0 && k + 1 < points.Count)
+            int side = 1;
+            if (k + 1 < points.Count)
             {
                 // Which side of the pass this point was moved to.
                 var q = points[k + 1];
                 double ue = q.Easting - p.Easting, un = q.Northing - p.Northing;
-                side = ue * (p.Northing - b0.N) - un * (p.Easting - b0.E) > 0 ? 1 : -1;
+                side = ue * (p.Northing - b.N) - un * (p.Easting - b.E) > 0 ? 1 : -1;
             }
             foreach (var f in fences)
                 // The rounding keeps the line outside each grown outline; a few centimetres of
                 // sampling are let through.
                 if (f.Holds(p.Easting, p.Northing) && DistanceToRing(f.Ring, p.Easting, p.Northing) > 0.05)
-                    return (f, p, side == 0 ? 1 : side);
-            if (bases[k] is not { } b) continue;
-            if (Math.Abs(p.Easting - b.E) + Math.Abs(p.Northing - b.N) < 1e-3) continue;
+                    return (f, p, side);
             foreach (var o in others)
                 if (GeometryMath.IsPointInPolygon(o, p.Easting, p.Northing)) return (null, p, side);
             if (outer == null) continue;
@@ -464,7 +542,8 @@ public sealed class ObstacleDetour
         return best;
     }
 
-    private static double DistanceToRing(List<Vec2> ring, double e, double n)
+    /// <summary>The distance from (<paramref name="e"/>, <paramref name="n"/>) to the nearest edge of a ring.</summary>
+    public static double DistanceToRing(IReadOnlyList<Vec2> ring, double e, double n)
     {
         double best = double.MaxValue;
         for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)

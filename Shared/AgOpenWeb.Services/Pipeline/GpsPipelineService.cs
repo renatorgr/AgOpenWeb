@@ -42,6 +42,13 @@ public sealed class GpsPipelineService : IGpsPipelineService
     // and the camera/render math goes weird, so silently re-anchor.
     private const double TempOriginReinitDistanceM = 50_000.0;
 
+    // An obstacle chosen as U-turn this far ahead (plus ObstacleStopSeconds of travel) with no
+    // turn planned before it takes AutoSteer off.
+    private const double ObstacleStopDistance = 10.0;
+    private const double ObstacleStopSeconds = 2.0;
+    // Heading into a Go around obstacle counts only this far off the steered line (5b'').
+    private const double GoAroundOffLine = 1.5;
+
     // Surface a "GPS far from field" warning when the live GPS reports a
     // position farther than this from the loaded field's origin. Autosteer
     // is dropped immediately as a safety measure on the UI thread.
@@ -124,16 +131,18 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private double _cachedOffsetTurnRadius;
     private readonly OffsetPassCache _offsetPasses = new();
 
-    // Going round obstacles chosen as Go around: the pass bent round them, for the line steered
-    // and the line shown. The bend steered last cycle (a new one re-finds the nearest point),
-    // the bend shown with its track (kept so the display gate sees the same object), and the
-    // obstacles last reported as having no room.
-    private readonly Track.ObstacleDetour _obstacleDetour = new(new PolygonOffsetService());
+    // Going round obstacles chosen as Go around: the pass bent round them (GoAroundPasses, shared
+    // with the U-turn planner), for the line steered and the line shown. The bend steered last
+    // cycle (a new one re-finds the nearest point), the bend shown with its track (kept so the
+    // display gate sees the same object), and the obstacles last reported as having no room.
+    private readonly Track.GoAroundPasses _goAround;
     private List<Vec3>? _lastSteerBend;
     private List<Vec3>? _shownBendPoints;
     private Models.Track.Track? _shownBendTrack;
     private string? _blockedNoticeKey;
     private string? _obstacleNotice;
+    // The pivot's distance from the line last cycle: the line steered with AutoSteer on, else the line shown.
+    private double _lastLineXte;
     // Phase D D3: passNumber / nudgeOffset live on _guidanceWorking as the single
     // source of truth. The separate _passNumber / _nudgeOffset fields used to be
     // pushed here by SetActiveTrack; that path now writes directly to the
@@ -245,9 +254,11 @@ public sealed class GpsPipelineService : IGpsPipelineService
         IGpsHeadingFusionService headingFusion,
         ILogger<GpsPipelineService> logger,
         ConfigurationStore configStore,
-        IPositionEstimator? positionEstimator = null)
+        IPositionEstimator? positionEstimator = null,
+        Track.GoAroundPasses? goAround = null)
     {
         _gpsService = gpsService;
+        _goAround = goAround ?? new Track.GoAroundPasses(configStore, new PolygonOffsetService());
         _toolPositionService = toolPositionService;
         _trackGuidanceService = trackGuidanceService;
         _sectionControlService = sectionControlService;
@@ -1030,6 +1041,51 @@ public sealed class GpsPipelineService : IGpsPipelineService
             _belowMinSteerSpeedSinceMs = null;
         }
 
+        // (5b') An obstacle chosen as U-turn ahead and no turn to take before it (lost, missed,
+        // aborted, no room, or U-turn switched off): AutoSteer off with the alarm while there is
+        // room to stop or steer round it by hand, 10 m plus 2 s of travel ahead of the pivot.
+        if (autoSteerEngaged && hasTickableTrack && boundary != null && boundary.InnerBoundaries.Count > 0)
+        {
+            double reach = ObstacleStopDistance + ObstacleStopSeconds * Math.Abs(pos.Speed);
+            int inner = _youTurnStateMachine.ObstacleAheadWithoutTurn(in tickCtx, _youTurn, reach, _goAround.CurrentBlocked);
+            if (inner >= 0)
+            {
+                autoSteerEngaged = false;
+                autoSteerDisengaged = true;
+                disengageReason = $"AutoSteer off: Inner {inner + 1} ahead and no U-turn before it. Steer by hand.";
+                lock (_stateLock) _autoSteerEngaged = false;
+                _audioService.Play(SoundEffect.UTurnTooClose);
+            }
+            // (5b''') An obstacle changed under a turn being driven (another choice, made hard,
+            // added or moved) and the rest of the turn, or the next pass's first metres, run into
+            // it: a turn being driven is not planned again, so AutoSteer goes off with the alarm.
+            else if ((inner = _youTurnStateMachine.ObstacleChangedUnderTurn(in tickCtx, _youTurn, _goAround.CurrentBlocked)) >= 0)
+            {
+                autoSteerEngaged = false;
+                autoSteerDisengaged = true;
+                disengageReason = $"AutoSteer off: Inner {inner + 1} changed under the turn. Steer by hand.";
+                lock (_stateLock) _autoSteerEngaged = false;
+                _audioService.Play(SoundEffect.UTurnTooClose);
+            }
+            // (5b'') The net under going around: the bent line keeps the tractor clear of a Go
+            // around obstacle by construction, so a tractor heading into one within the same
+            // reach is off that line. Off it by more than the safety margin (the room the bend
+            // gave the implement is spent) AutoSteer goes off with the alarm; a tractor on the
+            // line, or lagging it a little on the way into the bend, drives on.
+            else if (!_youTurn.IsExecuting && Math.Abs(_lastLineXte) > GoAroundOffLine)
+            {
+                int round = _goAround.ObstacleAhead(boundary, driftedEasting, driftedNorthing, headingRad, reach);
+                if (round >= 0)
+                {
+                    autoSteerEngaged = false;
+                    autoSteerDisengaged = true;
+                    disengageReason = $"AutoSteer off: Inner {round + 1} ahead and the tractor off the line round it. Steer by hand.";
+                    lock (_stateLock) _autoSteerEngaged = false;
+                    _audioService.Play(SoundEffect.UTurnTooClose);
+                }
+            }
+        }
+
         // (5c) Reverse (#125), like AgOpenGPS: with Steer in reverse off, steering
         // stops while reversing but AutoSteer stays engaged; it also stops while a
         // single antenna with no IMU can't yet tell a direction change. PGN 254
@@ -1521,6 +1577,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         PathIndex = src.PathIndex,
         ArcStart = src.ArcStart,
         TurnAtObstacle = src.TurnAtObstacle,
+        TurnAtObstacleIndex = src.TurnAtObstacleIndex,
         IsTurnLeft = src.IsTurnLeft,
         LastTurnWasLeft = src.LastTurnWasLeft,
         DistanceToHeadland = src.DistanceToHeadland,
@@ -1684,13 +1741,17 @@ public sealed class GpsPipelineService : IGpsPipelineService
             };
         }
 
-        // Round the Go around obstacles on this pass, tractor and implement kept out of them.
-        var bent = GoRoundLine(track, distAway, currentTrack.Points, boundary, report: true);
+        // Round the Go around obstacles on this pass, tractor and implement kept out of them. The
+        // bend steered is the one the planner and the display use (GoAroundPasses.Current), and
+        // it pins the side of each obstacle the tractor is beside.
+        var bend = GoRoundBend(track, distAway, currentTrack.Points, boundary, report: true);
+        var bent = bend != null && bend.GoneRound.Count > 0 ? bend.Points : null;
         if (bent != null)
             currentTrack = new Models.Track.Track
             {
                 Name = currentTrack.Name, Points = bent, Type = track.Type, IsVisible = true, IsActive = true
             };
+        _goAround.Steered(track, bend, driftedEasting, driftedNorthing);
         // A line bent or straightened has other points: find the nearest one afresh.
         bool lineChanged = !ReferenceEquals(bent, _lastSteerBend);
         _lastSteerBend = bent;
@@ -1743,6 +1804,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         if (_trackGuidanceState != null)
             _trackGuidanceState.CurrentLocationIndex = output.CurrentLocationIndex;
 
+        _lastLineXte = output.CrossTrackError; // from the bent line: the Go around net (5b'') reads it
         return (output.SteerAngle, output.CrossTrackError, output.GoalPoint.Easting, output.GoalPoint.Northing,
                 statusMessage);
     }
@@ -2075,6 +2137,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             ? CalculatePerpendicularDistance(resultTrack, pivotEasting, pivotNorthing)
             : CalculatePerpendicularDistance(track, pivotEasting, pivotNorthing) - distAway;
         if (!_guidanceWorking.IsHeadingSameWay) xte = -xte; // set for this cycle before any line (#172, #446)
+        _lastLineXte = xte;
 
         _autoSteerService.UpdateGuidanceResults(0, xte);
         return (nearestPass, resultTrack, xte, onReference);
@@ -2200,21 +2263,15 @@ public sealed class GpsPipelineService : IGpsPipelineService
     }
 
     /// <summary>
-    /// The pass bent round the obstacles chosen as Go around that it runs into, or null when it
-    /// runs into none (or has no room for any). Open tracks only: a closed loop is a boundary
-    /// pass. With <paramref name="report"/>, obstacles with no room either side are told to the
-    /// operator, once for each pass.
+    /// The pass bent round the obstacles chosen as Go around that it runs into (null when it runs
+    /// into none, or has room round none), from <see cref="Track.GoAroundPasses"/>. With
+    /// <paramref name="report"/>, obstacles with no room either side are told to the operator,
+    /// once for each pass: the U-turn planner makes a turn before them on this pass.
     /// </summary>
-    private List<Vec3>? GoRoundLine(Models.Track.Track track, double distAway, IReadOnlyList<Vec3> pass,
-        Boundary? boundary, bool report = false)
+    private Track.ObstacleDetour.Bend? GoRoundBend(Models.Track.Track track, double distAway, IReadOnlyList<Vec3> pass,
+        Boundary? boundary, bool report)
     {
-        if (track.IsClosed || boundary == null || boundary.InnerBoundaries.Count == 0) return null;
-        var c = _configStore;
-        // A trailed tool cuts inside the bend, which round the obstacle is the obstacle's side.
-        double margin = c.Guidance.GoAroundMargin
-            + Track.ObstacleDetour.TrailedCutIn(c.Tool, c.Vehicle.HitchLength, c.Guidance.GoAroundRadius);
-        double keepOut = Track.ObstacleDetour.KeepOutFor(c.ActualToolWidth, c.Tool.Offset, c.Vehicle.TrackWidth, margin);
-        var bend = _obstacleDetour.For(track, distAway, pass, boundary, keepOut, c.Guidance.GoAroundRadius, margin);
+        var bend = _goAround.For(track, distAway, pass, boundary);
         if (bend == null) return null;
         if (report && bend.Blocked.Count > 0)
         {
@@ -2224,12 +2281,19 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 _blockedNoticeKey = key;
                 var names = string.Join(", ", bend.Blocked.Select(i => $"Inner {i + 1}"));
                 _obstacleNotice = bend.Blocked.Count == 1
-                    ? $"No room to go around {names} on this pass: steer around it by hand"
-                    : $"No room to go around {names} on this pass: steer around them by hand";
+                    ? $"No room to go around {names} on this pass: U-turn before it"
+                    : $"No room to go around {names} on this pass: U-turn before them";
                 _logger.LogInformation("[Obstacles] {Notice}", _obstacleNotice);
             }
         }
-        return bend.GoneRound.Count > 0 ? bend.Points : null;
+        return bend;
+    }
+
+    /// <summary>The bent pass's points, or null when the pass goes round nothing.</summary>
+    private List<Vec3>? GoRoundLine(Models.Track.Track track, double distAway, IReadOnlyList<Vec3> pass, Boundary? boundary)
+    {
+        var bend = GoRoundBend(track, distAway, pass, boundary, report: false);
+        return bend != null && bend.GoneRound.Count > 0 ? bend.Points : null;
     }
 
     // The track drawn for a bent pass, kept while the bend is the same.

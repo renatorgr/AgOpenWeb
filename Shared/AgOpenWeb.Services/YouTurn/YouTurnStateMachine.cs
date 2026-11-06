@@ -83,6 +83,11 @@ public sealed class YouTurnStateMachine
     private string? _lastStepTrack;
     private int _lastStepPass; // the pass that turn landed on
 
+    // The obstacles as they were when the planned turn was made (ObstacleStamp). A turn is
+    // planned up to 2 km ahead, so one is nearly always planned: an obstacle changed to U-turn
+    // or added after that was driven through, and one changed to drive through still turned.
+    private long _plannedObstacleStamp;
+
     public YouTurnStateMachine(
         YouTurnCreationService creation,
         YouTurnPathingService pathing,
@@ -219,6 +224,18 @@ public sealed class YouTurnStateMachine
             effects.SyncNextTrackToMap = true;
         }
 
+        // ── OBSTACLES CHANGED ───────────────────────────────────────────
+        // An obstacle added, moved or given another choice since the planned turn was made:
+        // plan it again this cycle, against the obstacles as they are now. Not mid-turn.
+        if (turn.TurnPath != null && !turn.IsExecuting && !turn.IsTriggered
+            && YouTurnCreationService.ObstacleStamp(ctx.Boundary) != _plannedObstacleStamp)
+        {
+            _logger.LogDebug("[YouTurn] The obstacles changed since the turn was planned - planning it again");
+            DiscardPlannedTurn(turn);
+            effects.SyncTurnPathToMap = true;
+            effects.SyncNextTrackToMap = true;
+        }
+
         if (!ctx.IsAlternateSkipMode) turn.AltSign = 0; // pattern restarts when re-entered
 
         if (turn.TurnPath == null && !turn.IsExecuting && canCreateTurn && isAlignedWithABLine)
@@ -288,6 +305,7 @@ public sealed class YouTurnStateMachine
                 if (fromHere.Count > 2)
                 {
                     turn.TurnPath = fromHere;
+                    _plannedObstacleStamp = YouTurnCreationService.ObstacleStamp(ctx.Boundary);
                     turn.ArcStart = null;
                     turn.YouTurnCounter = 0;
                     turn.IsTriggered = true;
@@ -589,6 +607,37 @@ public sealed class YouTurnStateMachine
     }
 
     /// <summary>
+    /// An obstacle chosen as U-turn ahead with no turn to take before it: no turn being driven
+    /// and none planned. Every way a turn is lost near an obstacle ends here (missed, aborted,
+    /// no room, AutoSteer or the track off and on again, U-turn switched off), and the caller
+    /// takes AutoSteer off with the alarm, so the tractor is never steered into the obstacle.
+    /// Returns the obstacle's index in the inner boundaries, or -1.
+    /// </summary>
+    public int ObstacleAheadWithoutTurn(in TickContext ctx, YouTurnWorkingState turn, double lookAhead,
+        IReadOnlyList<int>? promoted = null)
+    {
+        if (turn.IsExecuting || turn.TurnPath != null) return -1;
+        var p = ctx.CurrentPosition;
+        return _creation.TurnObstacleAhead(ctx.Boundary, p.Easting, p.Northing, p.Heading * Math.PI / 180.0, lookAhead, promoted);
+    }
+
+    /// <summary>
+    /// An obstacle given another choice, made hard, added or moved while a turn is being driven,
+    /// with the rest of the path, or the first metres of the next pass, no longer clear of the
+    /// obstacles: a turn being driven is not planned again (that could whip the steering in the
+    /// arc), so the caller takes AutoSteer off with the alarm. Each change is judged once.
+    /// Returns the obstacle's index in the inner boundaries, or -1.
+    /// </summary>
+    public int ObstacleChangedUnderTurn(in TickContext ctx, YouTurnWorkingState turn, IReadOnlyList<int>? promoted = null)
+    {
+        if (!turn.IsExecuting || turn.TurnPath == null || ctx.Boundary == null) return -1;
+        long stamp = YouTurnCreationService.ObstacleStamp(ctx.Boundary);
+        if (stamp == _plannedObstacleStamp) return -1;
+        _plannedObstacleStamp = stamp;
+        return _creation.RestOfTurnBlockedBy(turn.TurnPath, ctx.CurrentPosition, ctx.Boundary, turn.TurnAtObstacleIndex, promoted);
+    }
+
+    /// <summary>
     /// Manually trigger a U-turn in the specified direction. Used for tracks along boundaries
     /// where automatic headland detection doesn't fire.
     /// </summary>
@@ -668,11 +717,12 @@ public sealed class YouTurnStateMachine
         // the path renders — no headland traversal, no entry/exit legs (#260).
         var path = _creation.CreateManualArcPath(
             ctx.CurrentPosition, abHeading, turnLeft,
-            ctx.Boundary, guidance, ctx.UTurnSkipRows, turn.NextTrack);
+            ctx.Boundary, guidance, ctx.UTurnSkipRows, turn.NextTrack, out bool obstacleInTheWay);
 
         if (path.Count > 2)
         {
             turn.TurnPath = path;
+            _plannedObstacleStamp = YouTurnCreationService.ObstacleStamp(ctx.Boundary);
             turn.YouTurnCounter = 0;
             effects.SyncTurnPathToMap = true;
             // Manual turns trigger immediately — no proximity check against the turn start.
@@ -681,6 +731,10 @@ public sealed class YouTurnStateMachine
             _missedSounded = false;
             ForgetDirectionChoice(turn);
             effects.StatusMessage = $"Manual {(turnLeft ? "left" : "right")} U-turn started";
+        }
+        else if (obstacleInTheWay)
+        {
+            effects.StatusMessage = "No room for a U-turn here: it would cross an obstacle";
         }
         else
         {
@@ -724,6 +778,7 @@ public sealed class YouTurnStateMachine
     {
         turn.TurnPath = null;
         turn.TurnAtObstacle = false;
+        turn.TurnAtObstacleIndex = -1;
         turn.NextTrack = null;
         turn.IsTriggered = false;
         turn.ReturnPassTargetPath = null;
@@ -1161,6 +1216,8 @@ public sealed class YouTurnStateMachine
         turn.TurnPath = result.Path;
         turn.ArcStart = result.ArcStart;
         turn.TurnAtObstacle = result.AtObstacle;
+        turn.TurnAtObstacleIndex = result.AtObstacleIndex;
+        _plannedObstacleStamp = YouTurnCreationService.ObstacleStamp(ctx.Boundary);
         turn.YouTurnCounter = 0;
         if (!result.UsedFallback && effects.StatusMessage == null)
             effects.StatusMessage = $"YouTurn path created ({result.Path.Count} points)";
