@@ -197,10 +197,16 @@ public static partial class RemoteServerWiring
                                     return;
                                 case "config.set": // config bridge (Phase 9a). arg = "key:value"
                                     var ci = arg.IndexOf(':');
-                                    if (ci > 0)
-                                        ApplyConfigSet(
+                                    if (ci > 0
+                                        && ApplyCheckedConfigSet(
                                             services.GetRequiredService<AgOpenWeb.Models.Configuration.ConfigurationStore>(),
-                                            configService, arg[..ci], arg[(ci + 1)..]);
+                                            configService, arg[..ci], arg[(ci + 1)..]) is { } setNote)
+                                    {
+                                        // Refused (or changed by the app): say why, and send the
+                                        // settings again so the box shows what is kept.
+                                        vm.ReportFailure(setNote);
+                                        server.ResendConfig();
+                                    }
                                     return;
                                 case "display.capResolution": // web auto-quality: arg = min multiplier
                                     if (double.TryParse(arg, num, inv, out var capMult)) // (2.5 = Medium)
@@ -553,9 +559,10 @@ public static partial class RemoteServerWiring
                                 case "profile.load": case "profile.new": case "profile.delete":
                                 case "profile.rename": case "profile.reset":
                                 case "profile.configureVehicle": case "profile.configureTool":
-                                    ApplyProfileCommand(
+                                    if (AgOpenWeb.Services.Profile.ProfilePicker.Apply(
                                         services.GetRequiredService<AgOpenWeb.Models.Configuration.ConfigurationStore>(),
-                                        configService, cmd, arg);
+                                        configService, cmd, arg) is { } profileNote)
+                                        vm.ReportFailure(profileNote);
                                     return;
                                 // --- AutoSteer config hardware-push actions (Phase 9). All
                                 // route through the AutoSteerConfigViewModel so the PGN /
@@ -699,7 +706,7 @@ public static partial class RemoteServerWiring
                                     return;
                                 case "app.resetSettings": case "app.setHotkey":
                                 case "app.resetHotkeys": case "app.bugReport": case "app.bugReport.send":
-                                    ApplyAppCommand(services, vm, cmd, arg);
+                                    ApplyAppCommand(services, vm, cmd, arg, server.ClientDiagnosticsSummary);
                                     return;
                             }
 
