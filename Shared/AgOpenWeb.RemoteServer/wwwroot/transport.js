@@ -368,7 +368,7 @@ window.RemoteTransport = {
             isSteerSwitchEnabled: !!u8(), isSteerSwitchManualSections: !!u8(), totalWidth: f64(),
           };
           const uturn = { style: i32(), extension: f64(), smoothing: i32(), radius: f64(), distanceFromBoundary: f64(),
-            goAroundRadius: f64(), goAroundMargin: f64() };
+            goAroundRadius: f64(), goAroundMargin: f64(), crossGap: f64() };
           const tram = { passes: i32(), display: !!u8(), line: i32(), width: f64(), outerInverted: !!u8() };
           const machine = {
             hydraulicLiftEnabled: !!u8(), raiseTime: i32(), lookAhead: f64(), lowerTime: i32(), invertRelay: !!u8(),

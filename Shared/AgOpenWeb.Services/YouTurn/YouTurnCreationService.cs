@@ -59,6 +59,7 @@ namespace AgOpenWeb.Services.YouTurn
         private double pointSpacing;
         private double iE, iN; // Line intersection results
         private int semiCircleIndex = -1;
+        private int gapResumeIndex = -1; // the pass's first point inside again after the last gap crossed
         private bool isOutOfBounds = false;
         private bool isOutSameCurve = false;
         private Vec3? arcStart;
@@ -73,6 +74,7 @@ namespace AgOpenWeb.Services.YouTurn
 
             // Store input for helper methods
             _currentInput = input;
+            gapResumeIndex = -1;
 
             // Validate input
             if (input.MakeUTurnCounter < 4)
@@ -1157,6 +1159,15 @@ namespace AgOpenWeb.Services.YouTurn
                 int turnIndex = input.IsPointInsideTurnArea(input.GuidancePoints[j]);
                 if (turnIndex != 0)
                 {
+                    // A gap of the turn area the pass is driven across: the turn is beyond it.
+                    int back = GapCrossingEnd(input.GuidancePoints, j, count);
+                    if (back >= 0)
+                    {
+                        gapResumeIndex = back;
+                        j = back;
+                        continue;
+                    }
+
                     // IsPointInsideTurnArea returns AgOpenGPS's values: 0 workable, -1 outside the
                     // outer turn line (turn line 0), k inside obstacle turn line k. The turn line to
                     // intersect is the one the curve crossed. Clamped into BoundaryTurnLines all the
@@ -1530,7 +1541,9 @@ namespace AgOpenWeb.Services.YouTurn
             // field narrows toward this end (#577): nothing ahead is inside, so walk back to its
             // nearest part inside and take the crossing from there. AgOpenGPS starts at the
             // tractor's index too; its omega fallback then began the turn behind the tractor.
-            int here = _currentInput.CurrentLocationIndex;
+            // Past a gap the current pass is driven across, the next pass is taken from abreast
+            // of the gap's end, not of the tractor: between the two it can be outside the field.
+            int here = gapResumeIndex >= 0 ? gapResumeIndex : _currentInput.CurrentLocationIndex;
             int start = here;
             while (start > 0 && start < nextCurve.Count && _currentInput.IsPointInsideTurnArea(nextCurve[start]) != 0)
                 start += count;
@@ -1548,6 +1561,14 @@ namespace AgOpenWeb.Services.YouTurn
                 int turnIndex = _currentInput.IsPointInsideTurnArea(nextCurve[j]);
                 if (turnIndex != 0)
                 {
+                    // A gap the next pass is driven across is not where it leaves the field either.
+                    int back = GapCrossingEnd(nextCurve, j, count);
+                    if (back >= 0)
+                    {
+                        j = back;
+                        continue;
+                    }
+
                     // As in FindCurveTurnPoint: -1 is the outer turn line, k obstacle turn line k.
                     int boundaryIndex = Math.Min(turnIndex, _currentInput.BoundaryTurnLines.Count - 1);
                     if (boundaryIndex < 0) boundaryIndex = 0;
@@ -1676,6 +1697,82 @@ namespace AgOpenWeb.Services.YouTurn
         /// <summary>
         /// Represents a close point on a turn line.
         /// </summary>
+        /// <summary>At least this much of the pass must be inside the turn area again beyond a
+        /// gap for the gap to be crossed; a shorter stretch is turned at the gap, as before.</summary>
+        private const double MinPassAfterGap = 10.0;
+
+        /// <summary>Spacing of the samples along a pass tested against the field and its obstacles.</summary>
+        private const double GapSampleSpacing = 1.0;
+
+        /// <summary>
+        /// A pass that leaves the turn area at <paramref name="j"/> and comes back within
+        /// <see cref="YouTurnCreationInput.MaxGapCrossing"/> metres, across the headland strip only
+        /// (inside the field, outside the headland line and every obstacle), is driven on through the
+        /// gap with the sections off instead of turned at it: a narrow tip of the field, a notch in
+        /// its edge, where a U-turn on every pass would waste the field beyond. Returns the index of
+        /// the first point inside again, with <see cref="MinPassAfterGap"/> of pass inside after it,
+        /// or -1 when the pass is to be turned at <paramref name="j"/>: a gap longer than the
+        /// setting, one leaving the strip, or the turn area of an obstacle (U-turn or Go around),
+        /// which is turned at, or gone round, as without the setting.
+        /// </summary>
+        private int GapCrossingEnd(List<Vec3> pts, int j, int count)
+        {
+            var input = _currentInput;
+            double max = input.MaxGapCrossing;
+            var strip = input.IsPointInHeadlandStrip;
+            if (max <= 0 || strip == null) return -1;
+            if (j - count < 0 || j - count >= pts.Count) return -1;
+
+            double length = 0;
+            for (int k = j; k >= 0 && k < pts.Count; k += count)
+            {
+                var a = pts[k - count];
+                var b = pts[k];
+                double seg = GeometryMath.Distance(a, b);
+                length += seg;
+                if (length > max) return -1;
+
+                // Every metre of the pass outside the turn area is in the headland strip; the
+                // segment is sampled so that a corner of the boundary between two points is seen.
+                int n = Math.Max(1, (int)Math.Ceiling(seg / GapSampleSpacing));
+                for (int s = 1; s <= n; s++)
+                {
+                    double t = (double)s / n;
+                    var p = new Vec3(a.Easting + (b.Easting - a.Easting) * t, a.Northing + (b.Northing - a.Northing) * t, 0);
+                    // -1 is the headland (outside the outer turn line), k > 0 an obstacle's turn
+                    // area in the field; an obstacle's turn area in the headland is asked by itself,
+                    // as the outer test says -1 there. Neither is driven across, whatever strip it
+                    // lies in: the implement would sweep the obstacle.
+                    int area = input.IsPointInsideTurnArea(p);
+                    if (area > 0 || (area != 0 && !strip(p)) || InObstacleTurnArea(input, p)) return -1;
+                }
+                if (input.IsPointInsideTurnArea(b) != 0) continue;
+
+                // Inside again: worth crossing only with a stretch of pass to work beyond the gap.
+                double inside = 0;
+                for (int m = k; m + count >= 0 && m + count < pts.Count && inside < MinPassAfterGap; m += count)
+                {
+                    if (input.IsPointInsideTurnArea(pts[m + count]) != 0) break;
+                    inside += GeometryMath.Distance(pts[m], pts[m + count]);
+                }
+                if (inside < MinPassAfterGap) return -1;
+
+                _logger.LogDebug("[YouTurn] A {Len:F0} m gap of the turn area at point {J} is driven across; the turn is planned beyond it",
+                    length, j);
+                return k;
+            }
+            return -1;
+        }
+
+        /// <summary>Whether <paramref name="p"/> is inside the turn line of an obstacle (turn lines
+        /// 1..n: the obstacle and the room the implement needs round it).</summary>
+        private static bool InObstacleTurnArea(YouTurnCreationInput input, Vec3 p)
+        {
+            for (int k = 1; k < input.BoundaryTurnLines.Count; k++)
+                if (GeometryMath.IsPointInPolygon(input.BoundaryTurnLines[k].Points, p)) return true;
+            return false;
+        }
+
         private class TurnClosePoint
         {
             public Vec3 ClosePt { get; set; } = new Vec3();

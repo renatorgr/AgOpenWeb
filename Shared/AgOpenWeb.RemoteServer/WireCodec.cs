@@ -429,6 +429,7 @@ public static class WireCodec
         w.Write(u.DistanceFromBoundary);
         w.Write(u.GoAroundRadius);     // f64
         w.Write(u.GoAroundMargin);     // f64
+        w.Write(u.CrossGap);           // f64
         // Tram tab.
         var tr = c.Tram;
         w.Write(tr.Passes);            // i32

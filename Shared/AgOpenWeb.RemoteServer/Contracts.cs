@@ -482,8 +482,9 @@ public record ToolConfigDto(
 /// <summary>U-Turn tab (ConfigStore.Guidance). Style: 0 Omega, 1 Sagitta.</summary>
 /// <param name="GoAroundRadius">The tightest a pass bends round a Go around obstacle, m.</param>
 /// <param name="GoAroundMargin">Room kept between the implement and a Go around obstacle, m.</param>
+/// <param name="CrossGap">The longest headland gap a pass is driven across instead of turned at, m; 0 = off.</param>
 public record UturnConfigDto(int Style, double Extension, int Smoothing, double Radius, double DistanceFromBoundary,
-    double GoAroundRadius, double GoAroundMargin);
+    double GoAroundRadius, double GoAroundMargin, double CrossGap);
 
 /// <summary>Tram Lines tab (ConfigStore.Guidance tram fields).</summary>
 public record TramConfigDto(int Passes, bool Display, int Line, double Width, bool OuterInverted);

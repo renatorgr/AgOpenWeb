@@ -836,7 +836,7 @@ public sealed class SceneProjector : System.IDisposable
                 t.CoverageMargin, t.IsWorkSwitchEnabled, t.IsWorkSwitchActiveLow, t.IsWorkSwitchManualSections,
                 t.IsSteerSwitchEnabled, t.IsSteerSwitchManualSections, _config.ActualToolWidth),
             new UturnConfigDto(g.UTurnStyle, g.UTurnExtension, g.UTurnSmoothing, g.UTurnRadius, g.UTurnDistanceFromBoundary,
-                g.GoAroundRadius, g.GoAroundMargin),
+                g.GoAroundRadius, g.GoAroundMargin, g.UTurnCrossGap),
             // Line = the field's actual start pass (tram settings live with the field), 1-based.
             new TramConfigDto(g.TramPasses, g.TramDisplay, _config.Tram.StartPass + 1, _config.Tram.TramWidth,
                 _config.Tram.IsOuterInverted),
@@ -939,7 +939,7 @@ public sealed class SceneProjector : System.IDisposable
                                   t.LookAheadOnSetting, t.LookAheadOffSetting, t.TurnOffDelay, t.Offset, t.Overlap,
                                   t.TrailingToolToPivotLength, t.DefaultSectionWidth, t.SlowSpeedCutoff, t.CoverageMargin,
                                   g.UTurnExtension, g.UTurnRadius, g.UTurnDistanceFromBoundary, g.GoAroundRadius, g.GoAroundMargin,
-                                  mc.LookAhead })
+                                  g.UTurnCrossGap, mc.LookAhead })
             h = h * 31 + d.GetHashCode();
         for (int i = 0; i < 16; i++) h = h * 31 + t.GetSectionWidth(i).GetHashCode() + (int)t.GetSectionColor(i);
         for (int i = 0; i < 9; i++) h = h * 31 + t.GetZoneEndSection(i);
