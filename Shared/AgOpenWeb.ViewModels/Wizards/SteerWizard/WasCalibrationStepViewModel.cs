@@ -87,7 +87,7 @@ public class WasCalibrationStepViewModel : WizardStepViewModel
     public ICommand ZeroWasCommand { get; }
 
     /// <summary>Zero WAS was pressed in this wizard (the Finish page lists the tests not run).</summary>
-    public bool ZeroDone => Touched(nameof(WasOffset));
+    public bool ZeroDone => TouchedInWizard(nameof(WasOffset));
 
     public WasCalibrationStepViewModel(IConfigurationService configService,
         IAutoSteerService? autoSteerService = null)
@@ -112,6 +112,10 @@ public class WasCalibrationStepViewModel : WizardStepViewModel
     public static readonly TimeSpan SettleWindow = TimeSpan.FromSeconds(1.5);
     /// <summary>A reading this far from the current centre needs a second press: the wheels may be turned.</summary>
     public const double ConfirmDeg = 10;
+    /// <summary>The second press takes the reading only if it is still the one the operator was
+    /// shown (within this): wheels that moved from 12° to 21° between the presses are asked about
+    /// again, not zeroed at a value nobody saw.</summary>
+    public const double ConfirmMatchDeg = 1;
     /// <summary>How long the second press has to come.</summary>
     public static readonly TimeSpan ConfirmWindow = TimeSpan.FromSeconds(15);
 
@@ -159,7 +163,7 @@ public class WasCalibrationStepViewModel : WizardStepViewModel
         // Far from the current centre, the wheels are more likely turned than the sensor off:
         // say what it reads and take it only on a second press.
         if (Math.Abs(actualAngle) > ConfirmDeg
-            && !(now - _confirmUtc <= ConfirmWindow && Math.Abs(actualAngle - _confirmAngle) < ConfirmDeg))
+            && !(now - _confirmUtc <= ConfirmWindow && Math.Abs(actualAngle - _confirmAngle) < ConfirmMatchDeg))
         {
             _confirmUtc = now;
             _confirmAngle = actualAngle;

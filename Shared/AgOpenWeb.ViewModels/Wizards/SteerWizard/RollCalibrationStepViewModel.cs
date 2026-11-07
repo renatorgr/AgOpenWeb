@@ -78,7 +78,7 @@ public class RollCalibrationStepViewModel : WizardStepViewModel
     }
 
     /// <summary>Zero Roll was pressed in this wizard (the Finish page lists the tests not run).</summary>
-    public bool ZeroDone => Touched(nameof(RollZero));
+    public bool ZeroDone => TouchedInWizard(nameof(RollZero));
 
     private bool _hasLiveData;
     public bool HasLiveData
@@ -140,7 +140,7 @@ public class RollCalibrationStepViewModel : WizardStepViewModel
         double roll = LiveRoll;
         // Level ground rarely reads this much: say what it reads and take it only on a second press.
         if (Math.Abs(roll) > ConfirmDeg
-            && !(now - _confirmUtc <= ConfirmWindow && Math.Abs(roll - _confirmRoll) < ConfirmDeg))
+            && !(now - _confirmUtc <= ConfirmWindow && Math.Abs(roll - _confirmRoll) < WasCalibrationStepViewModel.ConfirmMatchDeg))
         {
             _confirmUtc = now;
             _confirmRoll = roll;
