@@ -20,13 +20,14 @@ name: Build Deployment Bundles
 # Triggers:
 #   - push of a v* tag: build + publish the tagged Release for that tag, as a prerelease so it
 #     never shows as "Latest" (the beta is the build to use).
-#   - schedule (daily): refresh the rolling "beta" prerelease from the default branch, if it
-#     has moved on since the beta was last built (else the run builds nothing).
 #   - workflow_dispatch: build on demand, then by the `publish` input:
-#       beta (default) — refresh the rolling "beta" prerelease now, so testers get current
-#                        code without waiting for the schedule (default branch only);
+#       beta (default) — refresh the rolling "beta" prerelease now from the default branch
+#                        (default branch only);
 #       release           — publish the Release named by `release_tag`;
 #       none              — just upload build artifacts (a dry run — no Release).
+# renatorgr fork: there is no daily schedule here; the beta is only rebuilt when someone runs
+# this workflow by hand (Actions > Build Deployment Bundles > Run workflow). The "schedule"
+# branches below are kept so the file stays close to the official one.
 # (Per-commit CI — tests + compile checks — lives in build-and-release.yml.)
 
 on:
@@ -44,11 +45,6 @@ on:
   push:
     tags:
       - 'v*'
-  schedule:
-    # Daily refresh of the rolling beta at 22:00 UTC, when the default branch has moved on. Four
-    # hours after the daily upstream sync PR (sync-pulverizador.yml) so it can be merged first.
-    # GitHub may start it later on a busy day.
-    - cron: '0 22 * * *'
 
 # Beta runs (scheduled or manual) share one group and the newest wins; a release run is
 # never cancelled by a later run.
@@ -352,7 +348,7 @@ jobs:
             # to a build older than the beta.
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
             echo "beta=false" >> "$GITHUB_OUTPUT"
-            echo "banner=> **Use the [Beta](${REPO_URL}/releases/tag/beta)** — it is rebuilt from \`${DEFAULT_BRANCH}\` on demand and daily when there are changes, and is the build to report issues against." >> "$GITHUB_OUTPUT"
+            echo "banner=> **Use the [Beta](${REPO_URL}/releases/tag/beta)** — it is rebuilt from \`${DEFAULT_BRANCH}\` on demand, and is the build to report issues against." >> "$GITHUB_OUTPUT"
           fi
 
       # A numbered release lists every PR merged since the previous numbered tag (GitHub's
