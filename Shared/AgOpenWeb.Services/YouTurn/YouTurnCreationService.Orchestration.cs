@@ -973,30 +973,24 @@ public partial class YouTurnCreationService
         _logger.LogDebug("[YouTurn] headlandDist(scalar)={HD:F1}m rayToOuter={RO:F1}m, headlandLegLength={HLL:F1}m",
             headlandDistance, rayToOuter, headlandLegLength);
 
-        double entryStartE = headlandBoundaryEasting - Math.Sin(travelHeading) * fieldLegLength;
-        double entryStartN = headlandBoundaryNorthing - Math.Cos(travelHeading) * fieldLegLength;
-
-        double exitEndE = entryStartE + Math.Sin(perpAngle) * turnOffset;
-        double exitEndN = entryStartN + Math.Cos(perpAngle) * turnOffset;
-
-        // The exit end must land back inside the field boundary.
-        if (boundary?.OuterBoundary != null && boundary.OuterBoundary.IsValid
-            && !boundary.OuterBoundary.IsPointInside(exitEndE, exitEndN))
-        {
-            _logger.LogDebug("[YouTurn] Exit end is outside boundary - not creating U-turn");
-            return path;
-        }
-
         // The whole arc and the leg back from it are checked against the fence, not only the
         // ray ahead and the exit end: on a slanted boundary the arc's far side crossed it (the
         // tractor 12 m out of a field with a 21 m cultivator, 11 m with an 8 m sprayer). The
-        // arc is seated further back along the pass, into the field if need be, until the path
-        // keeps the set distance from the fence; past 30 m there is no turn.
+        // arc is seated further back along the pass until the path keeps the set distance from
+        // the fence: back from where the ray put it (143 m past the headland crossing along an
+        // edge the ray ran beside), to the crossing, and up to 30 m into the field past it when
+        // the headland has no room at all; further in there is no turn. The exit leg's end is
+        // part of the check (it used to be the only point checked, where the ray put it). An
+        // arc seated to start behind the tractor is no turn either: the tractor would join it
+        // mid-way and cut across.
         var outerPolygon = boundary?.OuterBoundary != null && boundary.OuterBoundary.IsValid
             ? boundary.OuterBoundary.Points.Select(p => new Vec2(p.Easting, p.Northing)).ToList()
             : null;
         const double SetbackStep = 0.5;
-        const double MaxSetback = 30.0;
+        const double MaxIntoField = 30.0;
+        const double MinLeg = 2.0;
+        const double MinArcAhead = 2.0;
+        double maxSetback = Math.Min(headlandLegLength + MaxIntoField, distToHeadland + headlandLegLength - MinArcAhead);
         double setback = 0;
         while (true)
         {
@@ -1012,10 +1006,10 @@ public partial class YouTurnCreationService
                 break;
             }
             double next = setback + Math.Max(SetbackStep, clearance.MaxIntrusion);
-            if (next > MaxSetback || fieldLegLength + headlandLegLength - next < 2.0)
+            if (next > maxSetback)
             {
-                _logger.LogWarning("[YouTurn] No simple turn within {S:F0}m back keeps the tractor {M:F1}m inside the boundary (intrusion {I:F1}m); no turn",
-                    MaxSetback, distanceFromBoundary, clearance.MaxIntrusion);
+                _logger.LogWarning("[YouTurn] No simple turn seated up to {S:F0}m back (up to {F:F0}m into the field, starting ahead of the tractor) keeps the tractor {M:F1}m inside the boundary (intrusion {I:F1}m); no turn",
+                    maxSetback, MaxIntoField, distanceFromBoundary, clearance.MaxIntrusion);
                 path.Clear();
                 return path;
             }
@@ -1028,13 +1022,17 @@ public partial class YouTurnCreationService
 
         return path;
 
-        // The path with its arc seated `setback` m back from the headland leg's end: the entry
-        // leg, the arc, the connector back to the exit leg's start, the exit leg. Returns the
-        // index of the first arc point.
+        // The path with its arc seated `back` m before where the ray put it: the entry leg, the
+        // arc, the connector back to the exit leg's start, the exit leg. Seated back past the
+        // entry start, the legs keep MinLeg m of straight. Returns the index of the first arc point.
         int BuildSimplePath(List<Vec3> into, double back)
         {
-            double legLength = headlandLegLength - back;
-            double totalEntryLength = fieldLegLength + legLength;
+            double legLength = headlandLegLength - back;   // negative: the arc before the headland crossing
+            double arcStartE = headlandBoundaryEasting + Math.Sin(travelHeading) * legLength;
+            double arcStartN = headlandBoundaryNorthing + Math.Cos(travelHeading) * legLength;
+            double totalEntryLength = Math.Max(fieldLegLength + legLength, MinLeg);
+            double startE = arcStartE - Math.Sin(travelHeading) * totalEntryLength;
+            double startN = arcStartN - Math.Cos(travelHeading) * totalEntryLength;
             int totalEntryPoints = (int)(totalEntryLength / pointSpacing);
 
             for (int i = 0; i <= totalEntryPoints; i++)
@@ -1042,15 +1040,12 @@ public partial class YouTurnCreationService
                 double dist = i * pointSpacing;
                 into.Add(new Vec3
                 {
-                    Easting = entryStartE + Math.Sin(travelHeading) * dist,
-                    Northing = entryStartN + Math.Cos(travelHeading) * dist,
+                    Easting = startE + Math.Sin(travelHeading) * dist,
+                    Northing = startN + Math.Cos(travelHeading) * dist,
                     Heading = travelHeading,
                 });
             }
             int arcIndex = into.Count;
-
-            double arcStartE = headlandBoundaryEasting + Math.Sin(travelHeading) * legLength;
-            double arcStartN = headlandBoundaryNorthing + Math.Cos(travelHeading) * legLength;
 
             double arcCenterE = arcStartE + Math.Sin(perpAngle) * turnRadius;
             double arcCenterN = arcStartN + Math.Cos(perpAngle) * turnRadius;
