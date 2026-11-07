@@ -115,15 +115,73 @@ public class FallbackTurnInsideBoundaryTests
     }
 
     [Test]
-    public void No_turn_when_no_seating_within_reach_keeps_the_path_inside()
+    public void With_no_room_in_the_headland_the_arc_is_seated_into_the_field()
     {
-        // The fence 3 m past the headland on x = 6 and sloping away: no room for an 8 m arc at all.
+        // The fence 3 m past the headland on x = 6 and sloping away, y = -1.5 + (60 - x) * 5 / 11:
+        // at x = 22, the arc's far side, it is at y = 15.8, 4 m before the headland crossing at
+        // y = 20. The arc has to sit in the field, 1 m from the fence all round: the pass end is
+        // left unworked rather than the tractor driven out. The tractor 14 m from the headland
+        // so that the seated arc still starts ahead of it.
         var tight = new List<Vec2> { new(-50, -50), new(60, -50), new(60, -1.5), new(-50, 48.5) };
         var boundary = new Boundary
         {
             OuterBoundary = new BoundaryPolygon
             {
                 Points = tight.Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(),
+            },
+        };
+        _config.Guidance.UTurnExtension = 2;
+        var g = new GuidanceWorkingState { HowManyPathsAway = 0, IsHeadingSameWay = true };
+        var turn = new YouTurnWorkingState { DistanceToHeadland = 14, NextTrackTurnOffset = 12 };
+        var path = _creation.SimpleFallback(new Position { Easting = 6, Northing = 6, Heading = 0 }, 0, false, boundary,
+            g, turn, 0, 10, Track);
+
+        Assert.That(path, Is.Not.Empty, "a turn inside the field is still made");
+        foreach (var p in path)
+        {
+            Assert.That(GeometryMath.IsPointInPolygon(tight, new Vec2(p.Easting, p.Northing)), Is.True,
+                $"path point ({p.Easting:F1},{p.Northing:F1}) is outside the fence");
+            Assert.That(-1.5 + (60 - p.Easting) * 5 / 11 - p.Northing, Is.GreaterThanOrEqualTo(0.9),
+                $"path point ({p.Easting:F1},{p.Northing:F1}) is within 1 m of the fence");
+        }
+        Assert.That(path.Max(p => p.Northing), Is.LessThan(20), "the apex before the headland crossing");
+        Assert.That(path.Min(p => p.Northing), Is.GreaterThanOrEqualTo(6 - 0.05), "the path starts at or ahead of the tractor");
+        Assert.That(path[0].Easting, Is.EqualTo(6).Within(0.05), "entry leg on pass 0");
+        Assert.That(path[^1].Easting, Is.EqualTo(18).Within(0.05), "exit leg on pass 1");
+    }
+
+    [Test]
+    public void No_turn_when_the_seated_arc_would_start_behind_the_tractor()
+    {
+        // The same fence with the tractor 10 m from the headland: the arc that clears the fence
+        // starts 0.9 m behind it. No turn rather than one the tractor joins mid-way.
+        var tight = new List<Vec2> { new(-50, -50), new(60, -50), new(60, -1.5), new(-50, 48.5) };
+        var boundary = new Boundary
+        {
+            OuterBoundary = new BoundaryPolygon
+            {
+                Points = tight.Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(),
+            },
+        };
+        _config.Guidance.UTurnExtension = 2;
+        var g = new GuidanceWorkingState { HowManyPathsAway = 0, IsHeadingSameWay = true };
+        var turn = new YouTurnWorkingState { DistanceToHeadland = 10, NextTrackTurnOffset = 12 };
+        var path = _creation.SimpleFallback(new Position { Easting = 6, Northing = 10, Heading = 0 }, 0, false, boundary,
+            g, turn, 0, 10, Track);
+
+        Assert.That(path, Is.Empty);
+    }
+
+    [Test]
+    public void No_turn_when_no_seating_keeps_the_path_inside()
+    {
+        // A fence at x = 21, inside the arc's reach (x = 6 to 22) wherever it is seated: no turn.
+        var narrow = new List<Vec2> { new(-50, -50), new(21, -50), new(21, 50), new(-50, 50) };
+        var boundary = new Boundary
+        {
+            OuterBoundary = new BoundaryPolygon
+            {
+                Points = narrow.Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(),
             },
         };
         _config.Guidance.UTurnExtension = 2;
