@@ -303,6 +303,38 @@ body.maptap #ck { cursor: crosshair; }
 #sectionbar .sec-iso-cells { display: flex; gap: 2px; flex: 1; }
 #sectionbar .sec-iso-cell { flex: 1 1 0; min-width: 3px; height: 8px; background: #5a5a5a; }
 #sectionbar .sec-iso-cell.on { background: #39FF6A; }
+/* Sprayer readout (PGN 160 from the machine module): pressure, flow, L/ha, the sections
+   the module has open, and the alarms. Shown while the module is heard. */
+#sprayerbar { display: none; flex-direction: column; gap: 3px; padding: 6px 10px; border-radius: 10px;
+  background: var(--float-bg2); border: 1px solid var(--border); box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+  color: var(--text); font: 600 13px system-ui, sans-serif; pointer-events: none; min-width: 260px; }
+#sprayerbar.open { display: flex; }
+#sprayerbar.alarm { border-color: #ff3b3b; background: rgba(140,20,20,0.9); color: #fff; }
+#sprayerbar .spr-row { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+#sprayerbar .spr-val { white-space: pre; }
+#sprayerbar .spr-val b { font-size: 16px; }
+#sprayerbar .spr-val b.on-target { color: #39FF6A; }
+#sprayerbar .spr-val b.off-target { color: #ffb74d; }
+/* Darker for the light day theme; not on the red alarm strip, which keeps them white. */
+:root[data-theme="day"] #sprayerbar:not(.alarm) .spr-val b.on-target { color: #17803a; }
+:root[data-theme="day"] #sprayerbar:not(.alarm) .spr-val b.off-target { color: #b45309; }
+#sprayerbar.alarm .spr-val b.on-target, #sprayerbar.alarm .spr-val b.off-target { color: inherit; }
+/* One small square per section, in the section buttons' colours (SECTION_COLORS). */
+#sprayerbar .spr-cells { display: flex; gap: 3px; }
+#sprayerbar .spr-cell { flex: none; width: 10px; height: 10px; border-radius: 2px; background: #5a5a5a; }
+#sprayerbar .spr-cell.s-on { background: rgba(0,242,0,0.85); }
+#sprayerbar .spr-cell.s-off { background: rgba(242,51,51,0.85); }
+#sprayerbar .spr-cell.s-goingon { background: rgba(255,165,0,0.9); }
+#sprayerbar .spr-cell.s-goingoff { background: rgba(0,222,222,0.85); }
+#sprayerbar.alarm .spr-cell { box-shadow: 0 0 0 1px rgba(255,255,255,0.7); }
+/* A section the module doesn't follow (app asks on, module reports closed, or the reverse). */
+#sprayerbar .spr-warn { color: #ffb74d; font: 700 13px system-ui, sans-serif; }
+#sprayerbar .spr-warn:empty { display: none; }
+:root[data-theme="day"] #sprayerbar:not(.alarm) .spr-warn { color: #b45309; }
+#sprayerbar.alarm .spr-warn { color: inherit; }
+#sprayerbar .spr-msg { font: 700 13px system-ui, sans-serif; }
+#sprayerbar .spr-note { color: var(--text-muted); font: 600 11px system-ui, sans-serif; }
+#sprayerbar.alarm .spr-note { color: #ffd6d6; }
 /* Bottom nav — field-tools toolbar + Flags/AB-line flyouts. */
 #bottomnav { position: relative; display: none; pointer-events: auto;
   -webkit-user-select: none; user-select: none; }

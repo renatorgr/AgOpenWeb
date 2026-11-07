@@ -50,6 +50,7 @@ public sealed class SceneProjector : System.IDisposable
     public System.Func<(string Sentence, bool DualHeadingMissing)>? GpsSourceProvider { get; set; }
     // ISOBUS task controller heartbeat (#312). Host-supplied; null while none is heard.
     public System.Func<IsobusDto?>? IsobusProvider { get; set; }
+    public System.Func<SprayerDto?>? SprayerProvider { get; set; }
     // Field data card (#321). Host-supplied; null with no field open.
     public System.Func<FieldDataDto?>? FieldDataProvider { get; set; }
     // System Data card (Network IO → GPS): attitude, heading sources, sentence rate and the
@@ -114,14 +115,14 @@ public sealed class SceneProjector : System.IDisposable
         // Boundary with an outer ring + optional inner holes) — NOT the (unused)
         // Field.Boundaries collection.
         var boundaries = new List<IReadOnlyList<Vec2Dto>>();
-        var boundaryInner = new List<bool>();
+        var boundaryKind = new List<byte>();
         var bnd = f.ActiveField?.Boundary;
         if (bnd is not null)
         {
-            if (AddRing(boundaries, bnd.OuterBoundary)) boundaryInner.Add(false);
+            if (AddRing(boundaries, bnd.OuterBoundary)) boundaryKind.Add(0);
             if (bnd.InnerBoundaries != null)
                 foreach (var inner in bnd.InnerBoundaries.ToArray())
-                    if (AddRing(boundaries, inner)) boundaryInner.Add(true);
+                    if (AddRing(boundaries, inner)) boundaryKind.Add((byte)(1 + (int)inner.AtObstacle));
         }
 
         // Map render list: ONLY the active track, mirroring native SkiaMapControl
@@ -233,7 +234,7 @@ public sealed class SceneProjector : System.IDisposable
             f.FieldName,
             f.ActiveField != null,
             boundaries,
-            boundaryInner,
+            boundaryKind,
             tracks,
             headland,
             guidanceLine,
@@ -474,7 +475,8 @@ public sealed class SceneProjector : System.IDisposable
             FieldDataProvider?.Invoke(),
             cfg.SendCorrectedPosition,
             c.ScanReplySubnet ?? "",
-            BuildNtripSession(cfg.NtripProfilePerField, c));
+            BuildNtripSession(cfg.NtripProfilePerField, c),
+            SprayerProvider?.Invoke());
     }
 
     // The NTRIP session for the Network IO card, read live for every status frame.
@@ -528,15 +530,21 @@ public sealed class SceneProjector : System.IDisposable
         return list.Seq * 31L + list.Status.GetHashCode() + list.Items.Count;
     }
 
-    // The web cards' bookmarks. The list is replaced whole on a change, so reading it here is safe.
-    public WebCardsDto BuildWebCards() =>
-        new(_settings.Settings.WebCards.Select(b => new WebCardDto(b.Name, b.Url)).ToList());
+    // The web cards' bookmarks and the last search for pages. Both are replaced whole on a change, so
+    // reading them here is safe.
+    public WebCardsDto BuildWebCards()
+    {
+        var scan = _state.Connections.WebPageScan;
+        return new(_settings.Settings.WebCards.Select(b => new WebCardDto(b.Name, b.Url)).ToList(),
+            new WebPageScanDto(scan.Seq, scan.Status, scan.Networks, scan.Pages.Select(p => new WebCardDto(p.Title, p.Url)).ToList()));
+    }
 
     public long WebCardsFingerprint()
     {
         long h = 17;
         foreach (var b in _settings.Settings.WebCards) h = h * 31 + HashCode.Combine(b.Name, b.Url);
-        return h;
+        var scan = _state.Connections.WebPageScan;
+        return h * 31 + HashCode.Combine(scan.Seq, scan.Status, scan.Pages.Count);   // the pages mDNS found come while it still searches
     }
 
     // Re-send the NTRIP profiles frame on add / edit / delete / set-default.
@@ -827,7 +835,8 @@ public sealed class SceneProjector : System.IDisposable
                 t.IsSectionOffWhenOut, t.IsHeadlandSectionControl, t.MinCoverage, t.SlowSpeedCutoff,
                 t.CoverageMargin, t.IsWorkSwitchEnabled, t.IsWorkSwitchActiveLow, t.IsWorkSwitchManualSections,
                 t.IsSteerSwitchEnabled, t.IsSteerSwitchManualSections, _config.ActualToolWidth),
-            new UturnConfigDto(g.UTurnStyle, g.UTurnExtension, g.UTurnSmoothing, g.UTurnRadius, g.UTurnDistanceFromBoundary),
+            new UturnConfigDto(g.UTurnStyle, g.UTurnExtension, g.UTurnSmoothing, g.UTurnRadius, g.UTurnDistanceFromBoundary,
+                g.GoAroundRadius, g.GoAroundMargin, g.UTurnCrossGap),
             // Line = the field's actual start pass (tram settings live with the field), 1-based.
             new TramConfigDto(g.TramPasses, g.TramDisplay, _config.Tram.StartPass + 1, _config.Tram.TramWidth,
                 _config.Tram.IsOuterInverted),
@@ -929,7 +938,8 @@ public sealed class SceneProjector : System.IDisposable
         foreach (var d in new[] { t.HitchLength, t.TrailingHitchLength, t.TankTrailingHitchLength, t.Length,
                                   t.LookAheadOnSetting, t.LookAheadOffSetting, t.TurnOffDelay, t.Offset, t.Overlap,
                                   t.TrailingToolToPivotLength, t.DefaultSectionWidth, t.SlowSpeedCutoff, t.CoverageMargin,
-                                  g.UTurnExtension, g.UTurnRadius, g.UTurnDistanceFromBoundary, mc.LookAhead })
+                                  g.UTurnExtension, g.UTurnRadius, g.UTurnDistanceFromBoundary, g.GoAroundRadius, g.GoAroundMargin,
+                                  g.UTurnCrossGap, mc.LookAhead })
             h = h * 31 + d.GetHashCode();
         for (int i = 0; i < 16; i++) h = h * 31 + t.GetSectionWidth(i).GetHashCode() + (int)t.GetSectionColor(i);
         for (int i = 0; i < 9; i++) h = h * 31 + t.GetZoneEndSection(i);
@@ -988,7 +998,8 @@ public sealed class SceneProjector : System.IDisposable
         var bnd = f.ActiveField?.Boundary;
         h = h * 31 + (bnd?.OuterBoundary?.Points.Count ?? 0);
         if (bnd?.InnerBoundaries != null)
-            foreach (var inner in bnd.InnerBoundaries.ToArray()) h = h * 31 + inner.Points.Count;
+            foreach (var inner in bnd.InnerBoundaries.ToArray()) // a circle resized or moved keeps its point count
+                h = ((h * 31 + inner.Points.Count) * 31 + (int)inner.AtObstacle) * 31 + (inner.Circle?.GetHashCode() ?? 0);
         h = h * 31 + (f.HeadlandLine?.Count ?? 0);
         h = h * 31 + (_state.FieldTools.ShowRecordedPaths ? 1 : 0); // #110
         // Contour reference strip (a new list per change) + lock.

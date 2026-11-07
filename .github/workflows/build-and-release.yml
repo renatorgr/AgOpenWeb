@@ -7,9 +7,9 @@ name: CI
 # releases, and the beta prerelease are produced by build-deploy-bundles.yml.
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, pulverizador]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, pulverizador]
   workflow_dispatch:
 
 concurrency:
@@ -82,8 +82,9 @@ jobs:
       # HEAD is the PR's merge commit; its first parent is the base branch as merged,
       # so a Weblate merge on develop while the PR is open isn't counted against it
       # (pull_request.base.sha can be older than that).
+      # Official repository only: this fork gets its translations with each update from it.
       - name: Check language files are untouched
-        if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'weblate'
+        if: github.repository == 'AgOpenGPS-Official/AgOpenWeb' && github.event_name == 'pull_request' && github.event.pull_request.user.login != 'weblate'
         run: |
           git fetch --no-tags --depth=2 origin ${{ github.sha }}
           changed=$(git diff --name-only HEAD^1 HEAD -- 'Shared/AgOpenWeb.RemoteServer/wwwroot/i18n/*.json' | grep -v '/en\.json$' || true)
@@ -126,6 +127,11 @@ jobs:
       - name: Build Vehicle & Tool Scenario harness
         run: dotnet build Tests/AgOpenWeb.VehicleToolScenarios.Tests/ --verbosity minimal
 
+      # The field job scenario harness (whole fields driven with AutoSteer, U-turns and automatic
+      # sections) takes tens of minutes: built here, run nightly (field-job-scenarios.yml).
+      - name: Build Field Job Scenario harness
+        run: dotnet build Tests/AgOpenWeb.FieldJobScenarios.Tests/ --verbosity minimal
+
       # The field scenario harness takes minutes, so it runs nightly (field-scenarios.yml);
       # here it is only built, so a backend change can't break it unnoticed.
       - name: Build Field Scenario harness
@@ -134,6 +140,10 @@ jobs:
       # Likewise the steer wizard harness (steer-wizard-scenarios.yml runs it nightly).
       - name: Build Steer Wizard Scenario harness
         run: dotnet build Tests/AgOpenWeb.SteerWizardScenarios.Tests/ --verbosity minimal
+
+      # And the GPS and NTRIP harness (gps-ntrip-scenarios.yml runs it nightly).
+      - name: Build GPS and NTRIP Scenario harness
+        run: dotnet build Tests/AgOpenWeb.GpsNtripScenarios.Tests/ --verbosity minimal
 
   # Work budgets for the GPS cycle and the 100 Hz control tick (Performance/HotPathBudgetTests):
   # a large field driven through the real pipeline, every cycle held to a budget of polygon
@@ -254,6 +264,9 @@ jobs:
           done
 
   build-ios:
+    # Official repository only: GitHub's macOS runners are a fixed pool and the job is often
+    # cancelled here for lack of one. The official CI compiles iOS for every PR opened there.
+    if: github.repository == 'AgOpenGPS-Official/AgOpenWeb'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4

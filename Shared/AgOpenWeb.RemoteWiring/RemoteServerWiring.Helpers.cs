@@ -196,6 +196,9 @@ public static partial class RemoteServerWiring
             case "uturn.smoothing": if (I(out var u3)) gd.UTurnSmoothing = u3; return;
             case "uturn.radius": if (D(out var u4)) gd.UTurnRadius = u4; return;
             case "uturn.distanceFromBoundary": if (D(out var u5)) gd.UTurnDistanceFromBoundary = u5; return;
+            case "uturn.goAroundRadius": if (D(out var u6)) gd.GoAroundRadius = Math.Clamp(u6, 1.0, 50.0); return;
+            case "uturn.goAroundMargin": if (D(out var u7)) gd.GoAroundMargin = Math.Clamp(u7, 0.3, 10.0); return;
+            case "uturn.crossGap": if (D(out var u8)) gd.UTurnCrossGap = Math.Max(0, u8); return;
             // --- Tram (ConfigStore.Guidance + Tram.TramWidth; saved with the tool profile, #330) ---
             case "tram.passes": if (I(out var tp)) gd.TramPasses = tp; return;
             case "tram.display": gd.TramDisplay = B(); return;
@@ -741,6 +744,58 @@ public static partial class RemoteServerWiring
             state.Connections.NtripMountpoints = new AgOpenWeb.Models.Ntrip.NtripMountpointList(
                 seq, which, status, result.Error == null ? result.Mountpoints : []);
         });
+    }
+
+    // The web cards' "Search the network": one at a time, a new press while one runs is ignored.
+    private static int _webScanSeq, _webScanRunning;
+
+    // Asks the host's own networks for web pages off the UI thread and puts what it found in the state,
+    // for the bookmark editor to offer: first the pages that announce themselves by mDNS (MdnsHttpBrowser,
+    // about a second, listed at once while the search goes on), then every address of the host's networks
+    // (WebPageScanner), for the pages that announce nothing; a page found both ways is listed once.
+    private static async Task ScanWebPagesAsync(IUiDispatcher dispatcher,
+        AgOpenWeb.Models.State.ApplicationState state, AgOpenWeb.Services.Interfaces.ILocalNetworkInfoProvider net)
+    {
+        if (Interlocked.Exchange(ref _webScanRunning, 1) == 1) return;
+        try
+        {
+            int seq = Interlocked.Increment(ref _webScanSeq);
+            var local = net.GetIPv4Addresses();
+            var (targets, networks) = AgOpenWeb.Services.Network.WebPageScanner.Targets(local);
+            string nets = string.Join(", ", networks);
+            state.Connections.WebPageScan = new AgOpenWeb.Models.WebPageScan(seq, "searching", nets, []);
+            var own = new HashSet<System.Net.IPAddress>(local.Select(a => a.Address));
+            var pages = new List<AgOpenWeb.Models.FoundWebPage>();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            try
+            {
+                pages = await AgOpenWeb.Services.Network.MdnsHttpBrowser.BrowseAsync(local, own, cts.Token);
+                if (pages.Count > 0)
+                {
+                    var announced = pages;
+                    dispatcher.Post(() => state.Connections.WebPageScan = new AgOpenWeb.Models.WebPageScan(seq, "searching", nets, announced));
+                }
+            }
+            catch (Exception)
+            {
+                pages = [];
+            }
+            try
+            {
+                var swept = await Task.Run(() => AgOpenWeb.Services.Network.WebPageScanner.ScanAsync(targets, own, cts.Token));
+                pages = AgOpenWeb.Services.Network.WebPageScanner.Merge(pages, swept);
+            }
+            catch (Exception)
+            {
+                // what mDNS found stays
+            }
+            var found = pages;
+            dispatcher.Post(() => state.Connections.WebPageScan = new AgOpenWeb.Models.WebPageScan(seq, "done", nets, found));
+        }
+        finally
+        {
+            Volatile.Write(ref _webScanRunning, 0);
+        }
     }
 
     private static async Task TestNtripAndReportAsync(

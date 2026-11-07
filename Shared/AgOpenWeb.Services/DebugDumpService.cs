@@ -425,9 +425,12 @@ public class DebugDumpService
                 store.Guidance.UTurnRadius,
                 store.Guidance.UTurnExtension,
                 store.Guidance.UTurnDistanceFromBoundary,
+                store.Guidance.UTurnCrossGap,
                 store.Guidance.UTurnStyle,
                 store.Guidance.UTurnSmoothing,
-                store.Guidance.UTurnCompensation
+                store.Guidance.UTurnCompensation,
+                store.Guidance.GoAroundRadius,
+                store.Guidance.GoAroundMargin
             },
             // GPS / dual-antenna / heading settings (#157: a heading bug report had none of
             // these). ConnectionConfig also holds NTRIP and AgShare credentials — listed

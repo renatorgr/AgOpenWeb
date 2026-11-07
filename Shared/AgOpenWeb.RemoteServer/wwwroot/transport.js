@@ -47,8 +47,9 @@ window.RemoteTransport = {
         case TYPE.SCENE: {
           const version = i64(), originLat = f64(), originLon = f64();
           const hasField = !!u8(), fieldName = str();
-          const bc = i32(); const boundaries = new Array(bc); const boundaryInner = new Array(bc);
-          for (let k = 0; k < bc; k++) { boundaryInner[k] = !!u8(); boundaries[k] = pts(); }
+          // boundaryKind: 0 = outer, else an obstacle, 1 + its choice (1 U-turn, 2 go around, 3 drive through).
+          const bc = i32(); const boundaries = new Array(bc); const boundaryInner = new Array(bc); const boundaryKind = new Array(bc);
+          for (let k = 0; k < bc; k++) { boundaryKind[k] = u8(); boundaryInner[k] = boundaryKind[k] > 0; boundaries[k] = pts(); }
           const tc = i32(); const tracks = new Array(tc);
           for (let k = 0; k < tc; k++) {
             const id = str(), name = str(), type = i32(), points = pts();
@@ -84,7 +85,7 @@ window.RemoteTransport = {
           for (let k = 0; k < glc; k++) guideLines[k] = pts();
           const toolPass = optPts();
           handlers.onScene && handlers.onScene({
-            version, originLat, originLon, fieldName, hasField, boundaries, boundaryInner, tracks,
+            version, originLat, originLon, fieldName, hasField, boundaries, boundaryInner, boundaryKind, tracks,
             headland, guidanceLine, toolSections, uTurnPath, nextTrack, flags, imagery, trackList,
             headlandSegs, tramSystems, tramLines, recordedPaths, contourStrips, contourRef, contourLocked,
             guideLines, toolPass,
@@ -215,6 +216,18 @@ window.RemoteTransport = {
             ntripSession = { usingFallback: !!u8(), mainIsBack: !!u8(), hasFallback: !!u8(), profilePerField: !!u8(),
               state: u8(), lastError: i32(), attempts: i32(), retrySeconds: f32(), notice: str(), profile: str(), service: str() };
           }
+          // Sprayer readout (append-only): PGN 160 from the machine module; null until heard.
+          // alarms = SprayerAlarms bits. moduleChecks: PGN 161 from the module, which checks the
+          // sprayer with its own settings; rateLha, targetLha, pressureNeededBar, minPressureBar,
+          // maxPressureBar are then its values (NaN = none).
+          let sprayer = null;
+          if (u8()) {
+            const f64 = () => { const v = dv.getFloat64(o, true); o += 8; return v; };
+            sprayer = { pressureBar: f32(), flowLpm: f32(), totalLitres: f64(), masterOn: !!u8(), sections: u8(),
+                        openWidthM: f32(), alarms: u8(),
+                        moduleChecks: !!u8(), rateLha: f32(), targetLha: f32(), pressureNeededBar: f32(),
+                        minPressureBar: f32(), maxPressureBar: f32() };
+          }
           handlers.onStatusBar && handlers.onStatusBar({
             fixQuality, fixText, age, sats, isMetric,
             gpsOk, imuOk, autoSteerOk, machineOk, imuIp, autoSteerIp, machineIp,
@@ -226,7 +239,7 @@ window.RemoteTransport = {
             gpsIp, moduleSubnet, hostIps, ntripConnected, ntripStatus, ntripBytes, ntripDestination, ntripUnicast, rtcmBroadcast, ntripEnabled, ntripTestStatus,
             simPanelVisible, driftEasting, driftNorthing, unsavedCoveragePrompt,
             devOverlay, gpsToPgnLatencyMs, gpsSentence, dualHeadingMissing, ntripRtcm, systemData,
-            gpsLost, isobus, fieldData, sendCorrectedPosition, scanReplySubnet, ntripSession,
+            gpsLost, isobus, fieldData, sendCorrectedPosition, scanReplySubnet, ntripSession, sprayer,
           });
           break;
         }
@@ -249,7 +262,10 @@ window.RemoteTransport = {
         case TYPE.WEB_CARDS: {
           const n = i32(); const cards = new Array(n);
           for (let k = 0; k < n; k++) cards[k] = { name: str(), url: str() };
-          handlers.onWebCards && handlers.onWebCards(cards);
+          const scan = { seq: i32(), status: str(), networks: str() };
+          const np = i32(); scan.pages = new Array(np);
+          for (let k = 0; k < np; k++) scan.pages[k] = { title: str(), url: str() };
+          handlers.onWebCards && handlers.onWebCards(cards, scan);
           break;
         }
         case TYPE.NTRIP_MOUNTPOINTS: {
@@ -312,7 +328,7 @@ window.RemoteTransport = {
         }
         case TYPE.BOUNDARY: {
           const ic = i32(); const items = new Array(ic);
-          for (let k = 0; k < ic; k++) items[k] = { index: i32(), boundaryType: str(), areaHa: f64(), driveThru: !!u8(), hard: !!u8() };
+          for (let k = 0; k < ic; k++) items[k] = { index: i32(), boundaryType: str(), areaHa: f64(), driveThru: !!u8(), hard: !!u8(), isInner: !!u8(), atObstacle: u8(), sizeM: f32(), circleD: f32() };
           const selectedIndex = i32(), playerVisible = !!u8(), isRecording = !!u8(), isPaused = !!u8();
           const pointCount = i32(), areaHa = f64(), offsetCm = f64();
           const drawRightSide = !!u8(), drawAtPivot = !!u8(), sectionControlOn = !!u8();
@@ -351,7 +367,8 @@ window.RemoteTransport = {
             isWorkSwitchEnabled: !!u8(), isWorkSwitchActiveLow: !!u8(), isWorkSwitchManualSections: !!u8(),
             isSteerSwitchEnabled: !!u8(), isSteerSwitchManualSections: !!u8(), totalWidth: f64(),
           };
-          const uturn = { style: i32(), extension: f64(), smoothing: i32(), radius: f64(), distanceFromBoundary: f64() };
+          const uturn = { style: i32(), extension: f64(), smoothing: i32(), radius: f64(), distanceFromBoundary: f64(),
+            goAroundRadius: f64(), goAroundMargin: f64(), crossGap: f64() };
           const tram = { passes: i32(), display: !!u8(), line: i32(), width: f64(), outerInverted: !!u8() };
           const machine = {
             hydraulicLiftEnabled: !!u8(), raiseTime: i32(), lookAhead: f64(), lowerTime: i32(), invertRelay: !!u8(),

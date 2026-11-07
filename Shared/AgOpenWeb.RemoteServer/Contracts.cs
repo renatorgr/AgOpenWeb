@@ -43,7 +43,7 @@ public record SceneDto(
     string FieldName,
     bool HasField,
     IReadOnlyList<IReadOnlyList<Vec2Dto>> Boundaries, // outer ring first, then inner holes
-    IReadOnlyList<bool> BoundaryInner, // parallel to Boundaries: true = inner/obstacle (drawn yellow)
+    IReadOnlyList<byte> BoundaryKind, // parallel to Boundaries: 0 = outer, else an obstacle: 1 + its ObstacleAction (1 turn, 2 go round, 3 drive through)
     IReadOnlyList<TrackDto> Tracks,
     IReadOnlyList<Vec2Dto>? Headland, // inner headland ring (green line), if any
     IReadOnlyList<Vec2Dto>? GuidanceLine, // the followed offset line (magenta), if guiding
@@ -323,7 +323,9 @@ public record StatusDto(
     // Bytes 9–11 of the last scan reply: the subnet the scan came from (#334); "" = none.
     string ScanReplySubnet = "",
     // The NTRIP session: which service is in use, the failover state, the last failure (NTRIP plan).
-    NtripSessionDto? NtripSession = null);
+    NtripSessionDto? NtripSession = null,
+    // Sprayer readout from the machine module (PGN 160); null until it is heard.
+    SprayerDto? Sprayer = null);
 
 /// <summary>What the field data card shows beyond the worked area the status frame already
 /// carries: the boundary area less inner boundaries (0 = no boundary), the ground covered
@@ -334,6 +336,16 @@ public record FieldDataDto(double BoundaryAreaSqM, double ActualAreaSqM, double 
 /// enabled on the implement, the implement's section count (0 = no implement), how many
 /// implements are connected, and the implement's own section states (section 1 in bit 0).</summary>
 public record IsobusDto(bool SectionControl, int Sections, int Clients, ulong Reported);
+
+/// <summary>The sprayer readout (PGN 160 from the machine module): bar, L/min, litres, the
+/// sections the module has open (section 1 in bit 0), the width (m) they cover and the alarms on
+/// (SprayerAlarms bits). With ModuleChecks (PGN 161 from the module, which checks the sprayer with
+/// its own settings) the rate and target (L/ha), the pressure for the target and the pressure
+/// limits (bar) are the module's; NaN = none.</summary>
+public record SprayerDto(double PressureBar, double FlowLpm, double TotalLitres, bool MasterOn, int Sections,
+    double OpenWidthM, int Alarms,
+    bool ModuleChecks = false, double RateLha = double.NaN, double TargetLha = double.NaN,
+    double PressureNeededBar = double.NaN, double MinPressureBar = double.NaN, double MaxPressureBar = double.NaN);
 
 /// <summary>GPS values for the System Data card that ride no other frame: attitude, the
 /// heading sources before fusion, the sentence rate and counters, and the latest raw
@@ -468,7 +480,11 @@ public record ToolConfigDto(
     double TotalWidth);
 
 /// <summary>U-Turn tab (ConfigStore.Guidance). Style: 0 Omega, 1 Sagitta.</summary>
-public record UturnConfigDto(int Style, double Extension, int Smoothing, double Radius, double DistanceFromBoundary);
+/// <param name="GoAroundRadius">The tightest a pass bends round a Go around obstacle, m.</param>
+/// <param name="GoAroundMargin">Room kept between the implement and a Go around obstacle, m.</param>
+/// <param name="CrossGap">The longest headland gap a pass is driven across instead of turned at, m; 0 = off.</param>
+public record UturnConfigDto(int Style, double Extension, int Smoothing, double Radius, double DistanceFromBoundary,
+    double GoAroundRadius, double GoAroundMargin, double CrossGap);
 
 /// <summary>Tram Lines tab (ConfigStore.Guidance tram fields).</summary>
 public record TramConfigDto(int Passes, bool Display, int Line, double Width, bool OuterInverted);
@@ -582,9 +598,13 @@ public record NtripFallbackDto(
 /// list (or a new status) is ready. For is "main" or "fallback"; Status is the sentence to show.</summary>
 public record NtripMountpointsDto(int Seq, string For, string Status, IReadOnlyList<NtripMountpointDto> Items);
 
-/// <summary>The web cards' bookmarks (AppSettings.WebCards), in their own frame.</summary>
-public record WebCardsDto(IReadOnlyList<WebCardDto> Cards);
+/// <summary>The web cards' bookmarks (AppSettings.WebCards), in their own frame, with the last
+/// "Search the network" from the bookmark editor (ConnectionState.WebPageScan).</summary>
+public record WebCardsDto(IReadOnlyList<WebCardDto> Cards, WebPageScanDto Scan);
 public record WebCardDto(string Name, string Url);
+/// <summary>Status is "" (none yet), "searching" or "done"; Networks the networks searched; Pages
+/// the pages found (Name = the page's title, empty when it has none).</summary>
+public record WebPageScanDto(int Seq, string Status, string Networks, IReadOnlyList<WebCardDto> Pages);
 
 /// <param name="DistanceKm">NaN when the position of the mount point or of the receiver is unknown.</param>
 public record NtripMountpointDto(string Mount, string Name, string Format, string Systems, string Country,
@@ -671,7 +691,10 @@ public record RecordedPathDto(
 /// recording menu (Outer / Inner N, area, drive-thru / hard flags). The Player.* fields
 /// mirror the live drive-around recording (State.BoundaryRec + the VM toggles). Re-sent on
 /// a fingerprint change. Draw-on-map point drawing is Phase MT and not here.</summary>
-public record BoundaryItemDto(int Index, string BoundaryType, double AreaHa, bool DriveThru, bool Hard);
+// IsInner: an obstacle, with AtObstacle (ObstacleAction: 0 turn, 1 go round, 2 drive through)
+// and SizeM, its longest distance across; CircleD, a round obstacle's diameter (0: a drawn shape).
+public record BoundaryItemDto(int Index, string BoundaryType, double AreaHa, bool DriveThru, bool Hard,
+    bool IsInner = false, int AtObstacle = 0, double SizeM = 0, double CircleD = 0);
 
 public record BoundaryDto(
     IReadOnlyList<BoundaryItemDto> Items,
