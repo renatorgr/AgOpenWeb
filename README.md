@@ -1,3 +1,37 @@
+# AgOpenWeb with a sprayer readout
+
+This is a fork of [AgOpenGPS-Official/AgOpenWeb](https://github.com/AgOpenGPS-Official/AgOpenWeb) that adds a **sprayer readout**: boom pressure, flow and alarms from the sprayer's machine module, shown in a strip above the section buttons. Everything else is the official AgOpenWeb, brought up to date every day.
+
+The official README follows [below](#agopenweb).
+
+## Sprayer readout
+
+- Shows the pressure (bar), the flow (L/min), the actual rate (L/ha), and one small square per section in the section buttons' colours.
+- Raises an alarm, with a sound, for low or high pressure, for a flow that doesn't match the open nozzles, and for flow with every section closed.
+- Warns when the module doesn't open or close a section that AgOpenWeb asked for.
+- With a target rate set, shows the pressure that gives that rate at the current speed. It only advises: nothing is regulated.
+- The settings (target rate, nozzles, pressure limits, flow tolerance) are on the module's own web page ([Sprayer_ESP32](https://github.com/renatorgr/Boards/tree/main/Sprayer/Sprayer_ESP32) 0.10 and newer, Settings tab), not in AgOpenWeb. The module works out the rate, the pressure for the target and the alarms; AgOpenWeb shows and sounds what it sends, as the official AgOpenWeb leaves the rate settings to the rate controllers. The section widths stay in AgOpenWeb (Tool tab). With an older module program (PGN 160 only) the strip shows the pressure, flow and sections, without a rate or alarms.
+- The strip only appears while a sprayer module is sending data. Without one, AgOpenWeb works exactly like the official version.
+
+The module sends PGN 160 to port 9999 once a second, then PGN 161 with ISOBUS process data (DDIs), see [Docs/PGN.md](Docs/PGN.md#sprayer-readout). Firmware is in [renatorgr/Boards](https://github.com/renatorgr/Boards/tree/main/Sprayer): Sprayer_ESP32 for an ESP32 relay board, and the older Sprayer_Nano for an Arduino Nano with a relay board.
+
+The readout was proposed to the official project in [AgOpenGPS-Official/AgOpenWeb#390](https://github.com/AgOpenGPS-Official/AgOpenWeb/issues/390). The maintainers would rather handle sprayer data the ISOBUS way, so it lives in this fork for now.
+
+## Download
+
+Get the [Beta build of this fork](https://github.com/renatorgr/AgOpenWeb/releases/tag/beta). It is rebuilt from `pulverizador` every evening when there are changes, and has the same files as the official Beta (see "Download & run" below). Links below that point to AgOpenGPS-Official give you the official build, without the sprayer readout.
+
+## Branches
+
+| Branch | What it holds |
+|---|---|
+| `pulverizador` (default) | The official `develop` plus the sprayer readout. All work on this fork goes here. |
+| `develop` | An exact copy of the official `develop`. Don't commit to it. |
+
+Once a day, a GitHub Action ([`sync-pulverizador.yml`](.github/workflows/sync-pulverizador.yml)) brings `develop` up to date with the official repository. If there is anything new, it opens a pull request, "Update pulverizador with the official AgOpenWeb". Merge it to bring the official changes into `pulverizador`.
+
+---
+
 # AgOpenWeb
 
 [![CI](https://github.com/AgOpenGPS-Official/AgOpenWeb/actions/workflows/build-and-release.yml/badge.svg?branch=develop)](https://github.com/AgOpenGPS-Official/AgOpenWeb/actions/workflows/build-and-release.yml)

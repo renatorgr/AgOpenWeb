@@ -632,6 +632,100 @@ function renderIsobusSections() {
   const cells = row.querySelectorAll('.sec-iso-cell');
   for (let i = 0; i < cells.length; i++) cells[i].classList.toggle('on', !!iso.reported[i]);
 }
+// Sprayer readout from the machine module: pressure, flow and the sections it has open (PGN 160),
+// and the rate, target, pressure for the target, pressure limits and alarms it works out with
+// the settings on its own page (PGN 161, sp.moduleChecks). The app has no sprayer settings.
+// The alarm turns the strip red; the host sounds it. Shown while the module is heard.
+const sprayerBar = document.getElementById('sprayerbar');
+const SPRAYER_ALARMS = [ // SprayerAlarms bits, in order
+  [1, tr('Low pressure')], [2, tr('High pressure')], [4, tr('Flow too low')], [8, tr('Flow too high')],
+  [16, tr('Flow with the sections off')], [32, tr('No data from the sprayer')],
+];
+// The module's target rate (L/ha) is only shown: the valves are on / off and the pressure is
+// set by hand. The actual rate is green within SPRAYER_RATE_TOLERANCE of it, orange outside.
+const SPRAYER_RATE_TOLERANCE = 0.10;
+// Each section: what the app asks (the section's relay bit: manual on, auto on, turning
+// off) against what the module reports open. A small square per section in the section
+// buttons' colours: green open, red closed, orange asked on but still closed, cyan asked
+// off but still open. The module answers once a second, so the line naming a section it
+// doesn't follow only shows once the difference has lasted SPRAYER_SECTION_LAG_MS.
+const SPRAYER_SECTION_LAG_MS = 2000;
+const sprayerDiffSince = []; // per section: when the two started to differ (0 = they agree)
+function sprayerSections(sp, n) {
+  const asked = tick && tick.sections, now = performance.now();
+  const states = [], notOpened = [], notClosed = [];
+  for (let i = 0; i < n; i++) {
+    const code = asked ? asked[i] : 0;
+    const on = code === 1 || code === 2 || code === 3, open = ((sp.sections >> i) & 1) === 1;
+    states.push(on ? (open ? 's-on' : 's-goingon') : (open ? 's-goingoff' : 's-off'));
+    if (on === open) { sprayerDiffSince[i] = 0; continue; }
+    if (!sprayerDiffSince[i]) sprayerDiffSince[i] = now;
+    if (now - sprayerDiffSince[i] >= SPRAYER_SECTION_LAG_MS) (on ? notOpened : notClosed).push(i + 1);
+  }
+  const warn = [];
+  if (notOpened.length) warn.push(tr('Module did not open section {s}', { s: notOpened.join(', ') }));
+  if (notClosed.length) warn.push(tr('Module did not close section {s}', { s: notClosed.join(', ') }));
+  return { states, warn };
+}
+// The target and the pressure hint from the module (PGN 161): the module works out the
+// pressure that gives its target at this speed; outside its limits, the speed that gives the
+// target at that limit (flow grows with the square root of the pressure, so at a fixed rate
+// the speed does too: v = v now × √(limit ÷ needed)).
+function sprayerModuleTarget(sp, speed) {
+  const rate = sp.targetLha;
+  if (!(rate > 0)) return null;
+  const head = tr('target {r} L/ha', { r: Math.round(rate) });
+  const p = sp.pressureNeededBar;
+  if (!(p > 0) || !(speed > 0.3)) return { rate, text: head };
+  const kmhAt = limit => speed * 3.6 * Math.sqrt(limit / p);
+  let hint;
+  if (sp.maxPressureBar > 0 && p > sp.maxPressureBar)
+    hint = tr('{p} bar needed, slow down to {v} km/h', { p: p.toFixed(1), v: kmhAt(sp.maxPressureBar).toFixed(1) });
+  else if (sp.minPressureBar > 0 && p < sp.minPressureBar)
+    hint = tr('{p} bar needed, speed up to {v} km/h', { p: p.toFixed(1), v: kmhAt(sp.minPressureBar).toFixed(1) });
+  else hint = tr('set {p} bar', { p: p.toFixed(1) });
+  return { rate, text: head + ' · ' + hint };
+}
+function renderSprayerBar() {
+  const sp = statusBar && statusBar.sprayer;
+  sprayerBar.classList.toggle('open', !!sp);
+  if (!sp) return;
+  const n = Math.max(1, Math.min(8, (config && config.tool && config.tool.numSections) || 5));
+  if (+sprayerBar.dataset.n !== n) {
+    sprayerBar.dataset.n = n;
+    sprayerBar.innerHTML = '<div class="spr-row"><span class="spr-val" translate="no"></span><div class="spr-cells"></div></div>'
+      + '<div class="spr-row"><span class="spr-note"></span></div><div class="spr-warn"></div><div class="spr-msg"></div>';
+    const val = sprayerBar.querySelector('.spr-val'); // value + unit pairs; units are symbols, not text
+    for (const [cls, unit] of [['spr-p', ' bar  '], ['spr-f', ' L/min  '], ['spr-r', ' L/ha']]) {
+      const b = document.createElement('b'); b.className = cls; val.appendChild(b);
+      val.appendChild(document.createTextNode(unit));
+    }
+    const cells = sprayerBar.querySelector('.spr-cells');
+    for (let i = 0; i < n; i++) { const c = document.createElement('div'); c.className = 'spr-cell'; cells.appendChild(c); }
+  }
+  const secs = sprayerSections(sp, n);
+  const cells = sprayerBar.querySelectorAll('.spr-cell');
+  for (let i = 0; i < cells.length; i++) cells[i].className = 'spr-cell ' + secs.states[i];
+  // The module's L/ha (NaN while stopped, or from a module program without PGN 161).
+  const speed = lastTick ? lastTick.speed : 0;
+  const lha = sp.moduleChecks ? sp.rateLha : NaN;
+  sprayerBar.querySelector('.spr-p').textContent = sp.pressureBar.toFixed(1);
+  sprayerBar.querySelector('.spr-f').textContent = sp.flowLpm.toFixed(1);
+  const rateEl = sprayerBar.querySelector('.spr-r');
+  rateEl.textContent = Number.isFinite(lha) ? Math.round(lha) : '—';
+  const target = sp.moduleChecks ? sprayerModuleTarget(sp, speed) : null;
+  rateEl.classList.toggle('on-target', !!target && Number.isFinite(lha) && Math.abs(lha - target.rate) <= target.rate * SPRAYER_RATE_TOLERANCE);
+  rateEl.classList.toggle('off-target', !!target && Number.isFinite(lha) && Math.abs(lha - target.rate) > target.rate * SPRAYER_RATE_TOLERANCE);
+  const note = [];
+  if (target) note.push(target.text);
+  note.push(sp.totalLitres.toFixed(0) + ' L');
+  if (!sp.masterOn) note.push(tr('master off'));
+  sprayerBar.querySelector('.spr-note').textContent = note.join(' · ');
+  sprayerBar.querySelector('.spr-warn').textContent = secs.warn.join(' · ');
+  const msgs = SPRAYER_ALARMS.filter(([bit]) => sp.alarms & bit).map(([, text]) => text);
+  sprayerBar.querySelector('.spr-msg').textContent = msgs.join(' · ');
+  sprayerBar.classList.toggle('alarm', msgs.length > 0);
+}
 // Bottom nav. Swap icons only on change; reflect Tick toggle state.
 function bnIcon(img, name) { const p = '/icons/' + name; if (img && !img.src.endsWith(p)) img.src = p; }
 const TRAM_ICONS = ['TramOff.png', 'TramAll.png', 'TramLines.png', 'TramOuter.png'];

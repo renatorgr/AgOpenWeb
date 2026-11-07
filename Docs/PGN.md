@@ -1083,6 +1083,59 @@ back with the other setting.
 <br>
 <br>
 
+## Sprayer readout
+
+From a sprayer's machine module once a second, to port 9999 (the module subnet broadcast).
+AgOpenWeb shows it in a strip above the section buttons. The module checks the sprayer with
+the settings on its own web page (target rate, nozzles, pressure limits, flow tolerance) and
+sends its rate, target and alarms in PGN 161 below; AgOpenWeb has no sprayer settings of its
+own, as with the rate controllers above. Little-endian.
+
+| PGN Name | Src | PGN | Dec | Len | Bytes 5-6 | Bytes 7-8 | Bytes 9-12 | Byte 13 | Byte 14 | Last |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Sprayer data, from the machine module | 7B | A0 | 160 | 10 | pressure, bar × 100 | flow, L/min × 100 | total since start, L × 10 | master switch, 1 = on | sections open, section 1 in bit 0 | CRC |
+
+With PGN 160 alone (an older module program) the strip shows the pressure, the flow, the
+litres and the sections, without a rate or alarms. No message for 3 s shows "No data from the
+sprayer".
+
+### Process data: the module's rate, target and alarms
+
+Right after each PGN 160, the module (renatorgr Sprayer_ESP32 0.10 and newer, its settings on
+its web page) sends PGN 161 (0xA1): ISOBUS process data, as the Process Data Message of ISO 11783-10 that
+the AgOpenGPS ISOBUS group proposes for modules. Each value is 8 bytes, little-endian:
+
+| Byte 0 | Byte 1 | Bytes 2-3 | Bytes 4-7 |
+|---|---|---|---|
+| command in bits 0-3 (3 = value) + element number bits 0-3 in bits 4-7 | element number bits 4-11 | DDI | value, int32 |
+
+Header 80 81 7B A1, length = 8 × the number of values, then the CRC. Element 0 = the sprayer,
+1 = its boom; other elements are ignored. A value the module doesn't know (sensor not
+fitted, tractor stopped, no target) is left out of that message.
+
+| DDI | What | Unit (value =) | Element |
+|---|---|---|---|
+| 194 | actual pressure | 0.1 Pa (bar × 1 000 000) | 1 |
+| 37 | actual flow | mm³/s (L/min × 16 667) | 1 |
+| 351 | total volume | ml | 0 |
+| 141 | actual work state (master switch) | 1 on, 0 off | 1 |
+| 161 | actual condensed work state, sections 1-16 | 2 bits per section: 01 open, 00 closed, 11 not there | 1 |
+| 2 | actual rate | 0.01 mm³/m² (L/ha × 10 000) | 1 |
+| 1 | target rate | 0.01 mm³/m² (L/ha × 10 000) | 1 |
+| 193 | the pressure that gives the target at this speed | 0.1 Pa | 1 |
+| 195, 196 | minimum, maximum pressure | 0.1 Pa | 1 |
+| 57344 | sprayer alarms (proprietary DDI): 1 low pressure, 2 high pressure, 4 flow too low, 8 flow too high, 16 flow with the sections off | bits | 1 |
+
+While PGN 161 with DDI 57344 arrives (within 3 s), the strip shows the module's rate,
+target and alarms, and sounds the alarms (when one comes on and every 10 s while on); the
+hint is "set p bar" from DDI 193, or, when that is above the maximum (below the minimum),
+the speed that gives the target at that limit, speed × √(limit ÷ p). A PGN 161 without
+DDI 57344 changes nothing. The module computes the rate from the speed in PGN 239 and the
+section widths in PGN 235.
+
+<br>
+<br>
+
 ## Corrected position
 
 For seed monitors, rate controllers and GPS_Out. Off by default: tick "Send corrected

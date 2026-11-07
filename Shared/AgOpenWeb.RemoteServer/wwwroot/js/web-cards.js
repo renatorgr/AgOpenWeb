@@ -7,13 +7,18 @@
 // ---- Web cards ----
 // Add-ons' own web pages in cards (Plans/ADD_ON_CARDS_PLAN.md), apart from the VT cards. The
 // bookmarks (name + URL) are the host's, the same on every browser; which cards are open, their
-// page, size and place are this browser's (localStorage). {host} in a URL is the AgOpenWeb host
-// as this browser reaches it. The page loads from the add-on itself, on its own origin. A browser
-// without control sees the page under a cover that takes the taps (#397).
+// page, size and place, and each page's zoom, are this browser's (localStorage). {host} in a URL
+// is the AgOpenWeb host as this browser reaches it. The page loads from the add-on itself, on its
+// own origin. A browser without control sees the page under a cover that takes the taps (#397).
 const WebCards = (() => {
   const tpl = document.getElementById('web-card-tpl'), navBtn = document.getElementById('ln-web');
   const SIZES = [[480, 320], [640, 420], [800, 520], [1000, 640]], MAX = 4, KEY = 'web.cards';
-  let bookmarks = [], cards = [], shown = false;
+  // Page zoom, per page (URL): the page is laid out in a frame 1/zoom the card's size and scaled
+  // to fit, so it shows more (below 100) or bigger (above) with nothing done by the add-on.
+  const ZOOMS = [67, 80, 100, 125, 150], ZKEY = 'web.zoom';
+  let bookmarks = [], cards = [], shown = false, zooms = {};
+  try { zooms = JSON.parse(localStorage.getItem(ZKEY) || '{}') || {}; } catch (_) {}
+  const zoomOf = url => (ZOOMS.includes(zooms[url]) ? zooms[url] : 100);
 
   const resolve = url => url.split('{host}').join(location.hostname);
   function save() {
@@ -32,6 +37,7 @@ const WebCards = (() => {
     raiseCard(card);
     const q = s => card.querySelector(s);
     const pick = q('.web-pick'), frame = q('iframe'), cover = q('.web-cover'), msg = q('.web-msg'), editEl = q('.web-edit');
+    const zoomBtn = q('.web-zoom'), body = q('.web-body');
     const c = { card, state, editing: false, editIx: null };
     const applySize = () => {
       const [w, h] = SIZES[state.size] || SIZES[1];
@@ -66,6 +72,11 @@ const WebCards = (() => {
       cover.classList.toggle('show', !iHoldControl);
       q('.web-add').style.display = cards.length < MAX ? '' : 'none';
       q('.web-ext').style.display = state.url ? '' : 'none';
+      const z = zoomOf(state.url);
+      zoomBtn.style.display = state.url ? '' : 'none';
+      zoomBtn.textContent = z + '%';
+      body.classList.toggle('zoomed', z !== 100);
+      body.style.setProperty('--wz', String(z / 100));
       q('.web-hint').hidden = !state.url;
       if (c.editing && !iHoldControl) c.editing = false;
       editEl.classList.toggle('show', c.editing);
@@ -73,13 +84,24 @@ const WebCards = (() => {
     };
 
     pick.addEventListener('change', () => { state.url = pick.value; save(); c.render(); CardPane.renamed(); });
-    // Another card, a little below and right of this one, so both headers can be reached.
+    // Another card, a little below and right of this one, so both headers can be reached. It
+    // opens on top: the event stops here, or this card's header and card handlers would raise
+    // this card back over it.
     q('.web-add').addEventListener('pointerdown', e => {
-      e.preventDefault();
+      e.preventDefault(); e.stopPropagation();
       const r = zoomRect(card);
       add({ url: '', size: state.size, x: r.left / uiZoom + 36, y: r.top / uiZoom + 36 });
     });
     q('.web-ext').addEventListener('pointerdown', e => { e.preventDefault(); if (state.url) window.open(resolve(state.url), '_blank'); });
+    // The page's zoom, the next step each tap; any other card on the same page follows.
+    zoomBtn.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      if (!state.url) return;
+      const z = ZOOMS[(ZOOMS.indexOf(zoomOf(state.url)) + 1) % ZOOMS.length];
+      if (z === 100) delete zooms[state.url]; else zooms[state.url] = z;
+      try { localStorage.setItem(ZKEY, JSON.stringify(zooms)); } catch (_) {}
+      for (const x of cards) x.render();
+    });
     q('.web-size').addEventListener('pointerdown', e => {
       e.preventDefault(); state.size = ((state.size | 0) + 1) % SIZES.length; applySize(); save();
     });
@@ -138,6 +160,48 @@ const WebCards = (() => {
       }),
       btn(editing ? tr('Cancel') : tr('Done'), () => { if (editing) c.editIx = null; else c.editing = false; c.render(); }));
     el.append(name, url, sub, row);
+    renderSearch(el, btn);
+  }
+
+  // "Search the network": the host first asks the network for the pages that announce themselves
+  // (mDNS, about a second: they are listed while the search goes on), then asks every address of its
+  // own networks for a page and reads its title; each page found can be added as a bookmark with one
+  // tap. The host's last search: status '' (none yet), 'searching' or 'done', and the pages found so far.
+  let scan = { seq: 0, status: '', networks: '', pages: [] };
+  function renderSearch(el, btn) {
+    const searching = scan.status === 'searching', done = scan.status === 'done';
+    const nets = scan.networks;
+    const head = document.createElement('div'); head.className = 'web-row web-search';
+    const note = document.createElement('span');
+    note.textContent = searching ? tr('Searching {nets}…', { nets })
+      : !done ? tr('Find the pages of the modules on this network.')
+      : scan.pages.length ? (nets ? tr('Found on {nets}:', { nets }) : tr('Found:'))
+      : !nets ? tr('No network to search.')
+      : tr('No pages found on {nets}.', { nets });
+    const go = btn(searching ? tr('Searching…') : tr('Search the network'), () => {
+      if (scan.status === 'searching') return;
+      document.activeElement?.blur(); // the editor redraws with the answer only while nothing in it has focus
+      transport.send('webcard.scan');
+    });
+    go.disabled = searching;
+    head.append(note, go);
+    el.appendChild(head);
+    if (!done && !searching) return;
+    const bare = u => u.trim().replace(/\/+$/, '').toLowerCase();
+    for (const p of scan.pages) {
+      const addr = resolve(p.url).replace(/^https?:\/\//, '').replace(/\/$/, '');
+      const name = p.title || addr;
+      const row = document.createElement('div'); row.className = 'web-row';
+      const t = document.createElement('span'); t.textContent = name + ' ';
+      const u = document.createElement('small'); u.textContent = p.url; t.appendChild(u);
+      const have = bookmarks.some(b => bare(b.url) === bare(p.url));
+      const b = btn(have ? tr('Added') : tr('Add'), () => {
+        if (!have) transport.send('webcard.save|-1\t' + name.replace(/\t/g, ' ') + '\t' + p.url);
+      });
+      b.disabled = have;
+      row.append(t, b);
+      el.appendChild(row);
+    }
   }
 
   function add(state) {
@@ -153,8 +217,9 @@ const WebCards = (() => {
     for (const c of cards) c.render();
   }
 
-  function setBookmarks(list) {
+  function setBookmarks(list, found) {
     bookmarks = list;
+    if (found) scan = found;
     // An editor open on a bookmark that moved or went: back to the list.
     for (const c of cards) if (c.editIx != null && c.editIx >= list.length) c.editIx = null;
     for (const c of cards) if (!c.editing || document.activeElement?.closest('.web-edit') !== c.card.querySelector('.web-edit')) c.render();

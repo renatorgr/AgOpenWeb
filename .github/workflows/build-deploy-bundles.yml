@@ -45,8 +45,10 @@ on:
     tags:
       - 'v*'
   schedule:
-    # Daily refresh of the rolling beta at 06:00 UTC, when the default branch has moved on.
-    - cron: '0 6 * * *'
+    # Daily refresh of the rolling beta at 22:00 UTC, when the default branch has moved on. Four
+    # hours after the daily upstream sync PR (sync-pulverizador.yml) so it can be merged first.
+    # GitHub may start it later on a busy day.
+    - cron: '0 22 * * *'
 
 # Beta runs (scheduled or manual) share one group and the newest wins; a release run is
 # never cancelled by a later run.

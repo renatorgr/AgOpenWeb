@@ -135,6 +135,10 @@ public static class WireCodec
             w.Write(it.AreaHa);            // f64 (hectares; the client formats ha/ac)
             w.Write((byte)(it.DriveThru ? 1 : 0));
             w.Write((byte)(it.Hard ? 1 : 0));
+            w.Write((byte)(it.IsInner ? 1 : 0));
+            w.Write((byte)it.AtObstacle);  // ObstacleAction
+            w.Write((float)it.SizeM);      // f32, metres
+            w.Write((float)it.CircleD);    // f32, metres (0: not a circle)
         }
         w.Write(b.SelectedIndex);         // i32
         w.Write((byte)(b.PlayerVisible ? 1 : 0));
@@ -250,8 +254,8 @@ public static class WireCodec
         return ms.ToArray();
     }
 
-    // The mount points last asked for in the profile editor: [i32 seq] str for, str status,
-    // [i32 n][ per mount point: str mount, name, format, systems, country, f32 km (NaN = unknown), u8 needs position ].
+    // The web cards' bookmarks: [i32 n][ per bookmark: str name, url ], then the last search for pages:
+    // [i32 seq] str status, str networks, [i32 n][ per page: str title, url ].
     public static byte[] EncodeWebCards(WebCardsDto d)
     {
         using var ms = new MemoryStream();
@@ -259,8 +263,16 @@ public static class WireCodec
         w.Write(WebCards);
         w.Write(d.Cards.Count);
         foreach (var c in d.Cards) { WriteStr(w, c.Name); WriteStr(w, c.Url); }
+        w.Write(d.Scan.Seq);
+        WriteStr(w, d.Scan.Status);
+        WriteStr(w, d.Scan.Networks);
+        w.Write(d.Scan.Pages.Count);
+        foreach (var p in d.Scan.Pages) { WriteStr(w, p.Name); WriteStr(w, p.Url); }
         return ms.ToArray();
     }
+
+    // The mount points last asked for in the profile editor: [i32 seq] str for, str status,
+    // [i32 n][ per mount point: str mount, name, format, systems, country, f32 km (NaN = unknown), u8 needs position ].
 
     public static byte[] EncodeNtripMountpoints(NtripMountpointsDto d)
     {
@@ -415,6 +427,9 @@ public static class WireCodec
         w.Write(u.Smoothing);          // i32
         w.Write(u.Radius);             // f64
         w.Write(u.DistanceFromBoundary);
+        w.Write(u.GoAroundRadius);     // f64
+        w.Write(u.GoAroundMargin);     // f64
+        w.Write(u.CrossGap);           // f64
         // Tram tab.
         var tr = c.Tram;
         w.Write(tr.Passes);            // i32
@@ -526,7 +541,7 @@ public static class WireCodec
         w.Write(s.Boundaries.Count);
         for (int i = 0; i < s.Boundaries.Count; i++)
         {
-            w.Write((byte)(i < s.BoundaryInner.Count && s.BoundaryInner[i] ? 1 : 0));
+            w.Write(i < s.BoundaryKind.Count ? s.BoundaryKind[i] : (byte)0);
             WritePts(w, s.Boundaries[i]);
         }
 
@@ -859,6 +874,28 @@ public static class WireCodec
             // Append-only: the profile in use ("" for a caster typed in) and the service in use ("MOUNT@host:port").
             WriteStr(w, ns.Profile);
             WriteStr(w, ns.Service);
+        }
+        // Sprayer readout (append-only): [u8 present] then f32 pressure (bar), f32 flow
+        // (L/min), f64 total (L), u8 master, u8 sections, f32 open width (m), u8 alarms,
+        // u8 module checks, f32 module rate (L/ha), f32 module target (L/ha), f32 pressure
+        // for the target, f32 min and f32 max pressure (bar); NaN = none.
+        var sp = s.Sprayer;
+        w.Write((byte)(sp != null ? 1 : 0));
+        if (sp != null)
+        {
+            w.Write((float)sp.PressureBar);
+            w.Write((float)sp.FlowLpm);
+            w.Write(sp.TotalLitres);
+            w.Write((byte)(sp.MasterOn ? 1 : 0));
+            w.Write((byte)Math.Clamp(sp.Sections, 0, 255));
+            w.Write((float)sp.OpenWidthM);
+            w.Write((byte)Math.Clamp(sp.Alarms, 0, 255));
+            w.Write((byte)(sp.ModuleChecks ? 1 : 0));
+            w.Write((float)sp.RateLha);
+            w.Write((float)sp.TargetLha);
+            w.Write((float)sp.PressureNeededBar);
+            w.Write((float)sp.MinPressureBar);
+            w.Write((float)sp.MaxPressureBar);
         }
         return ms.ToArray();
     }

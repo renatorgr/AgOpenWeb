@@ -437,7 +437,7 @@ const transport = RemoteTransport.create({
     cov.pending.push({ cells: msg.cells, t: performance.now() });
   },
   onCoverageEdge(polylines) { coverageEdges = polylines; }, // crisp worked-area perimeter (~2 Hz)
-  onStatusBar(s) { statusBar = s; syncUnits(); if (typeof applySimBarVisible === 'function') applySimBarVisible(); syncUnsavedCov(); syncDualHeadingWarning(s); syncGpsLost(s); },
+  onStatusBar(s) { statusBar = s; renderSprayerBar(); syncUnits(); if (typeof applySimBarVisible === 'function') applySimBarVisible(); syncUnsavedCov(); syncDualHeadingWarning(s); syncGpsLost(s); },
   onConfig(c) { config = c; configDirty = true; applyTheme(c && c.display && c.display.isDayMode); applyUiScale(c && c.display && c.display.uiScale); },
   onProfiles(p) { profiles = p; profilesDirty = true; },
   onNtripProfiles(p) { ntripProfiles = p; ntripDirty = true; },
@@ -460,7 +460,7 @@ const transport = RemoteTransport.create({
   onWizard(w) { wizard = w; wizardDirty = true; },
   onHello(id) { myClientId = id; updateControlUi(); claimSeatIfFree(); Vt.render(); WebCards.render(); },
   onControlState(s) { lastControl = s; updateControlUi(); claimSeatIfFree(); Vt.render(); WebCards.render(); },
-  onWebCards(list) { WebCards.setBookmarks(list); },
+  onWebCards(list, scan) { WebCards.setBookmarks(list, scan); },
   onSound(id) { Sounds.play(id); },
   onPrompt(p) { hostPrompt = p; renderHostPrompt(); },
   onToast(msg) { showToast(msg); },
