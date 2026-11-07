@@ -944,17 +944,10 @@ public partial class YouTurnCreationService
         double entryStartE = headlandBoundaryEasting - Math.Sin(travelHeading) * fieldLegLength;
         double entryStartN = headlandBoundaryNorthing - Math.Cos(travelHeading) * fieldLegLength;
 
-        double arcStartE = headlandBoundaryEasting + Math.Sin(travelHeading) * headlandLegLength;
-        double arcStartN = headlandBoundaryNorthing + Math.Cos(travelHeading) * headlandLegLength;
-
-        double arcCenterE = arcStartE + Math.Sin(perpAngle) * turnRadius;
-        double arcCenterN = arcStartN + Math.Cos(perpAngle) * turnRadius;
-
         double exitEndE = entryStartE + Math.Sin(perpAngle) * turnOffset;
         double exitEndN = entryStartN + Math.Cos(perpAngle) * turnOffset;
 
-        // Arc apex boundary check removed — the arc is meant to extend into the headland zone.
-        // Validate only that the exit end lands back inside the field boundary.
+        // The exit end must land back inside the field boundary.
         if (boundary?.OuterBoundary != null && boundary.OuterBoundary.IsValid
             && !boundary.OuterBoundary.IsPointInside(exitEndE, exitEndN))
         {
@@ -962,77 +955,39 @@ public partial class YouTurnCreationService
             return path;
         }
 
-        double totalEntryLength = fieldLegLength + headlandLegLength;
-        int totalEntryPoints = (int)(totalEntryLength / pointSpacing);
-
-        for (int i = 0; i <= totalEntryPoints; i++)
+        // The whole arc and the leg back from it are checked against the fence, not only the
+        // ray ahead and the exit end: on a slanted boundary the arc's far side crossed it (the
+        // tractor 12 m out of a field with a 21 m cultivator, 11 m with an 8 m sprayer). The
+        // arc is seated further back along the pass, into the field if need be, until the path
+        // keeps the set distance from the fence; past 30 m there is no turn.
+        var outerPolygon = boundary?.OuterBoundary != null && boundary.OuterBoundary.IsValid
+            ? boundary.OuterBoundary.Points.Select(p => new Vec2(p.Easting, p.Northing)).ToList()
+            : null;
+        const double SetbackStep = 0.5;
+        const double MaxSetback = 30.0;
+        double setback = 0;
+        while (true)
         {
-            double dist = i * pointSpacing;
-            path.Add(new Vec3
+            path.Clear();
+            int arcFrom = BuildSimplePath(path, setback);
+            if (outerPolygon == null) break;
+
+            var clearance = TurnClearance.Evaluate(path.Skip(arcFrom), outerPolygon, TurnClearance.KeepSide.Inside, distanceFromBoundary);
+            if (clearance.IsClear)
             {
-                Easting = entryStartE + Math.Sin(travelHeading) * dist,
-                Northing = entryStartN + Math.Cos(travelHeading) * dist,
-                Heading = travelHeading,
-            });
-        }
-
-        int arcPoints = Math.Max((int)(Math.PI * turnRadius / pointSpacing), 20);
-        double startAngle = Math.Atan2(arcStartE - arcCenterE, arcStartN - arcCenterN);
-
-        for (int i = 1; i <= arcPoints; i++)
-        {
-            double t = (double)i / arcPoints;
-            double sweepAngle = turnLeft ? (-Math.PI * t) : (Math.PI * t);
-            double currentAngle = startAngle + sweepAngle;
-
-            double tangentHeading = currentAngle + (turnLeft ? -Math.PI / 2 : Math.PI / 2);
-            if (tangentHeading < 0) tangentHeading += Math.PI * 2;
-            if (tangentHeading >= Math.PI * 2) tangentHeading -= Math.PI * 2;
-
-            path.Add(new Vec3
-            {
-                Easting = arcCenterE + Math.Sin(currentAngle) * turnRadius,
-                Northing = arcCenterN + Math.Cos(currentAngle) * turnRadius,
-                Heading = tangentHeading,
-            });
-        }
-
-        // Connect the arc exit to the start of the outbound straight leg, then build the leg itself.
-        var lastArcPoint = path[path.Count - 1];
-        double actualArcEndE = lastArcPoint.Easting;
-        double actualArcEndN = lastArcPoint.Northing;
-
-        double exitStartE = arcStartE + Math.Sin(perpAngle) * turnOffset;
-        double exitStartN = arcStartN + Math.Cos(perpAngle) * turnOffset;
-
-        double arcToExitDist = Math.Sqrt(
-            (exitStartE - actualArcEndE) * (exitStartE - actualArcEndE) +
-            (exitStartN - actualArcEndN) * (exitStartN - actualArcEndN));
-        if (arcToExitDist > pointSpacing)
-        {
-            int connectPoints = (int)(arcToExitDist / pointSpacing);
-            for (int i = 1; i <= connectPoints; i++)
-            {
-                double t = (double)i / (connectPoints + 1);
-                path.Add(new Vec3
-                {
-                    Easting = actualArcEndE + (exitStartE - actualArcEndE) * t,
-                    Northing = actualArcEndN + (exitStartN - actualArcEndN) * t,
-                    Heading = exitHeading,
-                });
+                if (setback > 0)
+                    _logger.LogDebug("[YouTurn] Simple path seated {S:F1}m further back to keep {M:F1}m from the boundary", setback, distanceFromBoundary);
+                break;
             }
-        }
-
-        int totalExitPoints = (int)(totalEntryLength / pointSpacing);
-        for (int i = 1; i <= totalExitPoints; i++)
-        {
-            double dist = i * pointSpacing;
-            path.Add(new Vec3
+            double next = setback + Math.Max(SetbackStep, clearance.MaxIntrusion);
+            if (next > MaxSetback || fieldLegLength + headlandLegLength - next < 2.0)
             {
-                Easting = exitStartE + Math.Sin(exitHeading) * dist,
-                Northing = exitStartN + Math.Cos(exitHeading) * dist,
-                Heading = exitHeading,
-            });
+                _logger.LogWarning("[YouTurn] No simple turn within {S:F0}m back keeps the tractor {M:F1}m inside the boundary (intrusion {I:F1}m); no turn",
+                    MaxSetback, distanceFromBoundary, clearance.MaxIntrusion);
+                path.Clear();
+                return path;
+            }
+            setback = next;
         }
 
         _logger.LogDebug("[YouTurn] Simple fallback path has {Count} points", path.Count);
@@ -1040,6 +995,94 @@ public partial class YouTurnCreationService
         TurnPathSmoothing.Smooth(path, config.Guidance.UTurnSmoothing);
 
         return path;
+
+        // The path with its arc seated `setback` m back from the headland leg's end: the entry
+        // leg, the arc, the connector back to the exit leg's start, the exit leg. Returns the
+        // index of the first arc point.
+        int BuildSimplePath(List<Vec3> into, double back)
+        {
+            double legLength = headlandLegLength - back;
+            double totalEntryLength = fieldLegLength + legLength;
+            int totalEntryPoints = (int)(totalEntryLength / pointSpacing);
+
+            for (int i = 0; i <= totalEntryPoints; i++)
+            {
+                double dist = i * pointSpacing;
+                into.Add(new Vec3
+                {
+                    Easting = entryStartE + Math.Sin(travelHeading) * dist,
+                    Northing = entryStartN + Math.Cos(travelHeading) * dist,
+                    Heading = travelHeading,
+                });
+            }
+            int arcIndex = into.Count;
+
+            double arcStartE = headlandBoundaryEasting + Math.Sin(travelHeading) * legLength;
+            double arcStartN = headlandBoundaryNorthing + Math.Cos(travelHeading) * legLength;
+
+            double arcCenterE = arcStartE + Math.Sin(perpAngle) * turnRadius;
+            double arcCenterN = arcStartN + Math.Cos(perpAngle) * turnRadius;
+
+            int arcPoints = Math.Max((int)(Math.PI * turnRadius / pointSpacing), 20);
+            double startAngle = Math.Atan2(arcStartE - arcCenterE, arcStartN - arcCenterN);
+
+            for (int i = 1; i <= arcPoints; i++)
+            {
+                double t = (double)i / arcPoints;
+                double sweepAngle = turnLeft ? (-Math.PI * t) : (Math.PI * t);
+                double currentAngle = startAngle + sweepAngle;
+
+                double tangentHeading = currentAngle + (turnLeft ? -Math.PI / 2 : Math.PI / 2);
+                if (tangentHeading < 0) tangentHeading += Math.PI * 2;
+                if (tangentHeading >= Math.PI * 2) tangentHeading -= Math.PI * 2;
+
+                into.Add(new Vec3
+                {
+                    Easting = arcCenterE + Math.Sin(currentAngle) * turnRadius,
+                    Northing = arcCenterN + Math.Cos(currentAngle) * turnRadius,
+                    Heading = tangentHeading,
+                });
+            }
+
+            // Connect the arc exit to the start of the outbound straight leg, then build the leg itself.
+            var lastArcPoint = into[into.Count - 1];
+            double actualArcEndE = lastArcPoint.Easting;
+            double actualArcEndN = lastArcPoint.Northing;
+
+            double exitStartE = arcStartE + Math.Sin(perpAngle) * turnOffset;
+            double exitStartN = arcStartN + Math.Cos(perpAngle) * turnOffset;
+
+            double arcToExitDist = Math.Sqrt(
+                (exitStartE - actualArcEndE) * (exitStartE - actualArcEndE) +
+                (exitStartN - actualArcEndN) * (exitStartN - actualArcEndN));
+            if (arcToExitDist > pointSpacing)
+            {
+                int connectPoints = (int)(arcToExitDist / pointSpacing);
+                for (int i = 1; i <= connectPoints; i++)
+                {
+                    double t = (double)i / (connectPoints + 1);
+                    into.Add(new Vec3
+                    {
+                        Easting = actualArcEndE + (exitStartE - actualArcEndE) * t,
+                        Northing = actualArcEndN + (exitStartN - actualArcEndN) * t,
+                        Heading = exitHeading,
+                    });
+                }
+            }
+
+            int totalExitPoints = (int)(totalEntryLength / pointSpacing);
+            for (int i = 1; i <= totalExitPoints; i++)
+            {
+                double dist = i * pointSpacing;
+                into.Add(new Vec3
+                {
+                    Easting = exitStartE + Math.Sin(exitHeading) * dist,
+                    Northing = exitStartN + Math.Cos(exitHeading) * dist,
+                    Heading = exitHeading,
+                });
+            }
+            return arcIndex;
+        }
     }
 
     /// <summary>
