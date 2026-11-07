@@ -100,11 +100,30 @@ public class AutoSteerService : IAutoSteerService
     private readonly Timer _sectionSettleTimer;
     private int _sectionSettleMs = 10_000;
 
-    // PGN 247 (vehicle geometry) also goes out when the steer module is heard after this
-    // long without PGN 253: a module (or the HAT daemon) that started after the app, or
-    // restarted, gets the geometry it may need to set up its receiver (#387).
-    internal const long SteerModuleSilenceMs = 3000;
+    // The steer settings (PGN 251/252), the machine config and PGN 247 (vehicle geometry)
+    // also go out when the steer module is heard after this long without PGN 253: a module
+    // (or the HAT daemon) that started after the app, or restarted, runs what it has, and
+    // what was changed while it was away (a Zero WAS with the cable out) was sent to
+    // nobody. It gets everything, as at start (#387 for the geometry). The module answers
+    // every PGN 254 (10 Hz) with a 253, so 2 s is twenty missed replies: a cable out or a
+    // reboot, about when the status bar reports the module gone (hellos every second, 3 s
+    // timeout), not Wi-Fi jitter.
+    internal const long SteerModuleSilenceMs = 2000;
     private long _lastSteerDataMs = long.MinValue / 2;
+
+    // The machine module keeps PGN 235/236/238 in its flash and works with what it has. One
+    // switched on after the app (a first install with an empty flash), or back after a power
+    // cut or a Wi-Fi drop, gets them again when its hello reply (PGN 123) is heard after this
+    // long without one: hellos go out every second and the status bar calls the module gone
+    // after 3 s, so this is a module the operator saw go, not a lost reply.
+    internal const long MachineModuleSilenceMs = 3000;
+    private long _lastMachineHelloMs = long.MinValue / 2;
+
+    // Start() runs before MainViewModel opens the UDP port, so its baseline went to nobody;
+    // the first control tick that finds the port open sends it again.
+    private volatile bool _baselinePending;
+    /// <summary>Test seam: the clock the silence above is measured on.</summary>
+    internal Func<long> TickClock { get; set; } = () => Environment.TickCount64;
 
     /// <summary>
     /// Test seam: lets tests shorten the debounce so they don't have
@@ -205,6 +224,16 @@ public class AutoSteerService : IAutoSteerService
         // PGN 251 byte 5 and we'd previously never send it on startup.
         EmitSteerConfigPgns();
         SendSectionDimensions();
+        _baselinePending = !_udpService.IsConnected;
+    }
+
+    /// <summary>The start-up baseline, once the UDP port is open (see <see cref="_baselinePending"/>).</summary>
+    private void SendBaselineIfPending()
+    {
+        if (!_baselinePending || !_udpService.IsConnected) return;
+        _baselinePending = false;
+        EmitSteerConfigPgns();
+        SendSectionDimensions(force: true);
     }
 
     public void Stop()
@@ -319,6 +348,10 @@ public class AutoSteerService : IAutoSteerService
     /// <summary>Latest steer data from module (PGN 253).</summary>
     public SteerModuleData LastSteerData => _lastSteerData;
 
+    private DateTime _lastSteerDataUtc = DateTime.MinValue;
+    /// <inheritdoc/>
+    public DateTime LastSteerDataUtc => _lastSteerDataUtc;
+
     // Roll from the steer module's IMU (PGN 253) or an external IMU (PGN 211), calibrated
     // (invert, zero), for fixes whose GPS sentence carries no roll: AgOpenGPS ahrs.imuRoll
     // (#353). Written on the UDP receive thread, read where a fix is published.
@@ -379,10 +412,16 @@ public class AutoSteerService : IAutoSteerService
         switch (e.PGN)
         {
             case PgnNumbers.AUTOSTEER_DATA: // 253 - Steer Data from module
-                long now = Environment.TickCount64;
+                long now = TickClock();
                 if (now - Interlocked.Exchange(ref _lastSteerDataMs, now) > SteerModuleSilenceMs)
-                    SendVehicleGeometry(); // the module is new or back
+                    EmitSteerConfigPgns(); // the module is new or back: everything, as at start
                 ProcessSteerData(e.Data);
+                break;
+
+            case PgnNumbers.HELLO_FROM_MACHINE: // 123 - the machine module answers a hello
+                long heard = TickClock();
+                if (heard - Interlocked.Exchange(ref _lastMachineHelloMs, heard) > MachineModuleSilenceMs)
+                    SendMachineModuleSettings(); // new or back: what it keeps in flash, again
                 break;
 
             case PgnNumbers.SENSOR_DATA: // 250 - Sensor Data from module
@@ -459,6 +498,7 @@ public class AutoSteerService : IAutoSteerService
             _lastSteerData.RemoteButtonPressed != steerData.RemoteButtonPressed;
 
         _lastSteerData = steerData;
+        _lastSteerDataUtc = DateTime.UtcNow;
 
         // Update vehicle state with actual angle from WAS
         _state.ActualSteerAngle = steerData.ActualSteerAngle;
@@ -598,8 +638,10 @@ public class AutoSteerService : IAutoSteerService
 
     public void SetFreeDriveAngle(double angleDegrees)
     {
-        // Clamp to safe range (-40 to +40 degrees)
-        _state.FreeDriveSteerAngle = Math.Clamp(angleDegrees, -40, 40);
+        // Held to the limit either way. It was ±40° (AgOpenGPS's free drive buttons), which the
+        // max steer angle test hit before the lock: a lock past 40° measured as 40°.
+        const double limit = IAutoSteerService.FreeDriveLimitDeg;
+        _state.FreeDriveSteerAngle = Math.Clamp(angleDegrees, -limit, limit);
     }
 
     /// <summary>
@@ -622,18 +664,41 @@ public class AutoSteerService : IAutoSteerService
         _udpService.SendToLoopback(pgn);
     }
 
-    private void SendSectionDimensions()
+    /// <param name="force">Send even when it is the layout sent last: to a module that was not
+    /// there to hear it.</param>
+    /// <param name="loopback">Also to AgIO's loopback port, where rate controllers listen.</param>
+    private void SendSectionDimensions(bool force = false, bool loopback = true)
     {
         // The settle timer and a profile save can race; one of them sends.
         lock (_sectionDimensionsLock)
         {
             var pgn = PgnBuilder.BuildSectionDimensionsPgn(_configStore.Tool, _configStore.NumSections);
-            if (_lastSectionDimensions == null || !pgn.AsSpan().SequenceEqual(_lastSectionDimensions))
+            if (force || _lastSectionDimensions == null || !pgn.AsSpan().SequenceEqual(_lastSectionDimensions))
             {
                 _udpService.SendToModules(pgn);
-                _udpService.SendToLoopback(pgn);
+                if (loopback) _udpService.SendToLoopback(pgn);
                 _lastSectionDimensions = pgn;
             }
+        }
+    }
+
+    /// <summary>
+    /// What a machine module keeps in its flash (PGN 238 machine config, 236 relay functions,
+    /// 235 section widths), for one that is new or back. The rate controllers on the loopback
+    /// heard the section widths already; they are not sent there again.
+    /// </summary>
+    private void SendMachineModuleSettings()
+    {
+        if (!_isEnabled) return;
+        try
+        {
+            SendMachineConfig();
+            SendMachinePinConfig();
+            SendSectionDimensions(force: true, loopback: false);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[AutoSteerService] machine module settings failed: {ex.Message}");
         }
     }
 
@@ -991,6 +1056,7 @@ public class AutoSteerService : IAutoSteerService
         long perfA0 = perf ? GC.GetAllocatedBytesForCurrentThread() : 0;
         try
         {
+            SendBaselineIfPending();
             CheckGuidanceFreshness(Stopwatch.GetTimestamp());
             SendPgns();
         }
