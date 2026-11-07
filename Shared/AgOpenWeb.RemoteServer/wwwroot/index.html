@@ -595,6 +595,13 @@
         <div class="vc-diagrow"><img src="/icons/ConU_UturnSmooth.png" class="vc-diag" alt=""><div class="vc-fieldcol"><label>Smoothing</label><input class="cfg-num" data-key="uturn.smoothing" type="number" step="1"></div></div>
         <div class="vc-diagrow"><img src="/icons/ConU_UturnRadius.png" class="vc-diag" alt=""><div class="vc-fieldcol"><label>Radius (<span class="u" data-unit="m"></span>)</label><input class="cfg-num" data-unit="m" data-key="uturn.radius" type="number" step="0.1"></div></div>
         <div class="vc-diagrow"><img src="/icons/ConU_UturnDistance.png" class="vc-diag" alt=""><div class="vc-fieldcol"><label>Distance from boundary (<span class="u" data-unit="m"></span>)</label><input class="cfg-num" data-unit="m" data-key="uturn.distanceFromBoundary" type="number" step="0.1"></div></div>
+        <div class="vc-diagrow"><img src="/icons/HeadlandSectionOff.png" class="vc-diag" alt=""><div class="vc-fieldcol"><label>Drive across a headland gap up to (<span class="u" data-unit="m"></span>)</label><input class="cfg-num" data-unit="m" data-key="uturn.crossGap" type="number" step="1" min="0"></div></div>
+      </div>
+      <div class="cfg-note">Where a pass leaves the turn area and comes back within this distance across the headland only (a narrow tip of the field, a notch in its edge), it is driven on with the sections off and the turn is planned beyond. 0 turns at the first crossing.</div>
+      <div class="cfg-label" style="margin-top:12px">Going around obstacles</div>
+      <div class="cfg-diaggrid">
+        <div class="vc-diagrow"><img src="/icons/ConU_GoAroundRadius.png" class="vc-diag" alt=""><div class="vc-fieldcol"><label>Curve radius (<span class="u" data-unit="m"></span>)</label><input class="cfg-num" data-unit="m" data-key="uturn.goAroundRadius" type="number" step="0.5" title="The tightest the pass bends round a Go around obstacle: smaller starts and ends the curve nearer the obstacle"></div></div>
+        <div class="vc-diagrow"><img src="/icons/ConU_GoAroundMargin.png" class="vc-diag" alt=""><div class="vc-fieldcol"><label>Safety margin (<span class="u" data-unit="m"></span>)</label><input class="cfg-num" data-unit="m" data-key="uturn.goAroundMargin" type="number" min="0.3" step="0.1" title="Room kept between the implement and a Go around obstacle (0.3 m at least)"></div></div>
       </div>
     </div>
     <!-- ===== MACHINE ===== -->
@@ -1248,7 +1255,7 @@
     <div class="chart-card vt-card" style="display:none">
       <div class="chart-hdr">
         <span class="vt-title"><span class="vt-dot"></span><span class="vt-name">Virtual Terminal</span><select class="vt-ws" style="display:none"></select></span>
-        <span><button class="vt-size vt-hbtn" title="Size">⤢</button><button class="vt-gear vt-hbtn" title="Gateway">⚙</button><button class="vt-x chart-x" title="Close">✕</button></span>
+        <span class="card-btns"><button class="vt-size vt-hbtn" title="Size">⤢</button><button class="vt-gear vt-hbtn" title="Gateway">⚙</button><button class="vt-x chart-x" title="Close">✕</button></span>
       </div>
       <div class="vt-alarm"><span class="vt-alarm-text"></span><button class="vt-alarm-show">Show</button></div>
       <div class="vt-body">
@@ -1264,8 +1271,8 @@
   <template id="web-card-tpl">
     <div class="chart-card web-card">
       <div class="chart-hdr">
-        <span class="web-title"><select class="web-pick"></select></span>
-        <span><button class="web-add vt-hbtn" title="Another web card">＋</button><button class="web-ext vt-hbtn" title="Open in browser">↗</button><button class="web-size vt-hbtn" title="Size">⤢</button><button class="web-gear vt-hbtn" title="Bookmarks">⚙</button><button class="web-x chart-x" title="Close">✕</button></span>
+        <span class="web-title"><select class="web-pick"></select><button class="web-zoom" title="Page zoom">100%</button></span>
+        <span class="card-btns"><button class="web-add vt-hbtn" title="Another web card">＋</button><button class="web-ext vt-hbtn" title="Open in browser">↗</button><button class="web-size vt-hbtn" title="Size">⤢</button><button class="web-gear vt-hbtn" title="Bookmarks">⚙</button><button class="web-x chart-x" title="Close">✕</button></span>
       </div>
       <div class="web-body">
         <iframe sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads" referrerpolicy="no-referrer"></iframe>
@@ -1475,8 +1482,25 @@
       <button id="bm-driveinner" class="bm-tbtn" title="Drive around obstacle (inner boundary)"><img src="/icons/Boundary.png" alt=""><span class="bm-plus">+</span></button>
       <button id="bm-accept" class="bm-tbtn" title="Accept and close"><img src="/icons/OK64.png" alt=""></button>
     </div>
-    <div class="bm-lhdr"><span>Boundary</span><span>Area</span><span>Drive Thru</span><span>Hard</span></div>
+    <!-- What the tractor does at each obstacle: one choice per row; a choice's column title
+         gives it to every obstacle. Coloured as the obstacles on the map. -->
+    <div class="bm-lhdr"><span>Boundary</span><span>Size</span>
+      <button class="bm-colhdr" data-all="turn" title="Give every obstacle a U-turn"><span class="bm-dot k1"></span>U-turn</button>
+      <button class="bm-colhdr" data-all="goRound" title="Go around every obstacle"><span class="bm-dot k2"></span>Go around</button>
+      <button class="bm-colhdr" data-all="driveThrough" title="Drive through every obstacle"><span class="bm-dot k3"></span>Drive through</button>
+      <span>Hard</span></div>
     <div id="bm-list" class="bm-list"></div>
+    <!-- Round obstacles (trees): the diameter is the selected circle's, else the one new circles
+         get; new circles are placed by a tap on each tree's centre on the map. -->
+    <div class="bm-circ">
+      <span id="bm-circ-lbl" class="bm-circlbl">New circles</span>
+      <input id="bm-circ-d" class="bm-circin" data-unit="m" type="number" step="0.1" min="0.5" max="100" inputmode="decimal" title="Diameter"><span class="u" data-unit="m"></span>
+      <button id="bm-circ-add" class="bm-cbtn" title="Add circles: tap the centre of each tree on the map">+ Circles</button>
+      <button id="bm-circ-move" class="bm-cbtn" title="Tap the map at the selected circle's new centre">Move</button>
+      <button id="bm-circ-round" class="bm-cbtn" title="Make the selected obstacle round: the smallest circle that holds it">Round</button>
+      <button id="bm-circ-all" class="bm-cbtn" title="Make every obstacle up to a tree's size round">Round all</button>
+    </div>
+    <div class="bm-hint">Tap a column title to give every obstacle that choice, or an obstacle on the map to find its row.</div>
   </div>
   <!-- Boundary Player ("Stop Record Pause Boundary") — GPS drive-around recording. -->
   <div id="boundaryplayer" class="ln-panel bp-panel">
@@ -1717,6 +1741,8 @@
          section count); each tap cycles that section Off->Auto->On (Tier-2, gated).
          Shown when a field is open AND a master (auto/manual) is engaged. Rows are
          built dynamically by renderSectionBar (≤16/row). -->
+    <!-- Sprayer readout: PGN 160 from the machine module (renderSprayerBar). -->
+    <div id="sprayerbar"></div>
     <div id="sectionbar"></div>
     <!-- Bottom nav: field-tools toolbar.
          Shown when a field is open; AB-dependent buttons (.bn-abdep) appear only with

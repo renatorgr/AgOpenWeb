@@ -105,6 +105,7 @@ public static class ServiceCollectionExtensions
 
         // ISOBUS task controller link: PGN 240 heartbeat in, PGN 241 section control out
         services.AddSingleton<IIsobusTaskControllerService, AgOpenWeb.Services.Isobus.IsobusTaskControllerService>();
+        services.AddSingleton<ISprayerService, AgOpenWeb.Services.Sprayer.SprayerService>();
         // ISOBUS virtual terminal for the VT card
         services.AddSingleton<IVirtualTerminalService, AgOpenWeb.VirtualTerminal.VirtualTerminalService>();
 
@@ -129,6 +130,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IModuleCommunicationService, ModuleCommunicationService>();
 
         // YouTurn services
+        services.AddSingleton<AgOpenWeb.Services.Track.GoAroundPasses>(); // one bent pass for the pipeline and the planner
         services.AddSingleton<YouTurnCreationService>();
         services.AddSingleton<YouTurnGuidanceService>();
         services.AddSingleton<YouTurnPathingService>();

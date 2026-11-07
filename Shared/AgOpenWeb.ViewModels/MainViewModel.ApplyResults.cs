@@ -114,6 +114,10 @@ public partial class MainViewModel
             _lastHydLiftState = result.HydLiftState;
         }
 
+        // What the dual antenna says about the direction of travel, for the engage check.
+        _dualHeadingOffTravelDeg = result.IsDualHeadingOffTravel ? result.DualHeadingOffTravelDeg : double.NaN;
+        _dualReadsReverse = result.IsReverse && ConfigStore.Connections.IsDualGps && !result.IsDualHeadingMissing;
+
         // Autosteer state
         if (result.AutoSteerDisengagedThisCycle)
         {
@@ -143,6 +147,8 @@ public partial class MainViewModel
             sy.TurnPath = yt.TurnPath is List<AgOpenWeb.Models.Base.Vec3> tp ? tp : yt.TurnPath?.ToList();
             sy.PathIndex = yt.PathIndex;
             sy.ArcStart = yt.ArcStart;
+            sy.TurnAtObstacle = yt.TurnAtObstacle;
+            sy.TurnAtObstacleIndex = yt.TurnAtObstacleIndex;
             sy.IsTurnLeft = yt.IsTurnLeft;
             sy.LastTurnWasLeft = yt.LastTurnWasLeft;
             sy.DistanceToHeadland = yt.DistanceToHeadland;
@@ -342,6 +348,10 @@ public partial class MainViewModel
         if (result.StatusMessage != null)
             StatusMessage = result.StatusMessage;
 
+        // A pass that runs into Go around obstacles with no room either side (a toast).
+        if (result.ObstacleNotice != null)
+            ReportFailure(result.ObstacleNotice);
+
         // Map vehicle/tool/hitch positions are pushed by OnRenderPullTick at
         // 30 Hz (vehicle dead-reckoned to "now" from the estimator, tool/hitch
         // from the live ToolPositionService snapshot updated at 100 Hz by the
@@ -400,4 +410,6 @@ public partial class MainViewModel
     }
 
     private byte _lastHydLiftState; // for the lift sounds (#110)
+    private double _dualHeadingOffTravelDeg = double.NaN; // dual heading across the travel, last cycle
+    private bool _dualReadsReverse;                      // the dual antenna read reversing, last cycle
 }

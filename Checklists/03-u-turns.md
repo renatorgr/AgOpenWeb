@@ -22,5 +22,10 @@ headland is not square to the passes.
 | 3.13 | Hydraulic lift raises and lowers at the turn as AgOpenGPS | | | |
 | 3.14 | Sections switch off entering the turn and on leaving it | | | |
 | 3.15 | Out of bounds during a turn: AutoSteer stays on | | | |
+| 3.16 | **Go around** obstacle (a tree): the pass bends round it on the map and under AutoSteer, tractor and implement clear of it, and is back on its line after it; the light bar follows the bend | | | |
+| 3.17 | Go around beside another obstacle or the field's edge with no room: the toast "No room to go around Inner N on this pass", a U-turn before it | | | |
+| 3.18 | Nudge or snap the line while beside a Go around obstacle: the bend keeps its side | | | |
+| 3.19 | A U-turn at the headland keeps out of a Go around tree in the headland; the exit lands on the next pass bent round its trees | | | |
+| 3.20 | **Drive across a headland gap up to** N m: where the pass leaves the turn area and comes back within N m across the headland only (a narrow tip of the field), no turn is planned there; the pass is driven on with the sections off and the turn comes at the far end. A gap longer than N, one outside the boundary or through an obstacle is turned at. 0 = turn at the first crossing, as before | | | |
 
 **Signed off:** _ (name, date)

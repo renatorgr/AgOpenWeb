@@ -141,6 +141,34 @@ public class GuidanceConfig : ObservableObject
         set => SetProperty(ref _uTurnDistanceFromBoundary, value);
     }
 
+    // Going around obstacles chosen as Go around (ObstacleDetour): the tightest the pass bends
+    // round one, and the room kept between the implement and the obstacle (0.3 m at least:
+    // GoAroundPasses.MinMargin). Saved with the tool profile, as the U-turn settings are.
+    private double _goAroundRadius = 6.0;
+    public double GoAroundRadius
+    {
+        get => _goAroundRadius;
+        set => SetProperty(ref _goAroundRadius, value);
+    }
+
+    private double _goAroundMargin = 1.0;
+    public double GoAroundMargin
+    {
+        get => _goAroundMargin;
+        set => SetProperty(ref _goAroundMargin, value);
+    }
+
+    // Where a pass leaves the turn area and comes back within this many metres, across the
+    // headland only (inside the field, outside the headland line and every obstacle), the
+    // U-turn is planned beyond that gap and the pass is driven on through it with the sections
+    // off: a narrow tip of the field, a notch in its edge. 0 turns at the first crossing.
+    private double _uTurnCrossGap = 0.0;
+    public double UTurnCrossGap
+    {
+        get => _uTurnCrossGap;
+        set => SetProperty(ref _uTurnCrossGap, value);
+    }
+
     // Sagitta (offset-semicircle) by default — matches Twol, which dropped Dubins
     // for U-turns because the shortest-path solution loops ("np" shape) whenever the
     // next row is closer than 2× the turn radius. SagittaStyle == 0, so profiles

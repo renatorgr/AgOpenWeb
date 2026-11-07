@@ -336,7 +336,7 @@ NTRIP 1.0 request (`GET /mountpoint HTTP/1.0`, no Host or version header, the po
 the answer) once; never after a 401, 403, 404, an error text or a source table. The version that delivered
 corrections is remembered per service. `NtripResponse.Classify` sorts every reply into an `NtripCategory`
 (wrong login and unknown mount point end the session, the rest is retried after 1, 2, 4, 8, 15 s, and a
-network change ends the wait); `NtripConnectionTester` (the Test button) opens its connection the same way.
+network change ends the wait, and ends a stream that then stays quiet for 3 s, as on a move from Wi-Fi to the phone's hotspot); `NtripConnectionTester` (the Test button) opens its connection the same way.
 Every wait has a timeout (`NtripTimeouts`). Design: `Plans/Completed/NTRIP_MAIN_FALLBACK_PLAN.md`.
 
 **Main and fallback service.** Two exclusive modes (`Connections.NtripProfilePerField`, `config.set|conn.ntripProfilePerField`).
@@ -389,10 +389,15 @@ one stack per process.
 ## Web cards and the card pane
 **Web cards** show an add-on's own web page (the HAT's pages, a rate controller's) in a card, picked
 from a bookmark list kept on the host (`AppSettings.WebCards`, `webcard.save` / `webcard.delete`,
-the `WebCards` frame); `{host}` in a URL is the AgOpenWeb host as the browser reaches it. The page
+the `WebCards` frame; ⚙ › *Search the network*, `webcard.scan`, has the host first ask the network by
+mDNS for the pages announcing themselves (DNS-SD `_http._tcp`, listed at once by the name they give:
+`MdnsHttpBrowser`), then ask each address of its own private networks (at most the /24 around it) for
+a page on port 80, listed with its title (`WebPageScanner`); a page found both ways is listed once);
+`{host}` in a URL is the AgOpenWeb host as the browser reaches it. The page
 loads from the add-on on its own origin, never through AgOpenWeb; observers get a cover over it.
-Which cards are open, and where, is the browser's (`localStorage`). `WebCards` in `js/web-cards.js`; plan:
-`Plans/ADD_ON_CARDS_PLAN.md`.
+Which cards are open, where, and each page's zoom are the browser's (`localStorage`); the zoom lays
+the page out at 1/zoom of the card and scales it to fit, so a page shows more or bigger with nothing
+done by the add-on. `WebCards` in `js/web-cards.js`; plan: `Plans/ADD_ON_CARDS_PLAN.md`.
 
 **Card pane** (#456): Screen & Alerts › VT & Web Cards sets Floating (the default), Left or Right,
 per browser. In a split layout the open VT and web cards sit in a pane on that side, two to a
@@ -467,6 +472,9 @@ turns from the on-screen buttons) with paths built by `YouTurnCreationService`:
 - Rows wider than twice the turn radius (a wide spreader, skipped rows) get AgOpenGPS's wide turn (`CreateCurveWideTurn`): a quarter circle out of the pass, tangent to the turn line, the turn line itself, a quarter circle into the next pass, so the distance from the boundary holds on an angled headland (#544). The omega turn (one shape square to the track) is the fallback when it can't be built.
 - Manual: a Dubins path at the configured `UTurnRadius` from 4 m ahead of the tractor to the point abreast on the target pass (an omega when the radius exceeds half the pass offset), laid out along the track's local heading (the curve's heading at the nearest point); the path's first point is the tractor itself. Like AgOpenGPS `BuildManualYouTurn`.
 - The turn hands back to line guidance with 4 m of arc remaining (`EarlyCompletionLookahead`).
+- Obstacles (inner boundaries) chosen as *U-turn* (`AtObstacle == Turn`) get a turn line of their own, the obstacle offset outward by `UTurnDistanceFromBoundary` (`YouTurnCreationService.Obstacles.cs`), like AgOpenGPS with Drive thru = No, a hard one by the implement's reach (half its width plus its offset, `HardReach`) more, so the pass itself keeps the implement that distance from a wall or a ditch: the turn-area test returns -1 outside the outer turn line, 0 in the workable area, k inside obstacle turn line k. A turn at an obstacle has no simple fallback and is never "turned from here" when missed; a hard obstacle keeps the implement outside. *Drive through* obstacles are driven through. A planned turn is planned again when the obstacles change (`YouTurnCreationService.ObstacleStamp`), a manual turn that would cross a U-turn obstacle is refused, and with AutoSteer on, a U-turn obstacle within 10 m plus 2 s of travel ahead with no turn planned before it takes AutoSteer off with the alarm (`ObstacleAheadWithoutTurn`: a turn lost, missed or aborted there, or U-turn off); an obstacle changed under a turn being driven (another choice, Hard, added, moved), with the rest of the turn or the 20 m after it running into it, does the same (`ObstacleChangedUnderTurn`: a turn being driven is not planned again). A turn's 20 m of exit keep the tractor outside every turn line and the implement the safety margin off every hard fence (`ClearsTurnObstacles`). The generator seats its arc and slides it to the turn line by a test that also blocks the room round every Go around obstacle (`IsPointBlockedForTurn`), and an arc that slides on without touching the line (seated inside a bend, sliding along the bend's heading) is seated further back (`MoveTurnInsideTurnLine`'s bound), so a turn at an obstacle just past a tree the pass goes round is made before the tree, not 127 m away. A turn lands on a straight stretch of the next pass: one whose last point is off the straight pass, on a bend round a Go around obstacle, is seated further back (`LandsOnBend`, 4 m steps, 30 m at most), as is one whose legs or exit meet an obstacle; in a turn a Go around obstacle gets a ditch's room (`GoAroundRoom`: half the track plus the larger of the Go around margin and the U-turn distance), the implement the U-turn distance off a hard one along the path and the safety margin while the rig settles on the next pass (8 m plus twice a trailed hitch). New obstacles are Hard (`Boundary.AddNewObstacle`); a field whose obstacles had no choice in its file (AgOpenGPS, or saved before) says once on opening how many now get a U-turn.
+- Obstacles chosen as *Go around* (`AtObstacle == GoRound`; a new circle's default) bend the pass round them (`ObstacleDetour`: the obstacle grown by half the implement plus the Safety margin, the offset limited to 45° and rounded to the Curve radius, both settings on the U-turn tab and in the tool profile). One `GoAroundPasses` singleton serves the pipeline (steering, display, light bar) and the U-turn planner (the current pass walked to the turn, the next pass the exit lands on), so a turn is never planned from a line the tractor does not drive; it pins the side of each obstacle while the tractor is beside it and over on that side, so a nudge or snap never rebuilds the bend across the tree (the pin is let go when the tractor gets to the other side, as a U-turn next to the tree does). An obstacle with no room on the allowed side is promoted to a U-turn obstacle for that pass (toast "No room to go around Inner N on this pass: U-turn before it"); a turn keeps the tractor out of every Go around obstacle and the implement off a hard one; and with AutoSteer on, a Go around obstacle within 10 m plus 2 s straight ahead while the tractor is more than 1.5 m off the steered line takes AutoSteer off with the alarm. The margin is never under 0.3 m on a 6 m bend and more on a tighter one (`GoAroundPasses.MinMarginFor`), and the radius never under the tractor's minimum turning radius (`GoAroundPasses.Radius`). A bend never moves the line more than two implement widths (never under 20 m) off the pass (`ObstacleDetour.MaxOffset`): a tree, or a row of trees, needing more is a U-turn obstacle for that pass. Design: `Plans/OBSTACLE_GO_AROUND_PLAN.md`; scenarios: `Tests/AgOpenWeb.Services.Tests/YouTurn/ObstacleScenarioTests.cs` (`GoAroundLegs`).
+- A pass that leaves the turn area and comes back within `UTurnCrossGap` metres (U-turn settings, "Drive across a headland gap up to"; 0 = off), across the headland only (inside the boundary, outside the headland line and every obstacle not driven through, and never through an obstacle's turn area, which is turned at as without the setting), is not turned at the gap: `GapCrossingEnd` in `YouTurnCreationService` walks on past it in both crossing searches, the turn is planned at the far end and the pass is driven through the gap with the sections off by headland section control (a narrow tip of the field, a notch in its edge). The next pass is taken from abreast of the gap's end (`gapResumeIndex`), since abreast of the tractor it can be outside the field.
 
 Key parameters:
 - `HeadlandDistance` - width of headland zone (green to yellow line)
@@ -474,6 +482,24 @@ Key parameters:
 - Arc positioning: `headlandLegLength = max(HeadlandDistance - turnRadius, 2.0)`
 
 The arc must fit between the headland boundary (green line) and outer boundary (yellow line). If the headland is too narrow for the turn radius, the arc will extend past the outer boundary.
+
+## Going around obstacles
+Inner boundaries chosen as *Go around* (`ObstacleAction.GoRound`) bend the pass round them
+(`ObstacleDetour` in `Services/Track`). Each is grown by half the implement (and its offset, or half
+the tractor's track if wider) plus the safety margin, and the pass is moved sideways as far as the
+grown outline reaches across it, on the side needing the smaller move; obstacles close together
+along the pass are gone round together, on one side. The sideways offset rises no steeper than 45°
+and is rounded (Lasry-Lions: parabolas of 2R over it, then of R under it) so the bend is as short
+as the curve radius allows and never less than the obstacle needs. The radius and the margin are
+U-turn settings saved with the tool profile (`GuidanceConfig.GoAroundRadius` / `GoAroundMargin`,
+`uturn.goAroundRadius` / `uturn.goAroundMargin`; 6 m and 1 m by default). A trailing or TBT
+tool adds how far its working centre settles inside a curve of that radius (`ObstacleDetour.TrailedCutIn`,
+the `ToolPositionService` geometry) to the margin, since round the obstacle the inside is its side. A
+bend that enters another grown obstacle, a *U-turn* obstacle, or comes closer to the field's edge
+tries the other side; with no room either way the obstacle is driven through and the operator gets a
+toast (`GpsCycleResult.ObstacleNotice`). The bend is built once per pass and cached; it is the line
+steered (`CalculateTrackGuidance`), the line shown and the light bar's line, AutoSteer on or off.
+U-turn planning and pass numbering keep the straight pass. Closed tracks are not bent.
 
 ## CI/CD
 

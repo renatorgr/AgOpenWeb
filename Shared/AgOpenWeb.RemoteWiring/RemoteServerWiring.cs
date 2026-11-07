@@ -291,6 +291,51 @@ public static partial class RemoteServerWiring
                                 case "boundary.select": // arg = boundary list index (Tier-1)
                                     if (int.TryParse(arg, out var bsi)) vm.SelectedBoundaryIndex = bsi;
                                     return;
+                                case "boundary.atObstacle": // arg = "index:turn|goRound|driveThrough": the
+                                {                           // obstacle on that list row (field data)
+                                    var bc = arg.IndexOf(':');
+                                    if (bc > 0 && int.TryParse(arg[..bc], out var boi)
+                                        && AgOpenWeb.Models.ObstacleActionNames.Parse(arg[(bc + 1)..]) is { } boa)
+                                        vm.RemoteSetObstacleAction(boi, boa);
+                                    return;
+                                }
+                                case "boundary.atObstacleAll": // arg = turn|goRound|driveThrough: every
+                                    if (AgOpenWeb.Models.ObstacleActionNames.Parse(arg) is { } baa) // obstacle (a
+                                        vm.RemoteSetAllObstacleActions(baa);                     // column title)
+                                    return;
+                                case "boundary.circle.add": // arg = "e,n,d": a round obstacle centred at
+                                {                           // (e, n) field metres, d metres across
+                                    var bca = arg.Split(',');
+                                    if (bca.Length == 3 && double.TryParse(bca[0], num, inv, out var bce)
+                                        && double.TryParse(bca[1], num, inv, out var bcn)
+                                        && double.TryParse(bca[2], num, inv, out var bcd))
+                                        vm.RemoteAddObstacleCircle(bce, bcn, bcd);
+                                    return;
+                                }
+                                case "boundary.circle.diameter": // arg = "row:d": that obstacle becomes a
+                                {                                // circle d metres across
+                                    var bcc = arg.IndexOf(':');
+                                    if (bcc > 0 && int.TryParse(arg[..bcc], out var bcr)
+                                        && double.TryParse(arg[(bcc + 1)..], num, inv, out var bcdd))
+                                        vm.RemoteSetObstacleCircleDiameter(bcr, bcdd);
+                                    return;
+                                }
+                                case "boundary.circle.move": // arg = "row:e,n": that obstacle becomes a
+                                {                            // circle centred there
+                                    var bcc = arg.IndexOf(':');
+                                    var bcm = bcc > 0 ? arg[(bcc + 1)..].Split(',') : System.Array.Empty<string>();
+                                    if (bcm.Length == 2 && int.TryParse(arg[..bcc], out var bcr)
+                                        && double.TryParse(bcm[0], num, inv, out var bme)
+                                        && double.TryParse(bcm[1], num, inv, out var bmn))
+                                        vm.RemoteMoveObstacleCircle(bcr, bme, bmn);
+                                    return;
+                                }
+                                case "boundary.circle.round": // arg = row: the smallest circle holding it
+                                    if (int.TryParse(arg, out var bro)) vm.RemoteMakeObstacleRound(bro);
+                                    return;
+                                case "boundary.circle.roundAll": // every obstacle up to a tree's size
+                                    vm.RemoteMakeObstaclesRound();
+                                    return;
                                 case "boundary.setOffset": // arg = recording offset cm (Tier-1)
                                     if (double.TryParse(arg, num, inv, out var boff)) vm.BoundaryOffset = boff;
                                     return;
@@ -448,6 +493,10 @@ public static partial class RemoteServerWiring
                                     st.Save();
                                     return;
                                 }
+                                case "webcard.scan": // "Search the network" in the bookmark editor; the answer is in the WebCards frame.
+                                    _ = ScanWebPagesAsync(dispatcher, services.GetRequiredService<AgOpenWeb.Models.State.ApplicationState>(),
+                                        services.GetRequiredService<AgOpenWeb.Services.Interfaces.ILocalNetworkInfoProvider>());
+                                    return;
                                 case "boundary.importKmlFile": // Import-KML picker. arg = KML file name.
                                     vm.RemoteImportKmlBoundary(arg);
                                     return;
@@ -951,7 +1000,8 @@ public static partial class RemoteServerWiring
                         var items = new System.Collections.Generic.List<AgOpenWeb.RemoteServer.BoundaryItemDto>();
                         foreach (var it in vm.BoundaryItems)
                             items.Add(new AgOpenWeb.RemoteServer.BoundaryItemDto(
-                                it.Index, it.BoundaryType, it.AreaHectares, it.IsDriveThrough, it.IsHard));
+                                it.Index, it.BoundaryType, it.AreaHectares, it.IsDriveThrough, it.IsHard,
+                                it.IsInner, (int)it.AtObstacle, it.SizeMeters, it.CircleDiameter));
                         var bpts = new System.Collections.Generic.List<double>(brs.RecordedPoints.Count * 2);
                         foreach (var p in brs.RecordedPoints) { bpts.Add(p.Easting); bpts.Add(p.Northing); }
                         return new AgOpenWeb.RemoteServer.BoundaryDto(
@@ -1009,6 +1059,14 @@ public static partial class RemoteServerWiring
                             ? new AgOpenWeb.RemoteServer.IsobusDto(st.SectionControlEnabled, st.SectionCount, st.ClientCount, st.ReportedSections)
                             : null;
                     };
+
+                    // Sprayer readout (PGN 160 from the machine module), under the section buttons.
+                    var sprayerSvc = services.GetRequiredService<AgOpenWeb.Services.Interfaces.ISprayerService>();
+                    server.SprayerProvider = () => sprayerSvc.Status is { } sp
+                        ? new AgOpenWeb.RemoteServer.SprayerDto(sp.PressureBar, sp.FlowLpm, sp.TotalLitres, sp.MasterOn,
+                            sp.Sections, sp.OpenWidthM, (int)sp.Alarms,
+                            sp.ModuleChecks, sp.RateLha, sp.TargetLha, sp.PressureNeededBar, sp.MinPressureBar, sp.MaxPressureBar)
+                        : null;
 
                     // GPS source (#157): the incoming sentence for the GPS detail card, and
                     // "Dual GPS on but no dual heading" while real GPS is live ($PANDA with
