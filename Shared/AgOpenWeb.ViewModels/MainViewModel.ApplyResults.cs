@@ -150,6 +150,7 @@ public partial class MainViewModel
             sy.TurnAtObstacle = yt.TurnAtObstacle;
             sy.TurnAtObstacleIndex = yt.TurnAtObstacleIndex;
             sy.IsTurnLeft = yt.IsTurnLeft;
+            sy.NextUTurnDirectionLeftOverride = yt.NextUTurnDirectionLeftOverride;
             sy.LastTurnWasLeft = yt.LastTurnWasLeft;
             sy.DistanceToHeadland = yt.DistanceToHeadland;
             sy.DistanceToTrigger = yt.DistanceToTrigger;

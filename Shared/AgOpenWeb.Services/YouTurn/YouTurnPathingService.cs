@@ -223,7 +223,10 @@ public sealed class YouTurnPathingService
         if (!IsPathInsideCultivated(track, abHeading, pathsAway, boundary, headlandLine)) return false;
         if (boundary?.OuterBoundary == null || !boundary.OuterBoundary.IsValid) return true;
         if (track.Points.Count < 2) return true;
-        double landing = LandingLength(track, abHeading, pathsAway, boundary, headlandLine, position, headingSameWay, headlandAhead);
+        // Only whether there is enough: stop counting there (the walk is up to 2 km of
+        // point-in-polygon tests, and an end of the field asks again every cycle).
+        double landing = LandingLength(track, abHeading, pathsAway, boundary, headlandLine, position, headingSameWay, headlandAhead,
+            stopAt: MinLandingLength);
         if (landing < MinLandingLength)
             _logger.LogDebug("[NextTrack] nextPath={Next} has only {Len:F0}m inside the field at this end - no turn onto it",
                 pathsAway, landing);
@@ -236,16 +239,19 @@ public sealed class YouTurnPathingService
     /// m ahead of the tractor), the run of it inside the cultivated area back the way the tractor
     /// came, which is the way it drives after the turn. Inside the headland line; obstacles are
     /// not counted. When that pass ends sooner, its first run back of the end, however far (a
-    /// wide turn lands in the headland and drives to it). 0 when there is none.
+    /// wide turn lands in the headland and drives to it). 0 when there is none. With
+    /// <paramref name="stopAt"/> the run is measured no further than that.
     /// </summary>
     public double LandingLength(Models.Track.Track track, double abHeading, int pathsAway,
-        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead)
+        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead,
+        double stopAt = double.MaxValue)
     {
         var config = _configStore;
         double widthMinusOverlap = config.ActualToolWidth - config.Tool.Overlap;
         double distAway = PassGeometry.Offset(track, pathsAway, widthMinusOverlap);
         const double Step = 1.0;
         const double RunBack = 2000.0;
+        double runLimit = Math.Min(RunBack, stopAt);
         double ahead = Math.Clamp(double.IsFinite(headlandAhead) ? headlandAhead : 0, 0, 2000);
 
         if (track.Points.Count > 2)
@@ -286,7 +292,7 @@ public sealed class YouTurnPathingService
                 if (!found) return 0;
             }
             double length = 0;
-            for (int i = at - fwd; i >= 0 && i < curve.Count && length <= RunBack && InsideAt(i); i -= fwd)
+            for (int i = at - fwd; i >= 0 && i < curve.Count && length <= runLimit && InsideAt(i); i -= fwd)
                 length += Dist(i, i + fwd);
             return length;
         }
@@ -328,7 +334,7 @@ public sealed class YouTurnPathingService
         }
         // The run back from there.
         double back = 0;
-        for (double d = Step; d <= RunBack && InsideAtT(tAt - s * d); d += Step) back = d;
+        for (double d = Step; d <= runLimit + Step && InsideAtT(tAt - s * d); d += Step) back = d;
         double tBack = Edge(tAt - s * back, tAt - s * (back + Step));
         return Math.Abs(tFront - tBack);
     }
