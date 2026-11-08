@@ -522,26 +522,40 @@ window.RemoteTransport = {
     // the host had already stopped the steering, and another screen could take over while this
     // one still said Operator. The host sends a Tick every 100 ms and ends a screen's control
     // after 1.5 s without its presence (ControlAuthority's deadman), so a link quiet that long
-    // has lost control anyway: drop that socket, say Disconnected, and connect again (it waits
-    // in "connecting…" until the link is back). A shorter hiccup (Wi-Fi roaming) keeps both.
-    const QUIET_MS = 1500;
-    let lastFrameAt = 0;
+    // has lost control anyway: say Disconnected at once and send nothing more on it (a tap made
+    // now would arrive late). The socket is kept: when the link comes back its frames resume
+    // and the screen is connected again, as before. Only a link quiet for 10 s is dropped and
+    // connected anew (a dead connection TCP would hold for minutes), and each further drop
+    // waits twice as long, up to a minute, until a connection stays live for 30 s: when it is
+    // the host that went quiet (its broadcast stalled), every new connection asks it for a
+    // seed with the whole coverage, so reconnecting every few seconds would only add to it.
+    const QUIET_MS = 1500, DROP_MS = 10000, DROP_MAX_MS = 60000, LIVE_MS = 30000;
+    let lastFrameAt = 0, liveSince = 0, quiet = false, dropAfter = DROP_MS;
     function connect() {
       status('connecting…');
       const sock = ws = new WebSocket(url);
       sock.binaryType = 'arraybuffer';
-      sock.onopen = () => { lastFrameAt = performance.now(); status('connected'); };
-      sock.onmessage = e => { lastFrameAt = performance.now(); try { decode(e.data); } catch (err) { /* drop a malformed frame */ } };
+      sock.onopen = () => { lastFrameAt = liveSince = performance.now(); quiet = false; status('connected'); };
+      sock.onmessage = e => {
+        lastFrameAt = performance.now();
+        if (quiet) { quiet = false; liveSince = lastFrameAt; status('connected'); }
+        try { decode(e.data); } catch (err) { /* drop a malformed frame */ }
+      };
       sock.onerror = () => status('error');
-      sock.onclose = () => { if (sock !== ws) return; status('disconnected'); if (!stopped) setTimeout(connect, 1000); };
+      sock.onclose = () => { if (sock !== ws) return; quiet = false; status('disconnected'); if (!stopped) setTimeout(connect, 1000); };
     }
     setInterval(() => {
-      if (stopped || !ws || ws.readyState !== WebSocket.OPEN || performance.now() - lastFrameAt < QUIET_MS) return;
+      if (stopped || !ws || ws.readyState !== WebSocket.OPEN) return;
+      const now = performance.now(), silent = now - lastFrameAt;
+      if (silent < QUIET_MS) { if (now - liveSince > LIVE_MS) dropAfter = DROP_MS; return; }
+      if (!quiet) { quiet = true; status('disconnected'); }
+      if (silent < dropAfter) return;
+      dropAfter = Math.min(dropAfter * 2, DROP_MAX_MS);
       const dead = ws;
-      ws = null; // nothing more is sent on it, and its late frames are not read
+      ws = null; // its late frames are not read
       dead.onopen = dead.onmessage = dead.onerror = dead.onclose = null;
       try { dead.close(); } catch (err) { /* already closing */ }
-      status('disconnected');
+      quiet = false;
       setTimeout(connect, 1000);
     }, 100);
 
@@ -549,7 +563,8 @@ window.RemoteTransport = {
       start() { stopped = false; connect(); },
       stop() { stopped = true; if (ws) ws.close(); },
       // Client→host command: a short text frame carrying a command id.
-      send(cmd) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(cmd); },
+      // Not on a quiet link: it would arrive late, after the host has ended this screen's control.
+      send(cmd) { if (ws && ws.readyState === WebSocket.OPEN && !quiet) ws.send(cmd); },
     };
   },
 };
