@@ -145,6 +145,59 @@ public class SteerWizardSafetyTests
         Assert.That(vm.IsAutoSteerEngaged, Is.False);
     }
 
+    [Test]
+    public void Browser_lost_ends_Free_Drive_outside_the_wizard()
+    {
+        // AutoSteer settings > Free Drive, steered 10° right, then the tablet's tab closed: the
+        // module went on getting status 1 at 10° with a made-up 8 km/h (web client harness, C9).
+        var b = new MainViewModelBuilder();
+        var vm = b.Build();
+        b.AutoSteerService.IsInFreeDriveMode.Returns(true);
+        Assume.That(vm.IsSteerWizardOpen, Is.False);
+
+        vm.OnBrowserControlEnded("browser control ended: client disconnected");
+
+        b.AutoSteerService.Received().DisableFreeDrive();
+    }
+
+    [Test]
+    public void Browser_lost_closes_a_section_switched_on_by_hand()
+    {
+        // Section 1 tapped to On with the master off, then the tab closed: the module went on
+        // getting section 1 open (web client harness, C10). The master toggle never ran, as
+        // the master was off.
+        var b = new MainViewModelBuilder();
+        b.SectionControlService.NumSections.Returns(2);
+        b.SectionControlService.SectionStates.Returns(new List<SectionControlState>
+        {
+            new() { Index = 0, ButtonState = SectionButtonState.On },
+            new() { Index = 1, ButtonState = SectionButtonState.Off },
+        });
+        var vm = b.Build();
+        Assume.That(vm.IsSectionMasterOn, Is.False);
+
+        vm.OnBrowserControlEnded("browser control ended: client disconnected");
+
+        b.SectionControlService.Received().SetAllSections(SectionButtonState.Off);
+    }
+
+    [Test]
+    public void Browser_lost_leaves_sections_alone_when_all_are_off()
+    {
+        var b = new MainViewModelBuilder();
+        b.SectionControlService.NumSections.Returns(2);
+        b.SectionControlService.SectionStates.Returns(new List<SectionControlState>
+        {
+            new() { Index = 0, ButtonState = SectionButtonState.Off },
+            new() { Index = 1, ButtonState = SectionButtonState.Off },
+        });
+        var vm = b.Build();
+
+        vm.OnBrowserControlEnded("browser control ended: released");
+
+        b.SectionControlService.DidNotReceive().SetAllSections(Arg.Any<SectionButtonState>());
+    }
+
     private static void SwitchCycle(MainViewModelBuilder b, MainViewModel vm, bool steering)
     {
         b.AutoSteerService.LastSteerData.Returns(Module(steering));

@@ -4,6 +4,7 @@
 
 using System.Windows.Input;
 
+using AgOpenWeb.Services.Interfaces;
 using AgOpenWeb.ViewModels.Wizards;
 using AgOpenWeb.ViewModels.Wizards.SteerWizard;
 using CommunityToolkit.Mvvm.Input;
@@ -80,7 +81,9 @@ public partial class MainViewModel
     /// <summary>
     /// The browser that held control is gone (released, disconnected, or the deadman ran
     /// out). Nothing may keep actuating with no screen and no Stop button: AutoSteer off,
-    /// sections off, and the steer wizard closed. Closing the wizard stops a motor test
+    /// Free Drive off (it holds the wheels at the angle the operator set, with a made-up speed),
+    /// every section off, including one switched On by hand with the master off, and the steer
+    /// wizard closed. Closing the wizard stops a motor test
     /// that would otherwise go on turning the wheels lock to lock; a wizard left open
     /// would also keep AutoSteer locked out (#154) with nothing on the reloaded page to
     /// close it. What the finished steps set stays in the live settings, as with Cancel.
@@ -93,6 +96,19 @@ public partial class MainViewModel
             ToggleManualModeCommand.Execute(null);
         if (IsSectionMasterOn && ToggleSectionMasterCommand?.CanExecute(null) == true)
             ToggleSectionMasterCommand.Execute(null);
+        // A section the operator switched On by hand stays On with the master off: close them all.
+        var sections = _sectionControlService.SectionStates;
+        for (int i = 0; i < _sectionControlService.NumSections && i < sections.Count; i++)
+        {
+            if (sections[i].ButtonState == SectionButtonState.Off) continue;
+            _sectionControlService.SetAllSections(SectionButtonState.Off);
+            break;
+        }
+        // Free Drive (AutoSteer settings, test mode) steers without AutoSteer engaged.
+        if (AutoSteerConfigViewModel is { IsFreeDriveMode: true } freeDrive)
+            freeDrive.ToggleFreeDriveCommand.Execute(null);
+        if (_autoSteerService.IsInFreeDriveMode)
+            _autoSteerService.DisableFreeDrive();
         if (IsSteerWizardOpen)
         {
             EndRemoteSteerWizard();
