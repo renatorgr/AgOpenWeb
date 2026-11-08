@@ -1,0 +1,65 @@
+name: SharpIsoTerm package
+description: >-
+  Puts the pinned SharpIsoTerm package in nuget-local/ before the build, so the build does
+  not download it again.
+
+# renatorgr fork only. The VT project (Shared/AgOpenWeb.VirtualTerminal) downloads SharpIsoTerm
+# from its GitHub release during restore, unless nuget-local/ already holds it. That download
+# failed at times (502 / 504 from GitHub on 2026-11-08), which failed builds that had nothing
+# to do with it. This step keeps the package in the Actions cache: it is downloaded once per
+# version, with retries, and checked against the SHA-256 pinned in the VT project. Use it
+# right after actions/checkout in every job that builds.
+runs:
+  using: composite
+  steps:
+    - name: Read the pinned SharpIsoTerm version
+      id: pin
+      shell: bash
+      run: |
+        csproj=Shared/AgOpenWeb.VirtualTerminal/AgOpenWeb.VirtualTerminal.csproj
+        ver=$(sed -n 's:.*<SharpIsoTermVersion>\(.*\)</SharpIsoTermVersion>.*:\1:p' "$csproj")
+        sha=$(sed -n 's:.*<SharpIsoTermSha256>\(.*\)</SharpIsoTermSha256>.*:\1:p' "$csproj")
+        if [ -z "$ver" ] || [ -z "$sha" ]; then
+          echo "::error::No SharpIsoTermVersion or SharpIsoTermSha256 in $csproj"; exit 1
+        fi
+        echo "version=$ver" >> "$GITHUB_OUTPUT"
+        echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+        echo "file=nuget-local/SharpIsoTerm.$ver.nupkg" >> "$GITHUB_OUTPUT"
+
+    - name: SharpIsoTerm from the cache
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.pin.outputs.file }}
+        key: sharpisoterm-${{ steps.pin.outputs.version }}-${{ steps.pin.outputs.sha256 }}
+
+    - name: Download SharpIsoTerm (not in the cache yet)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ steps.pin.outputs.version }}
+        FILE: ${{ steps.pin.outputs.file }}
+      run: |
+        url="https://github.com/chriskinal/SharpIsoTerm/releases/download/v$VERSION/SharpIsoTerm.$VERSION.nupkg"
+        mkdir -p nuget-local
+        # GitHub's release downloads fail for minutes at a time: keep trying for up to 10 minutes.
+        if ! curl --fail --silent --show-error --location --retry 12 --retry-all-errors --retry-delay 30 \
+             --retry-max-time 600 --max-time 120 --output "$FILE.part" "$url"; then
+          rm -f "$FILE.part"
+          echo "::error::Could not download $url (GitHub's release downloads are failing). Re-run the job later."
+          exit 1
+        fi
+        mv "$FILE.part" "$FILE"
+
+    - name: Check SharpIsoTerm's SHA-256
+      shell: bash
+      env:
+        FILE: ${{ steps.pin.outputs.file }}
+        SHA256: ${{ steps.pin.outputs.sha256 }}
+      run: |
+        got=$(shasum -a 256 "$FILE" | cut -d' ' -f1)
+        if [ "$got" != "$SHA256" ]; then
+          rm -f "$FILE"
+          echo "::error::$FILE has SHA-256 $got, not $SHA256 as pinned in the VT project."; exit 1
+        fi
+        echo "$FILE: SHA-256 OK"

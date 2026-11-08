@@ -65,6 +65,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
+      - uses: ./.github/actions/sharpisoterm
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -161,6 +164,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
+      - uses: ./.github/actions/sharpisoterm
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -183,6 +189,9 @@ jobs:
     container: mcr.microsoft.com/playwright/python:v1.64.0-noble
     steps:
       - uses: actions/checkout@v4
+
+      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
+      - uses: ./.github/actions/sharpisoterm
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -224,6 +233,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
+      - uses: ./.github/actions/sharpisoterm
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -238,6 +250,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
+      - uses: ./.github/actions/sharpisoterm
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -277,6 +292,9 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+
+      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
+      - uses: ./.github/actions/sharpisoterm
 
       - name: Select Xcode 26.4.1
         # The .NET for iOS workload is pinned to 26.4.x via dotnet-ios-rollback.json to match
