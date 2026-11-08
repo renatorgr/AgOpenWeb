@@ -657,6 +657,13 @@ public sealed class YouTurnStateMachine
         _pathing.ComputeNextTrack(track, abHeading, guidance, turn,
             ctx.UTurnSkipRows, ctx.IsSkipWorkedMode, ctx.SelectedTrack);
         effects.SyncNextTrackToMap = true;
+        if (turn.NextTrack is { Points.Count: < 2 })
+        {
+            // The curve's offset removed all of that pass (#694): there is nothing to turn onto.
+            DiscardPlannedTurn(turn);
+            effects.StatusMessage = "No pass there: the curve is too tight";
+            return effects;
+        }
         effects.IsInYouTurnMapFlag = true;
 
         // Manual triggers skip the boundary-anchored Dubins pipeline used by auto turns.
@@ -843,10 +850,20 @@ public sealed class YouTurnStateMachine
             bool positive = target < guidance.HowManyPathsAway;
             int skip = _pathing.GetNextUnworkedPathSkip(track, guidance.HowManyPathsAway, positive, ctx.UTurnSkipRows + 1, isWorked);
             int swapped = guidance.HowManyPathsAway + (positive ? skip : -skip);
-            if (_pathing.IsPathInsideCultivated(track, abHeading, swapped, ctx.Boundary, ctx.HeadlandLine))
+            if (_pathing.IsPathLandable(track, abHeading, swapped, ctx.Boundary, ctx.HeadlandLine, currentPosition, guidance.IsHeadingSameWay, turn.DistanceToHeadland, guidance.HowManyPathsAway))
                 target = swapped;
             else
                 RefuseDirectionSwap(swapped, effects);
+        }
+
+        // The order's next pass may be inside only at the far end (an hourglass field's other
+        // lobe): a turn onto it here lands in the headland and drives out of the field.
+        if (!_pathing.IsPathLandable(track, abHeading, target, ctx.Boundary, ctx.HeadlandLine, currentPosition, guidance.IsHeadingSameWay, turn.DistanceToHeadland, guidance.HowManyPathsAway))
+        {
+            _logger.LogDebug("[YouTurn] Snake pass {Pass} is too short inside the field at this end - no turn", target);
+            effects.StatusMessage = "End of field reached - no room on the next pass at this end";
+            SoundCreationFailed(effects);
+            return;
         }
 
         CreateTurnToPath(in ctx, track, abHeading, headingRadians, guidance, turn, effects, target, "Snake");
@@ -930,8 +947,7 @@ public sealed class YouTurnStateMachine
             // Offset then EXTEND the ends so the cyan next-track curve matches the
             // exit leg and the post-turn magenta line (no gap at the exit handoff).
             // Mirrors YouTurnPathingService.ComputeNextTrack; no-op on closed loops.
-            var offsetPoints = CurveProcessing.ExtendCurveEnds(
-                CurveProcessing.CreateOffsetCurve(track.Points, nextDistAway));
+            var offsetPoints = CurveProcessing.ExtendPass(CurveProcessing.CurvePass(track.Points, nextDistAway));
             turn.NextTrack = Models.Track.Track.FromCurve($"Path {nextPath}", offsetPoints, track.IsClosed);
         }
         turn.NextTrack.IsActive = false;
@@ -965,7 +981,7 @@ public sealed class YouTurnStateMachine
         if (turn.AltSign == 0 || turn.AltBaseWidth != baseWidth)
         {
             var (_, positive) = _pathing.WouldNextLineBeInsideBoundary(
-                track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, baseWidth - 1);
+                track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, baseWidth - 1, null, ctx.CurrentPosition, turn.DistanceToHeadland);
             turn.AltSign = positive ? 1 : -1;
             turn.AltBaseWidth = turn.AltWidth = baseWidth;
             turn.AltTurnSkips = baseWidth * 2 - 1;
@@ -978,7 +994,7 @@ public sealed class YouTurnStateMachine
         if (TakeDirectionSwap(turn, guidance, nextPath))
         {
             int swapped = guidance.HowManyPathsAway - turn.AltSign * turn.AltWidth;
-            if (_pathing.IsPathInsideCultivated(track, abHeading, swapped, ctx.Boundary, ctx.HeadlandLine))
+            if (_pathing.IsPathLandable(track, abHeading, swapped, ctx.Boundary, ctx.HeadlandLine, ctx.CurrentPosition, guidance.IsHeadingSameWay, turn.DistanceToHeadland, guidance.HowManyPathsAway))
             {
                 turn.AltSign = -turn.AltSign;
                 nextPath = swapped;
@@ -988,9 +1004,11 @@ public sealed class YouTurnStateMachine
                 RefuseDirectionSwap(swapped, effects);
             }
         }
-        if (!_pathing.IsPathInsideCultivated(track, abHeading, nextPath, ctx.Boundary, ctx.HeadlandLine))
+        if (!_pathing.IsPathLandable(track, abHeading, nextPath, ctx.Boundary, ctx.HeadlandLine, ctx.CurrentPosition, guidance.IsHeadingSameWay, turn.DistanceToHeadland, guidance.HowManyPathsAway))
         {
-            effects.StatusMessage = "End of field reached";
+            effects.StatusMessage = _pathing.IsPathInsideCultivated(track, abHeading, nextPath, ctx.Boundary, ctx.HeadlandLine)
+                ? "End of field reached - no room on the next pass at this end"
+                : "End of field reached";
             SoundCreationFailed(effects);
             return;
         }
@@ -1024,7 +1042,7 @@ public sealed class YouTurnStateMachine
     {
         bool? keepPositive = _lastStep != 0 && _lastStepTrack == track.Name ? _lastStep > 0 : null;
         var (nextLineInside, positiveDirection) = _pathing.WouldNextLineBeInsideBoundary(
-            track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, ctx.UTurnSkipRows, keepPositive);
+            track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, ctx.UTurnSkipRows, keepPositive, currentPosition, turn.DistanceToHeadland);
 
         _logger.LogDebug("[YouTurn] Creating turn? nextLineInside={Inside} positiveDir={Dir}", nextLineInside, positiveDirection);
         // The turns step one way across the field (#523). When that side has no pass left, the
@@ -1034,13 +1052,22 @@ public sealed class YouTurnStateMachine
         // Skipped passes are filled with the alternative or ignore-worked modes. Only on the pass
         // the last turn landed on: moved to another pass, or the field opened again, the tractor
         // may start from this edge.
+        bool steppedBack = false;
         if (nextLineInside && keepPositive is { } stepping && guidance.HowManyPathsAway == _lastStepPass
             && positiveDirection != stepping && turn.NextUTurnDirectionLeftOverride is null)
+        {
             nextLineInside = false;
+            steppedBack = true;
+        }
         if (!nextLineInside)
         {
-            _logger.LogDebug("[YouTurn] Next line would be outside boundary - stopping U-turns");
-            effects.StatusMessage = "End of field reached";
+            // A pass inside the field somewhere, but with no room to land on at this end (a
+            // corner pass, the far lobe of an hourglass): the operator takes over here too.
+            bool roomSomewhere = !steppedBack && _pathing.WouldNextLineBeInsideBoundary(
+                track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, ctx.UTurnSkipRows, keepPositive).isInside;
+            _logger.LogDebug("[YouTurn] Next line would be outside boundary{Room} - stopping U-turns",
+                roomSomewhere ? " at this end" : "");
+            effects.StatusMessage = roomSomewhere ? "End of field reached - no room on the next pass at this end" : "End of field reached";
             SoundCreationFailed(effects);
             return;
         }
@@ -1056,7 +1083,7 @@ public sealed class YouTurnStateMachine
         if (TakeDirectionSwap(turn, guidance, plannedPath))
         {
             int swapped = guidance.HowManyPathsAway + (positiveDirection ? -pathsToMove : pathsToMove);
-            if (_pathing.IsPathInsideCultivated(track, abHeading, swapped, ctx.Boundary, ctx.HeadlandLine))
+            if (_pathing.IsPathLandable(track, abHeading, swapped, ctx.Boundary, ctx.HeadlandLine, currentPosition, guidance.IsHeadingSameWay, turn.DistanceToHeadland, guidance.HowManyPathsAway))
             {
                 turn.IsTurnLeft = !turn.IsTurnLeft;
                 _logger.LogDebug("[YouTurn] Direction swapped: turnLeft={Left}", turn.IsTurnLeft);
@@ -1142,6 +1169,10 @@ public sealed class YouTurnStateMachine
 
         if (result.ClearanceBlocked && effects.StatusMessage == null)
             effects.StatusMessage = "U-turn blocked: implement would swing into a hard boundary — take over manually.";
+        // No real turn fits and the fallback would leave the field (#692): the pass is driven to its
+        // end with no turn, so the operator is told, not only sounded at.
+        if (result.Path == null && result.UsedFallback && effects.StatusMessage == null)
+            effects.StatusMessage = "No U-turn fits inside the boundary at this end - take over manually";
 
         if (result.Path == null)
         {
