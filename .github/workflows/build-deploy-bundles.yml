@@ -98,6 +98,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
+      - uses: ./.github/actions/sharpisoterm
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -127,6 +130,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
+      - uses: ./.github/actions/sharpisoterm
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -152,6 +158,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
+      - uses: ./.github/actions/sharpisoterm
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -176,6 +185,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
+      - uses: ./.github/actions/sharpisoterm
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -199,6 +211,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
+      - uses: ./.github/actions/sharpisoterm
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
