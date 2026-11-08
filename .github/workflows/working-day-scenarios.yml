@@ -62,6 +62,10 @@ jobs:
             echo "No commit on develop in the last 25 hours; nothing to run." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
+      - uses: ./.github/actions/sharpisoterm
+        if: steps.fresh.outputs.run == 'true'
+
       - name: Setup .NET
         if: steps.fresh.outputs.run == 'true'
         uses: actions/setup-dotnet@v4
