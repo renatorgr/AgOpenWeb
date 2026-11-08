@@ -133,9 +133,12 @@ public class BoundaryPassArmingTests
     [Test]
     public void A_fallback_turn_that_would_leave_the_field_is_refused_with_a_status_line()
     {
-        // With an 8 m radius no real turn fits from the pass 3 m from the fence, and the fallback
-        // semicircle would go 5.8 m outside the field: no turn (#692), and the operator is told
-        // why, not only sounded at.
+        // With an 8 m radius the official generator finds no real turn from the pass 3 m from the
+        // fence, and the fallback semicircle would go 5.8 m outside the field: no turn (#692), and
+        // the operator is told why, not only sounded at.
+        // renatorgr fork: the fork's turn building (seated back along the pass, #130/#135) makes a
+        // turn here that stays inside the field (E -47..-31.5, N 32..47.8 on 2026-11-08). So the
+        // rule checked is #692's: never a turn that leaves the field, and no turn is said.
         ConfigurationStore.Instance.Guidance.UTurnRadius = 8.0;
         var gState = new GuidanceWorkingState();
         var tState = new YouTurnWorkingState { IsEnabled = true };
@@ -151,7 +154,12 @@ public class BoundaryPassArmingTests
             sounded |= effects.TurnCreationFailedSound;
         }
 
-        Assert.That(tState.TurnPath, Is.Null, "no turn that leaves the field");
+        if (tState.TurnPath != null)
+        {
+            Assert.That(tState.TurnPath.All(p => Math.Abs(p.Easting) <= 50.0 && Math.Abs(p.Northing) <= 50.0), Is.True,
+                "no turn that leaves the field");
+            return;
+        }
         Assert.That(sounded, Is.True, "the creation-failed sound, as before");
         Assert.That(statuses, Does.Contain("No U-turn fits inside the boundary at this end - take over manually"));
     }
