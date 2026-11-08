@@ -1020,6 +1020,15 @@ public partial class YouTurnCreationService
 
         TurnPathSmoothing.Smooth(path, config.Guidance.UTurnSmoothing);
 
+        // A last check, after the seating above (which keeps clear of the outer boundary only):
+        // no point outside the field or in an obstacle a turn may not drive through (#692).
+        // AgOpenGPS has no fallback; it makes no turn and sounds the failure.
+        if (LeavesField(path, boundary))
+        {
+            _logger.LogDebug("[YouTurn] Simple fallback leaves the field - not creating U-turn");
+            path.Clear();
+        }
+
         return path;
 
         // The path with its arc seated `back` m before where the ray put it: the entry leg, the
@@ -1110,6 +1119,23 @@ public partial class YouTurnCreationService
             }
             return arcIndex;
         }
+    }
+
+    /// <summary>
+    /// True when a point of <paramref name="path"/> is outside the outer boundary or inside an
+    /// inner boundary a turn may not drive through.
+    /// </summary>
+    internal static bool LeavesField(IReadOnlyList<Vec3> path, Boundary? boundary)
+    {
+        var outer = boundary?.OuterBoundary;
+        if (outer == null || !outer.IsValid) return false;
+        foreach (var p in path)
+        {
+            if (!outer.IsPointInside(p.Easting, p.Northing)) return true;
+            foreach (var inner in boundary!.InnerBoundaries)
+                if (!inner.IsDriveThrough && inner.IsValid && inner.IsPointInside(p.Easting, p.Northing)) return true;
+        }
+        return false;
     }
 
     /// <summary>

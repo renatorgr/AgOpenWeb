@@ -132,6 +132,15 @@ Every command is dropped unless the sender holds fresh control: the others are o
 see everything and change nothing (#397). `ObserverIds` lists the few requests an observer may
 send. A client can't take control from a live operator, only fill an empty seat.
 
+### Section control timing
+`SectionControlService` runs every section by its own button state (Off / Auto / On); the master
+buttons only set them all, as AgOpenGPS. In Auto the look-ahead asks for on/off early: the
+**module** gets that request at once (`IsCommandedOn` → PGN 239/229 bits), while `IsOn` and the
+coverage map wait the look-ahead time, so the valve acts at the edge and the map paints where
+the product lands (#707). With look-ahead off at 0 the turn-off delay is a plain overrun of both.
+The control loop sends the PGNs at 100 Hz, PGN 229 every tick whatever the section count (the
+ISOBUS task controller reads sections from 229 only).
+
 ### Host ↔ client commands
 The client sends `id|arg` strings (`transport.send('track.select|0')`). `RemoteServerWiring`
 (in `RemoteWiring`) switches on the id and calls the VM; `RemoteServerWiring.Helpers.cs` holds
@@ -459,6 +468,10 @@ dotnet run --project TestRunner/TestRunner.csproj
 - `AgOpenWeb.VehicleToolScenarios.Tests` - Vehicle & Tool scenarios: a simulated machine (steering, implement linkage, antenna on a slope, the Boards simulator's GPS/IMU/motor) drives the whole backend; a careful operator on five vehicles and their implements, a careless one with wrong measures, signs, units, roll setup and profiles; a findings report; CI only builds it, `vehicle-tool-scenarios.yml` runs it nightly (its `README.md`)
 - `AgOpenWeb.FieldScenarios.Tests` - end-to-end field scenarios: the whole backend in-process, a careful and a careless operator on five real field shapes, a findings report; about 4 minutes, so CI only builds it and `field-scenarios.yml` runs it nightly (its `README.md`)
 - `AgOpenWeb.SteerWizardScenarios.Tests` - end-to-end steer wizard scenarios: the whole backend in-process, an emulated AiO steer module (firmware P controller, WAS formula, locks, either motor wiring) and a moving tractor, a careful and a careless operator, a safety watch on the wheels at 50 Hz, a findings report; about 10 minutes, so CI only builds it and `steer-wizard-scenarios.yml` runs it nightly (its `README.md`)
+- `AgOpenWeb.MachineModuleScenarios.Tests` - an emulated Sprayer_ESP32 machine module on the real UDP: sections vs valves, settings reaching the module, restarts and outages (`machine-module-scenarios.yml`)
+- `AgOpenWeb.GpsNtripScenarios.Tests` - receivers, sentence families and an NTRIP caster on the loopback: corrections, network changes, dual heading (`gps-ntrip-scenarios.yml`; one scenario needs Linux's 127.0.0.2)
+- `AgOpenWeb.FieldJobScenarios.Tests` - whole jobs on real fields with AutoSteer, U-turns and auto sections, measuring where product really went on a 0.2 m grid (`field-job-scenarios.yml`, up to 2 h)
+- `AgOpenWeb.IsobusScenarios.Tests` - an emulated AOG-TaskController and its implements (`isobus-scenarios.yml`)
 
 CI also runs `Tools/i18n-extract.py --check` so `en.json` stays current, `Tools/license-headers.py --check` for the licence headers, and `Tools/i18n-limits.py --check` (job `translations-fit`, only when a change touches `wwwroot/`, the check, its baseline or the workflow; otherwise skipped, which counts as passed) so every translated label fits the English layout.
 
@@ -475,6 +488,8 @@ turns from the on-screen buttons) with paths built by `YouTurnCreationService`:
 - Obstacles (inner boundaries) chosen as *U-turn* (`AtObstacle == Turn`) get a turn line of their own, the obstacle offset outward by `UTurnDistanceFromBoundary` (`YouTurnCreationService.Obstacles.cs`), like AgOpenGPS with Drive thru = No, a hard one by the implement's reach (half its width plus its offset, `HardReach`) more, so the pass itself keeps the implement that distance from a wall or a ditch: the turn-area test returns -1 outside the outer turn line, 0 in the workable area, k inside obstacle turn line k. A turn at an obstacle has no simple fallback and is never "turned from here" when missed; a hard obstacle keeps the implement outside. *Drive through* obstacles are driven through. A planned turn is planned again when the obstacles change (`YouTurnCreationService.ObstacleStamp`), a manual turn that would cross a U-turn obstacle is refused, and with AutoSteer on, a U-turn obstacle within 10 m plus 2 s of travel ahead with no turn planned before it takes AutoSteer off with the alarm (`ObstacleAheadWithoutTurn`: a turn lost, missed or aborted there, or U-turn off); an obstacle changed under a turn being driven (another choice, Hard, added, moved), with the rest of the turn or the 20 m after it running into it, does the same (`ObstacleChangedUnderTurn`: a turn being driven is not planned again). A turn's 20 m of exit keep the tractor outside every turn line and the implement the safety margin off every hard fence (`ClearsTurnObstacles`). The generator seats its arc and slides it to the turn line by a test that also blocks the room round every Go around obstacle (`IsPointBlockedForTurn`), and an arc that slides on without touching the line (seated inside a bend, sliding along the bend's heading) is seated further back (`MoveTurnInsideTurnLine`'s bound), so a turn at an obstacle just past a tree the pass goes round is made before the tree, not 127 m away. A turn lands on a straight stretch of the next pass: one whose last point is off the straight pass, on a bend round a Go around obstacle, is seated further back (`LandsOnBend`, 4 m steps, 30 m at most), as is one whose legs or exit meet an obstacle; in a turn a Go around obstacle gets a ditch's room (`GoAroundRoom`: half the track plus the larger of the Go around margin and the U-turn distance), the implement the U-turn distance off a hard one along the path and the safety margin while the rig settles on the next pass (8 m plus twice a trailed hitch). New obstacles are Hard (`Boundary.AddNewObstacle`); a field whose obstacles had no choice in its file (AgOpenGPS, or saved before) says once on opening how many now get a U-turn.
 - Obstacles chosen as *Go around* (`AtObstacle == GoRound`; a new circle's default) bend the pass round them (`ObstacleDetour`: the obstacle grown by half the implement plus the Safety margin, the offset limited to 45° and rounded to the Curve radius, both settings on the U-turn tab and in the tool profile). One `GoAroundPasses` singleton serves the pipeline (steering, display, light bar) and the U-turn planner (the current pass walked to the turn, the next pass the exit lands on), so a turn is never planned from a line the tractor does not drive; it pins the side of each obstacle while the tractor is beside it and over on that side, so a nudge or snap never rebuilds the bend across the tree (the pin is let go when the tractor gets to the other side, as a U-turn next to the tree does). An obstacle with no room on the allowed side is promoted to a U-turn obstacle for that pass (toast "No room to go around Inner N on this pass: U-turn before it"); a turn keeps the tractor out of every Go around obstacle and the implement off a hard one; and with AutoSteer on, a Go around obstacle within 10 m plus 2 s straight ahead while the tractor is more than 1.5 m off the steered line takes AutoSteer off with the alarm. The margin is never under 0.3 m on a 6 m bend and more on a tighter one (`GoAroundPasses.MinMarginFor`), and the radius never under the tractor's minimum turning radius (`GoAroundPasses.Radius`). A bend never moves the line more than two implement widths (never under 20 m) off the pass (`ObstacleDetour.MaxOffset`): a tree, or a row of trees, needing more is a U-turn obstacle for that pass. Design: `Plans/OBSTACLE_GO_AROUND_PLAN.md`; scenarios: `Tests/AgOpenWeb.Services.Tests/YouTurn/ObstacleScenarioTests.cs` (`GoAroundLegs`).
 - A pass that leaves the turn area and comes back within `UTurnCrossGap` metres (U-turn settings, "Drive across a headland gap up to"; 0 = off), across the headland only (inside the boundary, outside the headland line and every obstacle not driven through, and never through an obstacle's turn area, which is turned at as without the setting), is not turned at the gap: `GapCrossingEnd` in `YouTurnCreationService` walks on past it in both crossing searches, the turn is planned at the far end and the pass is driven through the gap with the sections off by headland section control (a narrow tip of the field, a notch in its edge). The next pass is taken from abreast of the gap's end (`gapResumeIndex`), since abreast of the tractor it can be outside the field.
+- The turn is built from the headland crossing **ahead** of the tractor (`FindTrackHeadlandIntersectionAhead`; one behind only past the last crossing). When no real turn fits, the simple fallback (a semicircle) is seated back along the pass until it keeps `UTurnDistanceFromBoundary` from the fence: to the headland crossing and up to 30 m into the field past it, starting ahead of the tractor (`SimpleFallback`, fork only: renatorgr/AgOpenWeb#130, #135). It is then used only if every point of it stays in the field, outside obstacles a turn may not drive through (`LeavesField`, #698); otherwise no turn, the creation-failed sound and "No U-turn fits inside the boundary at this end - take over manually". A hard boundary refuses a turn that would start under or behind the tractor.
+- The next pass must have room at this end: at least 20 m of it inside the cultivated area back from the end ahead (`IsPathLandable` / `LandingLength`), not just any piece of it inside the field; otherwise "End of field reached - no room on the next pass at this end" (#712). In this fork, when no pass has room but the current pass goes on inside the field past the headland ahead (a corner the headland clips off it, a gap), there is no turn and AutoSteer drives on across it: "No room to turn at this headland - driving on across it" (`GapAhead` / `DrivesOnAcrossGap`, renatorgr/AgOpenWeb#129; upstream left it out until after the v1.0 freeze).
 
 Key parameters:
 - `HeadlandDistance` - width of headland zone (green to yellow line)
@@ -503,7 +518,7 @@ U-turn planning and pass numbering keep the straight pass. Closed tracks are not
 
 ## CI/CD
 
-Three GitHub Actions workflows, split by purpose:
+GitHub Actions workflows, split by purpose:
 
 - **`build-and-release.yml`** ("CI") — on every push / PR to `main`: runs the test suite plus a
   compile-check of each platform head (Desktop, Android, iOS). No packaging, no releases.
@@ -520,11 +535,14 @@ Three GitHub Actions workflows, split by purpose:
     beta from `develop` right away (title carries build time + commit); `release` publishes
     the Release named by `release_tag`; `none` builds + uploads artifacts only (dry run).
 
-- **`field-scenarios.yml`** — nightly on `develop` (when it has a commit from the last day) or by hand:
-  runs the field scenario harness (`Tests/AgOpenWeb.FieldScenarios.Tests`, real UDP included) and keeps
-  its findings report as an artifact and in the run's summary. PR CI only builds the harness.
-- **`steer-wizard-scenarios.yml`** — the same for the steer wizard harness (`Tests/AgOpenWeb.SteerWizardScenarios.Tests`),
-  at 03:30 UTC; it also fails when its safety watch saw the wheels move when they shouldn't.
+- **Scenario harnesses, nightly** — seven workflows, each running one harness on `develop` (when it has a
+  commit from the last 25 hours) or by hand, keeping its findings report as an artifact and in the run's
+  summary; PR CI only builds them. They start just after midnight US Central, off the hour (GitHub delays
+  scheduled runs set on the hour), each on its own runner: `field-scenarios.yml` 06:07 UTC,
+  `steer-wizard-scenarios.yml` 06:11 (also fails when its safety watch saw the wheels move when they
+  shouldn't), `vehicle-tool-scenarios.yml` 06:13, `machine-module-scenarios.yml` 06:17,
+  `gps-ntrip-scenarios.yml` 06:19, `field-job-scenarios.yml` 06:23 (the longest, up to 2 h),
+  `isobus-scenarios.yml` 06:29. Each harness's `README.md` says what it covers.
 
 To cut a release (about weekly, so each one stays small): bump `sys/version.h` and the three heads' display versions, then push a tag — `git tag v26.7.x && git push origin v26.7.x`. A summary on top of the generated list goes in with `gh release edit`.
 
