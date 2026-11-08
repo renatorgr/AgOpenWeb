@@ -70,8 +70,8 @@ public partial class MainViewModel
     {
         SaveFieldBoundary(boundary, fieldPath);
         SetCurrentBoundary(boundary);
-        RefreshBoundaryList(); // clears the selection
-        if (keepSelected >= 0 && keepSelected < BoundaryItems.Count) SelectedBoundaryIndex = keepSelected;
+        RefreshBoundaryList(keepSelection: true); // no tick sees the row unselected in between
+        SelectedBoundaryIndex = keepSelected >= 0 && keepSelected < BoundaryItems.Count ? keepSelected : -1;
     }
 
     /// <summary>
