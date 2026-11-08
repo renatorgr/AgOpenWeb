@@ -517,15 +517,33 @@ window.RemoteTransport = {
       }
     }
 
+    // A link that goes quiet (the tablet out of the Wi-Fi's range) is not closed by TCP for
+    // minutes, so the page went on saying "Operator" with AutoSteer ON over a still map while
+    // the host had already stopped the steering, and another screen could take over while this
+    // one still said Operator. The host sends a Tick every 100 ms and ends a screen's control
+    // after 1.5 s without its presence (ControlAuthority's deadman), so a link quiet that long
+    // has lost control anyway: drop that socket, say Disconnected, and connect again (it waits
+    // in "connecting…" until the link is back). A shorter hiccup (Wi-Fi roaming) keeps both.
+    const QUIET_MS = 1500;
+    let lastFrameAt = 0;
     function connect() {
       status('connecting…');
-      ws = new WebSocket(url);
-      ws.binaryType = 'arraybuffer';
-      ws.onopen = () => status('connected');
-      ws.onmessage = e => { try { decode(e.data); } catch (err) { /* drop a malformed frame */ } };
-      ws.onerror = () => status('error');
-      ws.onclose = () => { status('disconnected'); if (!stopped) setTimeout(connect, 1000); };
+      const sock = ws = new WebSocket(url);
+      sock.binaryType = 'arraybuffer';
+      sock.onopen = () => { lastFrameAt = performance.now(); status('connected'); };
+      sock.onmessage = e => { lastFrameAt = performance.now(); try { decode(e.data); } catch (err) { /* drop a malformed frame */ } };
+      sock.onerror = () => status('error');
+      sock.onclose = () => { if (sock !== ws) return; status('disconnected'); if (!stopped) setTimeout(connect, 1000); };
     }
+    setInterval(() => {
+      if (stopped || !ws || ws.readyState !== WebSocket.OPEN || performance.now() - lastFrameAt < QUIET_MS) return;
+      const dead = ws;
+      ws = null; // nothing more is sent on it, and its late frames are not read
+      dead.onopen = dead.onmessage = dead.onerror = dead.onclose = null;
+      try { dead.close(); } catch (err) { /* already closing */ }
+      status('disconnected');
+      setTimeout(connect, 1000);
+    }, 100);
 
     return {
       start() { stopped = false; connect(); },
