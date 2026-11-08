@@ -1243,10 +1243,12 @@ public sealed class YouTurnStateMachine
             guidance, turn,
             ctx.UTurnSkipRows, ctx.HeadlandCalculatedWidth, ctx.HeadlandDistance);
 
-        if (result.ClearanceBlocked && effects.StatusMessage == null)
-            effects.StatusMessage = "U-turn blocked: implement would swing into a hard boundary — take over manually.";
+        // A turn refused at an obstacle names the obstacle, also when the implement's clearance
+        // refused it: "a hard boundary" sent the operator looking at the field's edge.
         if (result.Path == null && result.AtObstacle && effects.StatusMessage == null)
             effects.StatusMessage = "No room for a U-turn before the obstacle. Take over manually.";
+        if (result.ClearanceBlocked && effects.StatusMessage == null)
+            effects.StatusMessage = "U-turn blocked: implement would swing into a hard boundary — take over manually.";
         // The fallback found no turn that keeps the tractor inside the boundary (or none at all):
         // the pass is driven to its end, so the operator must know. The sound alone was all there was.
         if (result.Path == null && result.UsedFallback && effects.StatusMessage == null)

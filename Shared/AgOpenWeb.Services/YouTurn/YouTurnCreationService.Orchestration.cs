@@ -260,15 +260,21 @@ public partial class YouTurnCreationService
                     // Seated back under or behind the tractor, the turn would start at once, not
                     // at the headland (built from a crossing behind the tractor at a field's
                     // entry, it turned the tractor round there and out of the field): not engaging.
+                    // At an obstacle the result says so, and the operator is told it is the
+                    // obstacle, not the field's edge.
                     if (output.ArcStart is { } arcStart)
                     {
                         double arcAhead = (arcStart.Easting - currentPosition.Easting) * Math.Sin(headingRadians)
                                         + (arcStart.Northing - currentPosition.Northing) * Math.Cos(headingRadians);
                         if (arcAhead < MinArcStartAhead)
                         {
-                            _logger.LogWarning("[YouTurn] The turn seated back {S:F1}m to clear the hard boundary would start {D:F1}m behind the tractor; not engaging.",
-                                extraSetback, MinArcStartAhead - arcAhead);
-                            return new TurnPathResult(null, UsedFallback: false) { ClearanceBlocked = true };
+                            if (atObstacle)
+                                _logger.LogWarning("[YouTurn] The turn before obstacle {I}, seated back {S:F1}m, would start {D:F1}m behind the tractor; no turn.",
+                                    obstacle!.InnerIndex + 1, extraSetback, MinArcStartAhead - arcAhead);
+                            else
+                                _logger.LogWarning("[YouTurn] The turn seated back {S:F1}m to clear the hard boundary would start {D:F1}m behind the tractor; not engaging.",
+                                    extraSetback, MinArcStartAhead - arcAhead);
+                            return new TurnPathResult(null, UsedFallback: false) { ClearanceBlocked = true, AtObstacle = atObstacle };
                         }
                     }
                 }

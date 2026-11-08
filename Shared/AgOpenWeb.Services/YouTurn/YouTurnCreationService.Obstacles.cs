@@ -51,9 +51,13 @@ public partial class YouTurnCreationService
     /// keeps the implement, not only the tractor, the U-turn distance from a wall or a ditch; with a
     /// turn line laid for the tractor alone, a pass beside a ditch ran an 8 m boom a metre into it
     /// with no turn and no alarm. An obstacle the implement may pass over (soft) keeps the tractor's
-    /// distance alone, as the field's edge does.
+    /// distance alone, as the field's edge does. The width is the sections' total
+    /// (<see cref="ConfigurationStore.ActualToolWidth"/>), the implement the passes are laid for and
+    /// the clearance checks sweep: <c>Tool.Width</c> is a stored fallback, often the 6 m default, and
+    /// with it an 8 m sprayer's turn line stood a metre short and the pass ran its boom within half a
+    /// metre of a hard obstacle beside it.
     /// </summary>
-    internal static double HardReach(ConfigurationStore config) => config.Tool.Width / 2 + Math.Abs(config.Tool.Offset);
+    internal static double HardReach(ConfigurationStore config) => config.ActualToolWidth / 2 + Math.Abs(config.Tool.Offset);
 
     /// <summary>
     /// How far a turn keeps the tractor's pivot from a Go around obstacle: half its track and the

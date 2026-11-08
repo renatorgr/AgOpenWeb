@@ -235,6 +235,51 @@ public class ObstacleUTurnTests
     }
 
     [Test]
+    public void AHardObstacleBesideThePass_StandsOffByTheImplementsRealWidth()
+    {
+        // An 8 m implement made of sections, the stored tool width left at its 6 m default: the
+        // passes and the implement are the sections' 8 m (ActualToolWidth). A hard obstacle 4.5 m
+        // beside the pass: its turn line stands half the real width (4 m) plus the U-turn distance
+        // (1 m) off it, so the pass runs into it and the turn is made before the obstacle. Laid with
+        // the stored width (3 m + 1 m), the pass went by outside the turn line with the boom 0.5 m
+        // from the obstacle, and no turn and no alarm before it.
+        var c = ConfigurationStore.Instance;
+        c.Tool.SetSectionWidth(0, 800);
+        Assert.That(c.Tool.Width, Is.EqualTo(6.0), "the stored width is not the implement's");
+        var track = Models.Track.Track.FromABLine("AB", new Vec3(0, -200, 0), new Vec3(0, 200, 0));
+        double pass = Models.Track.PassGeometry.EdgeOffset(track, c.ActualToolWidth);
+        var boundary = new Boundary { OuterBoundary = Rect(-100, -150, 100, 150) };
+        var obstacle = Rect(pass + 4.5, ObstacleSouth, pass + 30, ObstacleNorth);
+        obstacle.AtObstacle = ObstacleAction.Turn;
+        obstacle.IsHard = true;
+        boundary.InnerBoundaries.Add(obstacle);
+
+        Assert.That(_creation.TurnObstacleAhead(boundary, pass, 0, 0, 60), Is.EqualTo(0),
+            "the obstacle is ahead of the pass for the AutoSteer-off check too");
+        var result = Turn(boundary);
+        Assert.That(result.AtObstacle, Is.True, "turned at the obstacle, not at the field's edge");
+    }
+
+    [Test]
+    public void NearAHardObstacle_ATurnThatIsNotMade_SaysItWasTheObstacle()
+    {
+        // Every distance from 0.5 to 12 m before a hard obstacle's turn line (36 m: the U-turn
+        // distance plus half the 6 m implement off the obstacle). Close to it no turn fits: seated
+        // back to keep the implement off the obstacle, the turn would start behind the tractor.
+        // That turn is not made, and it says the obstacle stopped it, not the field's edge.
+        var boundary = Field(ObstacleAction.Turn, hard: true);
+        double turnLine = ObstacleSouth - Distance - ConfigurationStore.Instance.ActualToolWidth / 2;
+        int refused = 0;
+        for (double before = 0.5; before <= 12; before += 0.5)
+        {
+            var result = Turn(boundary, northing: turnLine - before);
+            Assert.That(result.AtObstacle, Is.True, $"{before:F1} m before the turn line");
+            if (result.Path == null) refused++;
+        }
+        Assert.That(refused, Is.GreaterThan(0), "close to the obstacle no turn fits");
+    }
+
+    [Test]
     public void AChangedChoiceOnTheSameBoundary_IsSeenByTheNextTurn()
     {
         var boundary = Field(ObstacleAction.Turn);
@@ -351,6 +396,20 @@ public class ObstacleUTurnDriveTests
         var effects = Tick(5, arcStart.Northing + 1, 0);
 
         Assert.That(_turn.IsExecuting, Is.False, "no turn from here: it would swing into the obstacle");
+        Assert.That(effects.StatusMessage, Does.Contain("obstacle"));
+    }
+
+    [Test]
+    public void NoRoomBeforeAHardObstacle_TheOperatorIsToldItIsTheObstacle()
+    {
+        // 3.5 m before a hard obstacle's turn line (36 m): seated back to keep the implement off the
+        // obstacle, the turn would start behind the tractor, so it is not made. The message names
+        // the obstacle; "a hard boundary" sent the operator looking at the field's edge.
+        _boundary.InnerBoundaries[0].IsHard = true;
+
+        var effects = Tick(3, 32.5, 0);
+
+        Assert.That(_turn.TurnPath, Is.Null);
         Assert.That(effects.StatusMessage, Does.Contain("obstacle"));
     }
 
