@@ -65,8 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
-      - uses: ./.github/actions/sharpisoterm
+      - uses: ./.github/actions/sharpisoterm-cache
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -171,8 +170,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
-      - uses: ./.github/actions/sharpisoterm
+      - uses: ./.github/actions/sharpisoterm-cache
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -197,8 +195,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
-      - uses: ./.github/actions/sharpisoterm
+      - uses: ./.github/actions/sharpisoterm-cache
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -240,8 +237,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
-      - uses: ./.github/actions/sharpisoterm
+      - uses: ./.github/actions/sharpisoterm-cache
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -258,8 +254,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
-      - uses: ./.github/actions/sharpisoterm
+      - uses: ./.github/actions/sharpisoterm-cache
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -300,8 +295,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # renatorgr fork: SharpIsoTerm from the Actions cache, not a fresh GitHub download
-      - uses: ./.github/actions/sharpisoterm
+      - uses: ./.github/actions/sharpisoterm-cache
 
       - name: Select Xcode 26.4.1
         # The .NET for iOS workload is pinned to 26.4.x via dotnet-ios-rollback.json to match
