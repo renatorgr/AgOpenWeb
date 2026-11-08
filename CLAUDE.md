@@ -217,7 +217,7 @@ public class Track
 AgOpenWeb may use different/improved formats from AgOpenGPS when it benefits code simplicity or features. Provide **one-way import** from AgOpenGPS formats rather than maintaining full backwards compatibility.
 
 - **Formats**: a field is `field.geojson` (origin, boundaries, headland, tracks, flags, headland lines, background image placement) beside `background.png`, `contours.geojson`, `recorded-paths.geojson` and `elevation.csv`; a job's coverage is world-anchored tiles under `jobs/<task>/coverage/`. Profiles are JSON; the spec for other programs is `Docs/FIELD_FILE_FORMATS.md` (keep it in step with the code).
-- **Migration**: AgOpenGPS files found in a field folder are imported once (on open) and **deleted**; AgOpenWeb never writes AgOpenGPS formats. No compatibility code for files from older AgOpenWeb builds (no installed base yet). See `Plans/Completed/FILE_FORMAT_MODERNIZATION_PLAN.md`.
+- **Migration**: AgOpenGPS files found in a field folder are imported once (on open) and **deleted**; AgOpenWeb never writes AgOpenGPS formats. AgOpenGPS 6.8.2+ profiles copied into the data folder (`VehicleProfiles/`, `ToolProfiles/`, `Environment/environment.xml`) and AgIO's NTRIP caster (`AgIO/*.xml`) are converted at start the same way (`AgOpenGpsProfileImport`, one mapping in `AgOpenGpsSettings`; `NtripProfileService.ImportAgIoCastersAsync`), a profile of the same name left alone. No compatibility code for files from older AgOpenWeb builds (no installed base yet). See `Plans/Completed/FILE_FORMAT_MODERNIZATION_PLAN.md`.
 
 ## Technology Stack
 
@@ -470,7 +470,7 @@ dotnet run --project TestRunner/TestRunner.csproj
 - `AgOpenWeb.SteerWizardScenarios.Tests` - end-to-end steer wizard scenarios: the whole backend in-process, an emulated AiO steer module (firmware P controller, WAS formula, locks, either motor wiring) and a moving tractor, a careful and a careless operator, a safety watch on the wheels at 50 Hz, a findings report; about 10 minutes, so CI only builds it and `steer-wizard-scenarios.yml` runs it nightly (its `README.md`)
 - `AgOpenWeb.MachineModuleScenarios.Tests` - an emulated Sprayer_ESP32 machine module on the real UDP: sections vs valves, settings reaching the module, restarts and outages (`machine-module-scenarios.yml`)
 - `AgOpenWeb.GpsNtripScenarios.Tests` - receivers, sentence families and an NTRIP caster on the loopback: corrections, network changes, dual heading (`gps-ntrip-scenarios.yml`; one scenario needs Linux's 127.0.0.2)
-- `AgOpenWeb.FieldJobScenarios.Tests` - whole jobs on real fields with AutoSteer, U-turns and auto sections, measuring where product really went on a 0.2 m grid (`field-job-scenarios.yml`, up to 2 h)
+- `AgOpenWeb.FieldJobScenarios.Tests` - whole jobs on real fields with AutoSteer, U-turns and auto sections, measuring where product really went on a 0.2 m grid (`field-job-scenarios.yml`, up to 2 h); its `PathJobScenarioTests` do the same on curves, the boundary as a loop, a water pivot, contour and a recorded path (`path-job-scenarios.yml`, about 1 h)
 - `AgOpenWeb.IsobusScenarios.Tests` - an emulated AOG-TaskController and its implements (`isobus-scenarios.yml`)
 - `AgOpenWeb.WebClientScenarios.Tests` - the real web client in headless Chromium (Playwright) on the screens a farm uses (tablets, a 720p PC, a 5" screen, a phone), a second screen as observer, and the operator's screen going away while working (tab closed, Wi-Fi silent or cut, tablet asleep, Free Drive, a section on by hand), read at the module port (`web-client-scenarios.yml`)
 
@@ -543,7 +543,7 @@ GitHub Actions workflows, split by purpose:
   `steer-wizard-scenarios.yml` 06:11 (also fails when its safety watch saw the wheels move when they
   shouldn't), `vehicle-tool-scenarios.yml` 06:13, `machine-module-scenarios.yml` 06:17,
   `gps-ntrip-scenarios.yml` 06:19, `field-job-scenarios.yml` 06:23 (the longest, up to 2 h),
-  `isobus-scenarios.yml` 06:29, `web-client-scenarios.yml` (by hand here; upstream's bug report Worker starts it nightly). Each harness's `README.md` says what it covers.
+  `isobus-scenarios.yml` 06:29, `path-job-scenarios.yml` 06:37, `web-client-scenarios.yml` (by hand here; upstream's bug report Worker starts it nightly). Each harness's `README.md` says what it covers.
 
 To cut a release (about weekly, so each one stays small): bump `sys/version.h` and the three heads' display versions, then push a tag — `git tag v26.7.x && git push origin v26.7.x`. A summary on top of the generated list goes in with `gh release edit`.
 
