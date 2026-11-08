@@ -476,9 +476,16 @@ public partial class YouTurnCreationService
         double widthMinusOverlap = toolWidth - config.Tool.Overlap;
         double offsetDistance = Models.Track.PassGeometry.Offset(track, guidance.HowManyPathsAway, widthMinusOverlap, guidance.NudgeOffset,
             Models.Track.PassGeometry.ToolShift(config.Tool.Offset, guidance.IsHeadingSameWay));
-        List<Vec3> offsetCurve = Math.Abs(offsetDistance) < 0.01
-            ? new List<Vec3>(basePoints)
-            : CurveProcessing.CreateOffsetCurve(basePoints, offsetDistance);
+        // The pass as the shared routine builds it (CurveProcessing.CurvePass / ExtendPass), with
+        // the U-turn's own geometry: no turn-radius limit, the loop not joined at its seam.
+        var pass = CurveProcessing.CurvePass(basePoints, offsetDistance);
+        if (pass.Points.Count < 2)
+        {
+            // No pass here: the offset removed all of it (#694); nothing to turn from.
+            _logger.LogDebug("[YouTurn] Pass {Path} has no line (curve too tight)", guidance.HowManyPathsAway);
+            return null;
+        }
+        List<Vec3> offsetCurve = pass.Points;
         var bend = _goAround.For(track, offsetDistance, offsetCurve, boundary);
         if (bend != null && bend.GoneRound.Count > 0) offsetCurve = bend.Points;
         IReadOnlyList<int> promoted = bend?.Blocked ?? Array.Empty<int>();
@@ -535,8 +542,8 @@ public partial class YouTurnCreationService
         // The tangent extension is added on TOP only so FindCurveTurnPoint can see the curve
         // cross the boundary (a bare offset curve stops at the field edge → generator fails →
         // straight fallback). The offset pass (bent round its Go around obstacles) is built
-        // above, before the turn lines.
-        List<Vec3> currentCurvePoints = CurveProcessing.ExtendCurveEnds(offsetCurve);
+        // above, before the turn lines; it runs on only past the ends the offset kept (#694).
+        List<Vec3> currentCurvePoints = CurveProcessing.ExtendPass((offsetCurve, pass.PercentRemoved, pass.StartKept, pass.EndKept));
 
         int currentLocationIndex = 0;
         double minDistSq = double.MaxValue;
@@ -696,6 +703,7 @@ public partial class YouTurnCreationService
         List<Vec3> searchPoints = Math.Abs(offsetDistance) < 0.01
             ? track.Points
             : CurveProcessing.CreateOffsetCurve(track.Points, offsetDistance);
+        if (searchPoints.Count < 2) return track.Points[0].Heading; // no pass here (#694)
 
         int nearestIdx = 0;
         double minDistSq = double.MaxValue;
@@ -762,6 +770,8 @@ public partial class YouTurnCreationService
         else
         {
             var offsetPoints = CurveProcessing.CreateOffsetCurve(track.Points, offsetDistance);
+            if (offsetPoints.Count < 2) // no pass here (#694)
+                return new Vec2(vehiclePosition.Easting, vehiclePosition.Northing);
             currentOffsetTrack = new Models.Track.Track
             {
                 Name = $"Current path {guidance.HowManyPathsAway}",
