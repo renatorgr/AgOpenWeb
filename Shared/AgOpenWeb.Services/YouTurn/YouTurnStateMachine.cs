@@ -1137,8 +1137,15 @@ public sealed class YouTurnStateMachine
             if (DrivesOnAcrossGap(in ctx, track, abHeading, guidance, turn, effects)) return;
             // A pass inside the field somewhere, but with no room to land on at this end (a
             // corner pass, the far lobe of an hourglass): the operator takes over here too.
-            bool roomSomewhere = !steppedBack && _pathing.WouldNextLineBeInsideBoundary(
-                track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, ctx.UTurnSkipRows, keepPositive).isInside;
+            // Stepping one way across the field, only the pass on that side counts: the one on
+            // the other side was just worked. Said "End of field reached" for a next pass the
+            // headland cuts across at this end, with a fifth of the field left (J14, J16, J19).
+            int step = ctx.UTurnSkipRows + 1;
+            bool roomSomewhere = keepPositive is { } way && guidance.HowManyPathsAway == _lastStepPass
+                && turn.NextUTurnDirectionLeftOverride is null
+                ? _pathing.IsPathInsideCultivated(track, abHeading, guidance.HowManyPathsAway + (way ? step : -step), ctx.Boundary, ctx.HeadlandLine)
+                : _pathing.WouldNextLineBeInsideBoundary(
+                    track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, ctx.UTurnSkipRows, keepPositive).isInside;
             _logger.LogDebug("[YouTurn] Next line would be outside boundary{Room} - stopping U-turns",
                 roomSomewhere ? " at this end" : "");
             effects.StatusMessage = roomSomewhere ? "End of field reached - no room on the next pass at this end" : "End of field reached";
