@@ -2162,14 +2162,11 @@ public partial class MainViewModel : ObservableObject
         // master back on at the next fix, right after the sections go off below.
         EndRecordedPathWithField();
 
-        // The sections too, as AgOpenGPS JobClose turns the master Auto and Manual buttons and
-        // every section off. Left as they were, sections switched on by hand kept the module's
-        // section bits set (PGN 239/229) after the close, spraying on with no field open, and
-        // the section bar and the Manual button are hidden without a field, so the operator had
-        // nothing to switch them off with. Opening another field closes this one first, so it
-        // covers that too.
-        if (AllSectionsAndButtonsOff())
-            _audioService.Play(SoundEffect.SectionOff);
+        // The sections too, switched on by hand included: with no field the section bar is
+        // gone, so the operator could not switch them off, and the module went on getting
+        // the on bits every tick (PGN 239, 229). Opening another field closes this one here
+        // first, so that is covered too (web client flows F6, F7).
+        SwitchAllSectionsOff();
 
         // A boundary being recorded and a line being drawn, driven or recorded belong to this
         // field: end them unsaved. Left running, their points went on into the next field and

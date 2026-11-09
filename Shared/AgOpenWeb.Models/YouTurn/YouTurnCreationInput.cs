@@ -104,13 +104,18 @@ namespace AgOpenWeb.Models.YouTurn
         public int TurnStartOffset { get; set; }  // How far before/after boundary to start turn
 
         /// <summary>
-        /// Pre-calculated turn offset in metres: the tractor's sideways move to the line steered
-        /// on the next pass, towards the turn side. Negative when a tool offset over half the pass
-        /// spacing puts that line on the other side of the turn's direction (AgOpenGPS's signed
-        /// turnOffset). When set (not 0), this value is used directly instead of calculating from
-        /// RowSkipsWidth, so the U-turn arc matches the cyan next-track line exactly.
+        /// Pre-calculated turn offset in meters: the tractor's sideways move to the next line,
+        /// signed in the turn direction (<see cref="IsTurnLeft"/>), as AgOpenGPS's turnOffset.
+        /// Negative when a tool offset over half the pass spacing puts the tractor's next line on
+        /// the other side; the arc then goes round the other way (<see cref="ArcTurnLeft"/>).
+        /// When set (non-zero), this value is used instead of calculating from RowSkipsWidth.
+        /// This ensures the U-turn arc matches the cyan next-track line exactly.
         /// </summary>
         public double TurnOffset { get; set; }
+
+        /// <summary>The side the arc goes to: <see cref="IsTurnLeft"/> (which also picks the
+        /// next pass), the other side when <see cref="TurnOffset"/> is negative.</summary>
+        public bool ArcTurnLeft => IsTurnLeft ^ (TurnOffset < 0);
 
         /// <summary>
         /// How many paths away from current line (negative or positive).

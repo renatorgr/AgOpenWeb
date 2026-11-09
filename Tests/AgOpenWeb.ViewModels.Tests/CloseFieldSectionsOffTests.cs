@@ -4,6 +4,7 @@
 
 using AgOpenWeb.Models;
 using AgOpenWeb.Models.Configuration;
+using AgOpenWeb.Models.State;
 using AgOpenWeb.Services;
 using AgOpenWeb.Services.GeoJson;
 using AgOpenWeb.Services.Interfaces;
@@ -12,11 +13,11 @@ using NSubstitute;
 namespace AgOpenWeb.ViewModels.Tests;
 
 /// <summary>
-/// Closing a field switches the master Auto and Manual buttons and every section off, as
-/// AgOpenGPS JobClose does. Left on, sections switched on by hand kept the module's section
-/// bits set after the close, spraying on with no field open, while the section bar and the
-/// Manual button are hidden without a field, so the operator had nothing to switch them off
-/// with. Opening another field closes the open one first, so the same code covers that.
+/// Closing the field switches every section off, the ones switched on by hand too, as
+/// AgOpenGPS's JobClose does (manual and auto off, AllSectionsAndButtonsToState(Off)). Only
+/// AutoSteer went off: sections on in Manual kept reaching the module every tick, and with no
+/// field the section bar was gone, so the operator could not switch them off (web client
+/// flows F6; F7 opens another field, which closes this one the same way).
 /// </summary>
 [TestFixture]
 public class CloseFieldSectionsOffTests
@@ -33,7 +34,6 @@ public class CloseFieldSectionsOffTests
         _b = new MainViewModelBuilder { FieldService = new FieldService() };
         _b.SettingsService.Settings.Returns(new AppSettings { FieldsDirectory = _root });
         _vm = _b.Build();
-
         var dir = Path.Combine(_root, "F");
         Directory.CreateDirectory(dir);
         var field = new Field { Name = "F", DirectoryPath = dir, Origin = new Position { Latitude = 52, Longitude = 5 } };
@@ -49,73 +49,40 @@ public class CloseFieldSectionsOffTests
         ConfigurationStore.SetInstance(new ConfigurationStore());
     }
 
-    private void Sections(params SectionButtonState[] buttons)
-    {
-        var states = new SectionControlState[buttons.Length];
-        for (int i = 0; i < buttons.Length; i++)
-            states[i] = new SectionControlState { Index = i, ButtonState = buttons[i], IsOn = buttons[i] == SectionButtonState.On };
-        _b.SectionControlService.SectionStates.Returns(states);
-    }
-
     [Test]
-    public async Task ClosingTheField_WithManualOn_SwitchesTheMastersAndEverySectionOff()
+    public async Task Sections_on_in_manual_go_off_with_the_field()
     {
         _vm.IsManualSectionMode = true;
-        Sections(SectionButtonState.On, SectionButtonState.On, SectionButtonState.On);
+        _b.SectionControlService.ClearReceivedCalls();
 
         await _vm.CloseFieldAsync();
 
         Assert.Multiple(() =>
         {
-            Assert.That(_vm.IsManualSectionMode, Is.False);
-            Assert.That(_vm.IsSectionMasterOn, Is.False);
-            Assert.That(_vm.State.Operation.IsSectionManualAll, Is.False);
-            Assert.That(_vm.State.Operation.IsSectionAutoMaster, Is.False);
-            Assert.That(_vm.IsFieldOpen, Is.False);
+            Assert.That(_vm.IsManualSectionMode, Is.False, "Manual off");
+            Assert.That(_vm.IsSectionMasterOn, Is.False, "Auto off");
         });
-        _b.SectionControlService.Received(1).SetAllSections(SectionButtonState.Off);
+        _b.SectionControlService.Received().SetAllSections(SectionButtonState.Off);
     }
 
     [Test]
-    public async Task ClosingTheField_WithTheAutoMasterOn_SwitchesItOff()
+    public async Task A_section_on_by_its_own_button_goes_off_with_the_field()
     {
-        _vm.IsSectionMasterOn = true;
-        Sections(SectionButtonState.Auto, SectionButtonState.Auto);
-
-        await _vm.CloseFieldAsync();
-
-        Assert.That(_vm.IsSectionMasterOn, Is.False);
-        _b.SectionControlService.Received(1).SetAllSections(SectionButtonState.Off);
-    }
-
-    // #316: a section switched on by its own button or hotkey, with neither master on.
-    [Test]
-    public async Task ClosingTheField_SwitchesOffASectionOnByItsOwnButton()
-    {
-        Sections(SectionButtonState.Off, SectionButtonState.On);
+        var states = new[] { new SectionControlState { Index = 0 }, new SectionControlState { Index = 1 } };
+        states[1].ButtonState = SectionButtonState.On;
+        _b.SectionControlService.SectionStates.Returns(states);
         Assume.That(_vm.IsSectionMasterOn || _vm.IsManualSectionMode, Is.False);
+        _b.SectionControlService.ClearReceivedCalls();
 
         await _vm.CloseFieldAsync();
 
-        _b.SectionControlService.Received(1).SetAllSections(SectionButtonState.Off);
+        _b.SectionControlService.Received().SetAllSections(SectionButtonState.Off);
     }
 
     [Test]
-    public async Task ClosingTheField_WithNothingOn_LeavesTheSectionsAlone()
+    public async Task With_everything_off_closing_changes_nothing_in_the_sections()
     {
-        Sections(SectionButtonState.Off, SectionButtonState.Off);
-
-        await _vm.CloseFieldAsync();
-
-        _b.SectionControlService.DidNotReceive().SetAllSections(Arg.Any<SectionButtonState>());
-    }
-
-    [Test]
-    public async Task ClosingWithNoFieldOpen_WithNothingOn_LeavesTheSectionsAlone()
-    {
-        _vm.ActiveField = null;
-        _vm.IsFieldOpen = false;
-        Sections(SectionButtonState.Off);
+        _b.SectionControlService.ClearReceivedCalls();
 
         await _vm.CloseFieldAsync();
 
