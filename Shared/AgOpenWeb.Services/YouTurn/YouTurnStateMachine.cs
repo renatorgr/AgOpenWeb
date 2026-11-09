@@ -83,6 +83,11 @@ public sealed class YouTurnStateMachine
     private string? _lastStepTrack;
     private int _lastStepPass; // the pass that turn landed on
 
+    /// <summary>Which way the last turn on <paramref name="track"/> stepped (true: to a higher
+    /// pass number), or null before the first turn on it.</summary>
+    private bool? LastStepDirection(Models.Track.Track track) =>
+        _lastStep != 0 && _lastStepTrack == track.Name ? _lastStep > 0 : null;
+
     // The obstacles as they were when the planned turn was made (ObstacleStamp). A turn is
     // planned up to 2 km ahead, so one is nearly always planned: an obstacle changed to U-turn
     // or added after that was driven through, and one changed to drive through still turned.
@@ -988,7 +993,9 @@ public sealed class YouTurnStateMachine
         bool positiveOffset = pathDiff > 0;
         turn.IsTurnLeft = positiveOffset ^ guidance.IsHeadingSameWay;
         turn.WasHeadingSameWayAtTurnStart = guidance.IsHeadingSameWay;
-        turn.NextTrackTurnOffset = Math.Abs(pathDiff * widthMinusOverlap + 2 * toolShift);
+        // Signed towards the turn side, as ComputeNextTrack: negative when twice the tool shift
+        // outweighs the passes apart and the turn ends on the other side of its direction.
+        turn.NextTrackTurnOffset = Math.Abs(pathDiff) * widthMinusOverlap + 2 * toolShift * (positiveOffset ? 1 : -1);
 
         var refA = track.Points[0];
         var refB = track.Points[track.Points.Count - 1];
@@ -1041,8 +1048,12 @@ public sealed class YouTurnStateMachine
         int baseWidth = Math.Max(2, ctx.UTurnSkipRows + 1); // AgOpenGPS "at least 1" row skipped
         if (turn.AltSign == 0 || turn.AltBaseWidth != baseWidth)
         {
+            // The pattern sets off the way the turns have been stepping across the field, as the
+            // plain turns do (#523) and as AgOpenGPS does, whose isTurnLeft carries over from the
+            // last turn. From the pass number's sign, skip rows switched on after a few turns sent
+            // the next turn back over the worked passes (SKIP-TURNS-BACK).
             var (_, positive) = _pathing.WouldNextLineBeInsideBoundary(
-                track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, baseWidth - 1, null, ctx.CurrentPosition, turn.DistanceToHeadland);
+                track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, baseWidth - 1, LastStepDirection(track), ctx.CurrentPosition, turn.DistanceToHeadland);
             turn.AltSign = positive ? 1 : -1;
             turn.AltBaseWidth = turn.AltWidth = baseWidth;
             turn.AltTurnSkips = baseWidth * 2 - 1;
@@ -1102,7 +1113,7 @@ public sealed class YouTurnStateMachine
         YouTurnWorkingState turn,
         YouTurnEffects effects)
     {
-        bool? keepPositive = _lastStep != 0 && _lastStepTrack == track.Name ? _lastStep > 0 : null;
+        bool? keepPositive = LastStepDirection(track);
         var (nextLineInside, positiveDirection) = _pathing.WouldNextLineBeInsideBoundary(
             track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, ctx.UTurnSkipRows, keepPositive, currentPosition, turn.DistanceToHeadland);
 
@@ -1126,8 +1137,15 @@ public sealed class YouTurnStateMachine
             if (DrivesOnAcrossGap(in ctx, track, abHeading, guidance, turn, effects)) return;
             // A pass inside the field somewhere, but with no room to land on at this end (a
             // corner pass, the far lobe of an hourglass): the operator takes over here too.
-            bool roomSomewhere = !steppedBack && _pathing.WouldNextLineBeInsideBoundary(
-                track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, ctx.UTurnSkipRows, keepPositive).isInside;
+            // Stepping one way across the field, only the pass on that side counts: the one on
+            // the other side was just worked. Said "End of field reached" for a next pass the
+            // headland cuts across at this end, with a fifth of the field left (J14, J16, J19).
+            int step = ctx.UTurnSkipRows + 1;
+            bool roomSomewhere = keepPositive is { } way && guidance.HowManyPathsAway == _lastStepPass
+                && turn.NextUTurnDirectionLeftOverride is null
+                ? _pathing.IsPathInsideCultivated(track, abHeading, guidance.HowManyPathsAway + (way ? step : -step), ctx.Boundary, ctx.HeadlandLine)
+                : _pathing.WouldNextLineBeInsideBoundary(
+                    track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, ctx.UTurnSkipRows, keepPositive).isInside;
             _logger.LogDebug("[YouTurn] Next line would be outside boundary{Room} - stopping U-turns",
                 roomSomewhere ? " at this end" : "");
             effects.StatusMessage = roomSomewhere ? "End of field reached - no room on the next pass at this end" : "End of field reached";

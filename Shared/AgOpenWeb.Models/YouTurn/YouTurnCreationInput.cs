@@ -104,9 +104,11 @@ namespace AgOpenWeb.Models.YouTurn
         public int TurnStartOffset { get; set; }  // How far before/after boundary to start turn
 
         /// <summary>
-        /// Pre-calculated turn offset in meters (perpendicular distance to next track).
-        /// When set (> 0), this value is used directly instead of calculating from RowSkipsWidth.
-        /// This ensures the U-turn arc matches the cyan next-track line exactly.
+        /// Pre-calculated turn offset in metres: the tractor's sideways move to the line steered
+        /// on the next pass, towards the turn side. Negative when a tool offset over half the pass
+        /// spacing puts that line on the other side of the turn's direction (AgOpenGPS's signed
+        /// turnOffset). When set (not 0), this value is used directly instead of calculating from
+        /// RowSkipsWidth, so the U-turn arc matches the cyan next-track line exactly.
         /// </summary>
         public double TurnOffset { get; set; }
 
