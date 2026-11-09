@@ -293,7 +293,8 @@ public sealed class YouTurnStateMachine
                 _logger.LogDebug("[YouTurn] Triggered on the path, {Dist:F1}m from the arc", distToArcStart);
             }
             else if (isAlignedWithABLine && IsHeadingAlong(turn.TurnPath, headingRadians)
-                     && IsBehind(arcStart, currentPosition, headingRadians))
+                     && IsBehind(arcStart, currentPosition, headingRadians)
+                     && IsBehindAlongTrack(track, arcStart, currentPosition, guidance.IsHeadingSameWay))
             {
                 // The arc already begins behind the tractor, so this path cannot be joined.
                 // Turn from here instead, the way a manual turn does; when there is no room
@@ -856,6 +857,32 @@ public sealed class YouTurnStateMachine
         return (position.Easting - path[0].Easting) * dx + (position.Northing - path[0].Northing) * dy >= 0;
     }
 
+    /// <summary>
+    /// On an open curve, true when <paramref name="point"/> is not ahead of the tractor along the
+    /// track (the way it drives it): the nearest point of the track to it comes no later than the
+    /// tractor's. Behind the tractor in a straight line is not enough on a curve that comes back
+    /// past itself: a boundary curve made the long way round leaves the opening between its ends
+    /// at A on the line it comes in on at B, the same way, so a turn planned at B lies straight
+    /// behind a tractor setting off from A, a whole pass ahead along the track (#694). AB lines
+    /// and closed loops: true (the straight-line test decides).
+    /// </summary>
+    internal static bool IsBehindAlongTrack(Models.Track.Track track, Vec3 point, Position position, bool headingSameWay)
+    {
+        var pts = track.Points;
+        if (pts.Count <= 2 || track.IsClosed) return true;
+        int pointIdx = 0, tractorIdx = 0;
+        double bestP = double.MaxValue, bestT = double.MaxValue;
+        for (int i = 0; i < pts.Count; i++)
+        {
+            double pe = pts[i].Easting - point.Easting, pn = pts[i].Northing - point.Northing;
+            double te = pts[i].Easting - position.Easting, tn = pts[i].Northing - position.Northing;
+            double p2 = pe * pe + pn * pn, t2 = te * te + tn * tn;
+            if (p2 < bestP) { bestP = p2; pointIdx = i; }
+            if (t2 < bestT) { bestT = t2; tractorIdx = i; }
+        }
+        return headingSameWay ? pointIdx <= tractorIdx : pointIdx >= tractorIdx;
+    }
+
     /// <summary>True when <paramref name="point"/> lies behind the tractor along its heading.</summary>
     internal static bool IsBehind(Vec3 point, Position position, double headingRadians)
     {
@@ -988,7 +1015,8 @@ public sealed class YouTurnStateMachine
         bool positiveOffset = pathDiff > 0;
         turn.IsTurnLeft = positiveOffset ^ guidance.IsHeadingSameWay;
         turn.WasHeadingSameWayAtTurnStart = guidance.IsHeadingSameWay;
-        turn.NextTrackTurnOffset = Math.Abs(pathDiff * widthMinusOverlap + 2 * toolShift);
+        // Signed in the turn direction, as in YouTurnPathingService.
+        turn.NextTrackTurnOffset = (pathDiff * widthMinusOverlap + 2 * toolShift) * (positiveOffset ? 1 : -1);
 
         var refA = track.Points[0];
         var refB = track.Points[track.Points.Count - 1];
@@ -1041,8 +1069,12 @@ public sealed class YouTurnStateMachine
         int baseWidth = Math.Max(2, ctx.UTurnSkipRows + 1); // AgOpenGPS "at least 1" row skipped
         if (turn.AltSign == 0 || turn.AltBaseWidth != baseWidth)
         {
+            // Start the pattern the way the turns have been going, away from the worked passes,
+            // as normal turns do (#523) and AgOpenGPS's alternating isTurnLeft carries on. Left
+            // to the pass number's sign it went back over worked passes (turn intervention T4).
+            bool? keepPositive = _lastStep != 0 && _lastStepTrack == track.Name ? _lastStep > 0 : null;
             var (_, positive) = _pathing.WouldNextLineBeInsideBoundary(
-                track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, baseWidth - 1, null, ctx.CurrentPosition, turn.DistanceToHeadland);
+                track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, baseWidth - 1, keepPositive, ctx.CurrentPosition, turn.DistanceToHeadland);
             turn.AltSign = positive ? 1 : -1;
             turn.AltBaseWidth = turn.AltWidth = baseWidth;
             turn.AltTurnSkips = baseWidth * 2 - 1;
