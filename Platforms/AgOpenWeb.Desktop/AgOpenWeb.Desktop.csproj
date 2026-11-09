@@ -12,9 +12,11 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
-  <!-- Embed git hash + dirty flag into AssemblyInformationalVersion (e.g. "26.2.0+9e92e46" or "26.2.0+9e92e46-dirty") -->
+  <!-- Embed git hash + dirty flag into AssemblyInformationalVersion (e.g. "26.2.0+9e92e46" or "26.2.0+9e92e46-dirty").
+       exclude="*" keeps tags out of it: release tags are lightweight, so a full local clone otherwise
+       showed the last annotated one ("v26.6.76-1502-gdabadaa9") next to a newer version. -->
   <Target Name="SetGitHash" BeforeTargets="InitializeSourceControlInformation;CoreCompile">
-    <Exec Command="git describe --always --dirty" ConsoleToMsBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
+    <Exec Command="git describe --always --dirty --exclude=&quot;*&quot;" ConsoleToMsBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
       <Output TaskParameter="ConsoleOutput" PropertyName="SourceRevisionId" />
     </Exec>
     <!-- Write hash to a temp file so MSBuild detects changes and doesn't skip CoreCompile -->
