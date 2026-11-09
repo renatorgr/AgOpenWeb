@@ -15,6 +15,7 @@ public class SectionControlTests
     public void ToggleSectionMasterCommand_TogglesSectionMasterOn()
     {
         var vm = new MainViewModelBuilder().Build();
+        vm.IsFieldOpen = true; // the section buttons need an open field
 
         bool initialState = vm.IsSectionMasterOn;
 
@@ -28,6 +29,7 @@ public class SectionControlTests
     {
         var builder = new MainViewModelBuilder();
         var vm = builder.Build();
+        vm.IsFieldOpen = true;
 
         // Execute with section index 0 (string param, matching real usage)
         Assert.DoesNotThrow(() => vm.ToggleSectionCommand!.Execute("0"));

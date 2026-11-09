@@ -981,6 +981,12 @@ public partial class MainViewModel
         // Section control commands
         ToggleManualModeCommand = new RelayCommand(() =>
         {
+            // The section buttons need an open field, as AgOpenGPS's button panel does (disabled
+            // with no job, so the hotkeys' and the work switch's PerformClick do nothing). With no
+            // field the section bar is hidden: a section switched on by the M, N or 1-8 keys or by
+            // lowering the implement would have sprayed with nothing on the screen to turn it off.
+            if (!IsFieldOpen) return;
+
             IsManualSectionMode = !IsManualSectionMode;
             if (IsManualSectionMode)
                 IsSectionMasterOn = false;
@@ -998,6 +1004,7 @@ public partial class MainViewModel
 
         ToggleSectionMasterCommand = new RelayCommand(() =>
         {
+            if (!IsFieldOpen) return; // as ToggleManualModeCommand
             IsSectionMasterOn = !IsSectionMasterOn;
             if (IsSectionMasterOn)
                 IsManualSectionMode = false;
@@ -1014,6 +1021,7 @@ public partial class MainViewModel
         ToggleSectionCommand = new RelayCommand<object>(param =>
         {
             if (param == null) return;
+            if (!IsFieldOpen) return; // as ToggleManualModeCommand
 
             int sectionIndex;
             if (param is int intVal)
@@ -2146,6 +2154,7 @@ public partial class MainViewModel
     /// </summary>
     public void ToggleZone(int zone)
     {
+        if (!IsFieldOpen) return; // as ToggleManualModeCommand
         var tool = ConfigStore.Tool;
         int zones = Math.Clamp(tool.Zones, 1, 8);
         if (zone < 1 || zone > zones) return;
