@@ -965,13 +965,6 @@ public partial class YouTurnCreationService
 
         const double pointSpacing = 0.5;
         double turnOffset = turn.NextTrackTurnOffset;
-        // A negative offset (a tool offset over half the pass spacing) ends on the other side of
-        // the turn's direction: the same semicircle, the other way round.
-        if (turnOffset < 0)
-        {
-            turnLeft = !turnLeft;
-            turnOffset = -turnOffset;
-        }
 
         if (turnOffset < 0.1)
         {
@@ -1240,17 +1233,13 @@ public partial class YouTurnCreationService
         double trackWidth = config.ActualToolWidth - config.Tool.Overlap;
         // From the line steered now to the one steered on the next pass: the passes apart, and
         // with a tool offset twice the offset more or less, since the next pass is driven the
-        // other way (AgOpenGPS BuildManualYouTurn: rowSkipsWidth ± tool.offset * 2). Signed
-        // towards the turn side, as there: negative when the offset outweighs the passes and the
-        // next line is on the other side of the turn's direction; the goal below takes the sign.
-        // Zero, an offset of exactly half the spacing, is a turn onto the line being driven.
+        // other way (AgOpenGPS BuildManualYouTurn: rowSkipsWidth ± tool.offset * 2).
         int side = (turnLeft ^ guidance.IsHeadingSameWay) ? 1 : -1;
         double toolShift = Models.Track.PassGeometry.ToolShift(config.Tool.Offset, guidance.IsHeadingSameWay);
         double turnOffset = trackWidth * (uTurnSkipRows + 1) + 2 * toolShift * side;
-        if (Math.Abs(turnOffset) < 0.1)
+        if (turnOffset < 0.1)
         {
-            _logger.LogWarning("[ManualYouTurn] The next pass is steered on this same line (width {W:F2} m, tool offset {O:F2} m) - no turn",
-                trackWidth, config.Tool.Offset);
+            _logger.LogWarning("[ManualYouTurn] Tool width is zero — cannot compute offset");
             return path;
         }
 
@@ -1291,8 +1280,8 @@ public partial class YouTurnCreationService
         if (TryProjectOntoPass(targetPass, start, out double passE, out double passN))
         {
             double across = (passE - start.Easting) * Math.Sin(perpAngle) + (passN - start.Northing) * Math.Cos(perpAngle);
-            // Only a pass on the side the turn ends, at least half a pass over.
-            if (across * Math.Sign(turnOffset) >= trackWidth / 2)
+            // Only a pass on the turn side, at least half a pass over.
+            if (across >= trackWidth / 2)
             {
                 goal.Easting = passE;
                 goal.Northing = passN;

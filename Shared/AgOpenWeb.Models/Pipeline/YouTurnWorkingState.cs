@@ -56,10 +56,8 @@ public class YouTurnWorkingState
     // Stored because IsHeadingSameWay on GuidanceState flips 180° once the turn completes.
     public bool WasHeadingSameWayAtTurnStart { get; set; }
 
-    // Pre-computed sideways move to the line steered on the next pass (metres), towards the turn
-    // side: negative when a tool offset over half the pass spacing puts that line on the other
-    // side of the turn's direction, as AgOpenGPS's signed turnOffset. Authoritative value for the
-    // U-turn arc width — consumers should use this rather than recompute.
+    // Pre-computed perpendicular offset to the next track (meters, always positive).
+    // Authoritative value for U-turn arc width — consumers should use this rather than recompute.
     public double NextTrackTurnOffset { get; set; }
 
     // When set, CompleteTurn jumps directly to this path number (used by snake / skip-worked modes).
