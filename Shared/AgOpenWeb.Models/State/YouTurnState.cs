@@ -146,8 +146,9 @@ public class YouTurnState : ObservableObject
         set => SetProperty(ref _wasHeadingSameWayAtTurnStart, value);
     }
 
-    // Pre-computed perpendicular offset to the next track (meters, always positive).
-    // Authoritative value for U-turn arc width — consumers should use this rather than recompute.
+    // Pre-computed sideways move to the line steered on the next pass (metres), towards the turn
+    // side; negative when the turn ends on the other side of its direction (a tool offset over
+    // half the pass spacing). Authoritative value for the U-turn arc width.
     private double _nextTrackTurnOffset;
     public double NextTrackTurnOffset
     {

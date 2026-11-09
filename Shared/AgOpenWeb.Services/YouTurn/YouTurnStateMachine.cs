@@ -988,7 +988,9 @@ public sealed class YouTurnStateMachine
         bool positiveOffset = pathDiff > 0;
         turn.IsTurnLeft = positiveOffset ^ guidance.IsHeadingSameWay;
         turn.WasHeadingSameWayAtTurnStart = guidance.IsHeadingSameWay;
-        turn.NextTrackTurnOffset = Math.Abs(pathDiff * widthMinusOverlap + 2 * toolShift);
+        // Signed towards the turn side, as ComputeNextTrack: negative when twice the tool shift
+        // outweighs the passes apart and the turn ends on the other side of its direction.
+        turn.NextTrackTurnOffset = Math.Abs(pathDiff) * widthMinusOverlap + 2 * toolShift * (positiveOffset ? 1 : -1);
 
         var refA = track.Points[0];
         var refB = track.Points[track.Points.Count - 1];
