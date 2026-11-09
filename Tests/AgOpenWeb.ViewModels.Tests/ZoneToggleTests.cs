@@ -28,6 +28,7 @@ public class ZoneToggleTests
         b.SectionControlService.SectionStates.Returns(states);
         b.SectionControlService.NumSections.Returns(8);
         var vm = b.Build();
+        vm.IsFieldOpen = true; // the zone buttons need an open field
         AgOpenWeb.Models.Configuration.ConfigurationStore.Instance.Tool.Zones = 3;
         AgOpenWeb.Models.Configuration.ConfigurationStore.Instance.Tool.ZoneRanges = new[] { 0, 4, 6, 8, 0, 0, 0, 0, 0 };
 
