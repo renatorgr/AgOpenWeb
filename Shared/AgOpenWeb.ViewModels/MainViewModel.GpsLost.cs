@@ -53,14 +53,24 @@ public partial class MainViewModel
             LogAutoSteerOff("GPS data lost");
         }
 
-        // Also a section switched on by its own button or hotkey with neither master on (#316).
-        if (IsSectionMasterOn || IsManualSectionMode || AnySectionNotOff())
-        {
-            IsSectionMasterOn = false;
-            IsManualSectionMode = false;
-            _sectionControlService.SetAllSections(SectionButtonState.Off);
+        if (AllSectionsAndButtonsOff())
             _audioService.Play(SoundEffect.SectionOff);
-        }
+    }
+
+    /// <summary>
+    /// Switches the master Auto and Manual buttons and every section button off, AgOpenGPS
+    /// <c>AllSectionsAndButtonsToState(btnStates.Off)</c> with both masters off; also a section
+    /// switched on by its own button or hotkey with neither master on (#316). Returns whether
+    /// anything was on, so the caller can play the section-off sound once.
+    /// </summary>
+    private bool AllSectionsAndButtonsOff()
+    {
+        if (!IsSectionMasterOn && !IsManualSectionMode && !AnySectionNotOff())
+            return false;
+        IsSectionMasterOn = false;
+        IsManualSectionMode = false;
+        _sectionControlService.SetAllSections(SectionButtonState.Off);
+        return true;
     }
 
     private bool AnySectionNotOff()

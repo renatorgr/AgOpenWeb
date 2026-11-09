@@ -2158,6 +2158,15 @@ public partial class MainViewModel : ObservableObject
             LogAutoSteerOff("field closed");
         }
 
+        // The sections too, as AgOpenGPS JobClose turns the master Auto and Manual buttons and
+        // every section off. Left as they were, sections switched on by hand kept the module's
+        // section bits set (PGN 239/229) after the close, spraying on with no field open, and
+        // the section bar and the Manual button are hidden without a field, so the operator had
+        // nothing to switch them off with. Opening another field closes this one first, so it
+        // covers that too.
+        if (AllSectionsAndButtonsOff())
+            _audioService.Play(SoundEffect.SectionOff);
+
         // A boundary being recorded and a line being drawn, driven or recorded belong to this
         // field: end them unsaved. Left running, their points went on into the next field and
         // were saved there as its boundary or line, in the wrong field's coordinates.
