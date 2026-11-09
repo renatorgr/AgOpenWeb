@@ -29,6 +29,7 @@ public class WorkSwitchTests
         _builder = new MainViewModelBuilder();
         _builder.ModuleCommunicationService = new ModuleCommunicationService(ConfigurationStore.Instance);
         _vm = _builder.Build();
+        _vm.IsFieldOpen = true; // the section buttons the switches click need an open field
     }
 
     // PGN 253 byte 11 bit 0 is the work switch, active low: closed → bit 0 = 0, which the

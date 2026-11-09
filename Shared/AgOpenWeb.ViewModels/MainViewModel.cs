@@ -2158,6 +2158,10 @@ public partial class MainViewModel : ObservableObject
             LogAutoSteerOff("field closed");
         }
 
+        // The recorded path ends with the field: a replay left driving would put the Auto
+        // master back on at the next fix, right after the sections go off below.
+        EndRecordedPathWithField();
+
         // The sections too, as AgOpenGPS JobClose turns the master Auto and Manual buttons and
         // every section off. Left as they were, sections switched on by hand kept the module's
         // section bits set (PGN 239/229) after the close, spraying on with no field open, and
