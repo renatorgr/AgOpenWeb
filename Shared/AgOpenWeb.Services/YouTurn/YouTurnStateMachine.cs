@@ -168,13 +168,30 @@ public sealed class YouTurnStateMachine
             if (travelHeading >= Math.PI * 2) travelHeading -= Math.PI * 2;
         }
 
+        // The pass is where the tool runs, so the turn is planned from the pass line: the pivot
+        // moved by the tool offset (+ = right of the direction of travel), as AgOpenGPS plans from
+        // the line (ABLine.rEastAB), not the pivot. On the edge pass a side-shift mower works the
+        // cultivated area while the tractor runs in the headland, outside the headland line and
+        // parallel to it: measured from the pivot the line was never ahead and no turn was ever
+        // planned (field job J12). Without a tool offset it is the pivot. The tractor's own zone
+        // (CurrentZone) stays the pivot's.
+        double toolOffset = _configStore.Tool.Offset;
+        var passPoint = toolOffset == 0 ? currentPosition : new Position
+        {
+            Easting = currentPosition.Easting + Math.Cos(travelHeading) * toolOffset,
+            Northing = currentPosition.Northing - Math.Sin(travelHeading) * toolOffset,
+            Heading = currentPosition.Heading,
+            Speed = currentPosition.Speed,
+        };
+
         turn.DistanceToHeadland = isAlignedWithABLine
-            ? RaycastDistanceToHeadland(currentPosition, travelHeading, ctx.HeadlandLine, headingSameWay, turn.YouTurnCounter)
+            ? RaycastDistanceToHeadland(passPoint, travelHeading, ctx.HeadlandLine, headingSameWay, turn.YouTurnCounter)
             : double.MaxValue;
 
         turn.CurrentZone = DetermineZone(currentPosition.Easting, currentPosition.Northing, ctx.Boundary, ctx.HeadlandLine);
+        var passZone = toolOffset == 0 ? turn.CurrentZone : DetermineZone(passPoint.Easting, passPoint.Northing, ctx.Boundary, ctx.HeadlandLine);
 
-        bool isInCultivatedArea = turn.CurrentZone == TractorZone.InCultivatedArea;
+        bool isInCultivatedArea = passZone == TractorZone.InCultivatedArea;
         bool isInHeadlandZone = turn.CurrentZone == TractorZone.InHeadland;
 
         bool headlandInRange = turn.DistanceToHeadland > MinDistanceToCreate &&
@@ -230,6 +247,30 @@ public sealed class YouTurnStateMachine
             else
                 HandleNormalCreation(in ctx, track, abHeading, currentPosition, headingRadians, guidance, turn, effects);
         }
+        // ── NO TURN, HEADING OUT ────────────────────────────────────────
+        // In the headland on the line, heading out of the field, with no turn planned or under
+        // way and nothing said yet: no turn can be made from here, since the turn is laid out from
+        // before the headland. AutoSteer was switched on again in the headland after a dropped
+        // turn (field job T10), or the turn was never planned. AgOpenGPS can't turn there either
+        // and sounds its creation failure (FailCreate, "too close"); this drove on out of the field
+        // in silence. Not after an end of field or a refused turn: the operator was told then
+        // (_creationFailSounded). Heading out is judged along the pass: the straight ray finding
+        // no headland line ahead settles it on an AB line, but a curved pass can bend into the
+        // field past where a straight line from here runs along the headland (field job J10, a
+        // recorded curve, just after a turn), so the pass itself is walked ahead for cultivated
+        // ground (the landing check's walk, the other way round).
+        if (turn.TurnPath == null && !turn.IsExecuting && !_creationFailSounded && !_missedSounded
+            && passZone == TractorZone.InHeadland && isAlignedWithABLine && turn.DistanceToHeadland == double.MaxValue
+            && _pathing.LandingLength(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.HeadlandLine,
+                passPoint, !headingSameWay, 0, stopAt: 1.0) == 0)
+        {
+            _logger.LogDebug("[YouTurn] In the headland heading out with no turn - turn missed");
+            SoundMissed(effects);
+            // Also for a pass that lies in the headland strip the whole way (along a side of the
+            // field), where it comes mid-pass: worded for both, and it keeps "take over manually".
+            effects.StatusMessage = "No U-turn can be made from the headland on this pass. Take over manually at the end of the field.";
+        }
+
         // ── TURN TRIGGER ────────────────────────────────────────────────
         // The planned path begins with an entry leg that IS the current pass, so the tractor
         // is on the path as soon as it is on that leg and takes the turn from wherever it
@@ -276,7 +317,8 @@ public sealed class YouTurnStateMachine
                 _logger.LogDebug("[YouTurn] Triggered on the path, {Dist:F1}m from the arc", distToArcStart);
             }
             else if (isAlignedWithABLine && IsHeadingAlong(turn.TurnPath, headingRadians)
-                     && IsBehind(arcStart, currentPosition, headingRadians))
+                     && IsBehind(arcStart, currentPosition, headingRadians)
+                     && IsBehindAlongTrack(track, arcStart, currentPosition, guidance.IsHeadingSameWay))
             {
                 // The arc already begins behind the tractor, so this path cannot be joined.
                 // Turn from here instead, the way a manual turn does; when there is no room
@@ -284,7 +326,11 @@ public sealed class YouTurnStateMachine
                 var fromHere = _creation.CreateManualArcPath(
                     currentPosition, abHeading, turn.IsTurnLeft,
                     ctx.Boundary, guidance, ctx.UTurnSkipRows, turn.NextTrack);
-                if (fromHere.Count > 2)
+                // Only a turn that stays in the field. The manual builder checks no more than
+                // where the turn ends; started by the app itself, a turn must keep inside the
+                // boundary and out of obstacles, or the operator takes over (#698's rule for the
+                // fallback turn).
+                if (fromHere.Count > 2 && !YouTurnCreationService.LeavesField(fromHere, ctx.Boundary))
                 {
                     turn.TurnPath = fromHere;
                     turn.ArcStart = null;
@@ -796,6 +842,32 @@ public sealed class YouTurnStateMachine
         return (position.Easting - path[0].Easting) * dx + (position.Northing - path[0].Northing) * dy >= 0;
     }
 
+    /// <summary>
+    /// On an open curve, true when <paramref name="point"/> is not ahead of the tractor along the
+    /// track (the way it drives it): the nearest point of the track to it comes no later than the
+    /// tractor's. Behind the tractor in a straight line is not enough on a curve that comes back
+    /// past itself: a boundary curve made the long way round leaves the opening between its ends
+    /// at A on the line it comes in on at B, the same way, so a turn planned at B lies straight
+    /// behind a tractor setting off from A, a whole pass ahead along the track (#694). AB lines
+    /// and closed loops: true (the straight-line test decides).
+    /// </summary>
+    internal static bool IsBehindAlongTrack(Models.Track.Track track, Vec3 point, Position position, bool headingSameWay)
+    {
+        var pts = track.Points;
+        if (pts.Count <= 2 || track.IsClosed) return true;
+        int pointIdx = 0, tractorIdx = 0;
+        double bestP = double.MaxValue, bestT = double.MaxValue;
+        for (int i = 0; i < pts.Count; i++)
+        {
+            double pe = pts[i].Easting - point.Easting, pn = pts[i].Northing - point.Northing;
+            double te = pts[i].Easting - position.Easting, tn = pts[i].Northing - position.Northing;
+            double p2 = pe * pe + pn * pn, t2 = te * te + tn * tn;
+            if (p2 < bestP) { bestP = p2; pointIdx = i; }
+            if (t2 < bestT) { bestT = t2; tractorIdx = i; }
+        }
+        return headingSameWay ? pointIdx <= tractorIdx : pointIdx >= tractorIdx;
+    }
+
     /// <summary>True when <paramref name="point"/> lies behind the tractor along its heading.</summary>
     internal static bool IsBehind(Vec3 point, Position position, double headingRadians)
     {
@@ -927,7 +999,8 @@ public sealed class YouTurnStateMachine
         bool positiveOffset = pathDiff > 0;
         turn.IsTurnLeft = positiveOffset ^ guidance.IsHeadingSameWay;
         turn.WasHeadingSameWayAtTurnStart = guidance.IsHeadingSameWay;
-        turn.NextTrackTurnOffset = Math.Abs(pathDiff * widthMinusOverlap + 2 * toolShift);
+        // Signed in the turn direction, as in YouTurnPathingService.
+        turn.NextTrackTurnOffset = (pathDiff * widthMinusOverlap + 2 * toolShift) * (positiveOffset ? 1 : -1);
 
         var refA = track.Points[0];
         var refB = track.Points[track.Points.Count - 1];
@@ -980,8 +1053,12 @@ public sealed class YouTurnStateMachine
         int baseWidth = Math.Max(2, ctx.UTurnSkipRows + 1); // AgOpenGPS "at least 1" row skipped
         if (turn.AltSign == 0 || turn.AltBaseWidth != baseWidth)
         {
+            // Start the pattern the way the turns have been going, away from the worked passes,
+            // as normal turns do (#523) and AgOpenGPS's alternating isTurnLeft carries on. Left
+            // to the pass number's sign it went back over worked passes (turn intervention T4).
+            bool? keepPositive = _lastStep != 0 && _lastStepTrack == track.Name ? _lastStep > 0 : null;
             var (_, positive) = _pathing.WouldNextLineBeInsideBoundary(
-                track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, baseWidth - 1, null, ctx.CurrentPosition, turn.DistanceToHeadland);
+                track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, baseWidth - 1, keepPositive, ctx.CurrentPosition, turn.DistanceToHeadland);
             turn.AltSign = positive ? 1 : -1;
             turn.AltBaseWidth = turn.AltWidth = baseWidth;
             turn.AltTurnSkips = baseWidth * 2 - 1;

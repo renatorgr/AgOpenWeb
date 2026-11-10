@@ -409,7 +409,7 @@ public partial class YouTurnCreationService
             _logger.LogDebug("[YouTurn] Pass {Path} has no line (curve too tight)", guidance.HowManyPathsAway);
             return null;
         }
-        List<Vec3> currentCurvePoints = CurveProcessing.ExtendPass(offsetCurve);
+        List<Vec3> currentCurvePoints = CurveProcessing.ExtendPassForTurn(offsetCurve);
 
         int currentLocationIndex = 0;
         double minDistSq = double.MaxValue;
@@ -825,7 +825,9 @@ public partial class YouTurnCreationService
         currentPosition = OntoPassLine(currentPosition, selectedTrack, abHeading, guidance);
 
         const double pointSpacing = 0.5;
-        double turnOffset = turn.NextTrackTurnOffset;
+        // Signed in the turn direction: negative, the arc goes round the other way.
+        double turnOffset = Math.Abs(turn.NextTrackTurnOffset);
+        if (turn.NextTrackTurnOffset < 0) turnLeft = !turnLeft;
 
         if (turnOffset < 0.1)
         {
