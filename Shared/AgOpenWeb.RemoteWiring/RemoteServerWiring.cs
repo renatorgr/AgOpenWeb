@@ -495,7 +495,8 @@ public static partial class RemoteServerWiring
                                 }
                                 case "webcard.scan": // "Search the network" in the bookmark editor; the answer is in the WebCards frame.
                                     _ = ScanWebPagesAsync(dispatcher, services.GetRequiredService<AgOpenWeb.Models.State.ApplicationState>(),
-                                        services.GetRequiredService<AgOpenWeb.Services.Interfaces.ILocalNetworkInfoProvider>());
+                                        services.GetRequiredService<AgOpenWeb.Services.Interfaces.ILocalNetworkInfoProvider>(),
+                                        services.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()?.CreateLogger("WebCardSearch"));
                                     return;
                                 case "boundary.importKmlFile": // Import-KML picker. arg = KML file name.
                                     vm.RemoteImportKmlBoundary(arg);

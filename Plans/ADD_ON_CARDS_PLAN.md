@@ -153,7 +153,8 @@ a split layout the pane is a **drawer**.
   has `_aowlink._tcp` fixed and would need the service type as a parameter; iOS needs the type in
   `NSBonjourServices`. Not before the bookmarks are in use.
   This fork's `pulverizador` branch keeps its *Search the network* (an mDNS question for
-  `_http._tcp` pages plus a sweep of the /24 for a page on port 80, one tap adds a bookmark)
+  `_http._tcp` pages plus a sweep of the /24 for a page on port 80, a module the sweep found asked
+  for its mDNS name at its own address, one tap adds a bookmark)
   until the official picker lists the `_aowcard._tcp` add-ons; then the search goes.
 - **Moving cards between tabs**, if asked for.
 

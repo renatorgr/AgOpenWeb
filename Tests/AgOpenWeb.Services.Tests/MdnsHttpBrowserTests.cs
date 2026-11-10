@@ -5,6 +5,7 @@
 using System.Net;
 using System.Text;
 using AgOpenWeb.Models;
+using AgOpenWeb.Services.Interfaces;
 using AgOpenWeb.Services.Network;
 using static AgOpenWeb.Services.Network.MdnsHttpBrowser;
 
@@ -218,6 +219,110 @@ public class MdnsHttpBrowserTests
 
         Assert.That(all.Select(p => p.Url), Is.EqualTo(new[] { "http://192.168.5.123/", "http://192.168.5.126/", "http://192.168.5.1/" }));
         Assert.That(all[0].Title, Is.EqualTo("sprayer"), "the announced name stays");
+    }
+
+    [Test]
+    public void OnlyAMessageAboutTheService_CountsAsAnAnswer()
+    {
+        var a = new Answers();
+
+        Assert.That(a.Read(new Response().A("printer.local", "192.168.5.40").Bytes, Via, Mask), Is.False, "an address of some other host");
+        Assert.That(a.Read(new Response().Ptr(ServiceName, Sprayer).Query().Bytes, Via, Mask), Is.False, "somebody's question");
+        Assert.That(a.Read(new Response().Ptr(ServiceName, Sprayer).Srv(Sprayer, 80, "sprayer.local").Bytes, Via, Mask), Is.True);
+        Assert.That(a.Read(new Response().A("sprayer.local", "192.168.5.123").Bytes, Via, Mask), Is.True, "the address of the page's host");
+    }
+
+    // ── Asking a module directly ─────────────────────────────────────────
+
+    [Test]
+    public void ThePagesTheSweepFoundWithoutAName_AreTheHostsToAsk()
+    {
+        var announced = new List<FoundWebPage> { new("AiO-FBCA", "http://192.168.5.126/") };
+        var swept = new List<FoundWebPage>
+        {
+            new("Teensy 4.1 Settings", "http://192.168.5.126/"), new("Sprayer module", "http://192.168.5.123/"),
+            new("XIAO", "http://192.168.5.23:8080/x"), new("XIAO again", "http://192.168.5.23/"), new("This host", "http://{host}/"),
+        };
+
+        Assert.That(Unnamed(announced, swept), Is.EqualTo(new[] { IPAddress.Parse("192.168.5.123"), IPAddress.Parse("192.168.5.23") }),
+            "each host once; not the one mDNS named, not the host itself");
+        Assert.That(Unnamed(swept, swept), Is.Empty);
+    }
+
+    [Test]
+    public void AModuleAskedDirectly_GivesItsName()
+    {
+        using var module = new PretendModule(ignore: 0);
+        var notes = new List<string>();
+
+        var pages = AskHosts(Loopback, NoOwn, [IPAddress.Loopback], module.Port, true, CancellationToken.None, notes.Add);
+
+        Assert.That(pages, Is.EqualTo(new[] { new FoundWebPage("Sprayer-1A2B", "http://127.0.0.1/") }));
+        Assert.That(module.Questions, Is.EqualTo(1), "a module that answered is not asked again");
+        Assert.That(notes, Has.Count.EqualTo(1));
+        Assert.That(notes[0], Does.Contain("asked 127.0.0.1 directly").And.Contain("answers from 127.0.0.1 (own port)").And.Contain("Sprayer-1A2B http://127.0.0.1/"));
+    }
+
+    [Test]
+    public void AQuestionThatIsLost_IsAskedAgain()
+    {
+        using var module = new PretendModule(ignore: 1);
+
+        var pages = AskHosts(Loopback, NoOwn, [IPAddress.Loopback], module.Port, true, CancellationToken.None, null);
+
+        Assert.That(pages.Select(p => p.Title), Is.EqualTo(new[] { "Sprayer-1A2B" }));
+        Assert.That(module.Questions, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void AHostThatSaysNothing_OrIsOnNoNetworkOfOurs_GivesNoPage()
+    {
+        using var module = new PretendModule(ignore: 99);
+        var notes = new List<string>();
+
+        var silent = AskHosts(Loopback, NoOwn, [IPAddress.Loopback], module.Port, true, CancellationToken.None, notes.Add);
+        var elsewhere = AskHosts(Loopback, NoOwn, [IPAddress.Parse("192.168.5.123")], module.Port, true, CancellationToken.None, notes.Add);
+
+        Assert.That(silent, Is.Empty);
+        Assert.That(notes, Has.Count.EqualTo(1), "a host on none of our networks is not asked at all");
+        Assert.That(notes[0], Does.Contain("no answers; no pages"));
+        Assert.That(elsewhere, Is.Empty);
+    }
+
+    private static readonly LocalNetworkAddress[] Loopback = [new(IPAddress.Loopback, 8)];
+
+    // A module's mDNS responder on the loopback, on a port of its own: answers a question sent straight to
+    // it, straight back, after ignoring the first few.
+    private sealed class PretendModule : IDisposable
+    {
+        private readonly System.Net.Sockets.UdpClient _udp = new(new IPEndPoint(IPAddress.Loopback, 0));
+        private int _ignore, _questions;
+
+        public int Port => ((IPEndPoint)_udp.Client.LocalEndPoint!).Port;
+        public int Questions => Volatile.Read(ref _questions);
+
+        public PretendModule(int ignore)
+        {
+            _ignore = ignore;
+            var answer = new Response().Ptr(ServiceName, Sprayer).Srv(Sprayer, 80, "sprayer.local").Txt(Sprayer, "path=/")
+                .A("sprayer.local", "127.0.0.1").Bytes;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (true)
+                    {
+                        var q = await _udp.ReceiveAsync();
+                        Interlocked.Increment(ref _questions);
+                        if (_ignore-- > 0) continue;
+                        await _udp.SendAsync(answer, answer.Length, q.RemoteEndPoint);
+                    }
+                }
+                catch (Exception e) when (e is ObjectDisposedException or System.Net.Sockets.SocketException) { }
+            });
+        }
+
+        public void Dispose() => _udp.Dispose();
     }
 
     // ── A responder's message, built by hand (RFC 1035) ──────────────────
