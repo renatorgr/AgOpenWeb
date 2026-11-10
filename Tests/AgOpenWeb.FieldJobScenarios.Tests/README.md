@@ -54,7 +54,7 @@ its neighbours':
 | U-turns missed or cancelled, AutoSteer dropping out | `TURN-MISSED`, `AUTOSTEER-DROPPED` |
 | The first U-turn arrow pointing at the edge the operator started from | `FIRST-TURN-TOWARD-EDGE` |
 | The screen's sections and the nozzles disagreeing | `VALVES-NOT-FOLLOWING`, `SECTION-WITHOUT-RELAY` |
-| AgOpenWeb refused a U-turn and asked the operator to take over (the job stops there, as at a missed turn's warning) | `TURN-REFUSED` |
+| AgOpenWeb found no U-turn that fits and asked the operator to take over (the job stops there, as at a missed turn's warning; a turn blocked by a hard boundary or an obstacle is a note) | `TURN-REFUSED` |
 | The tractor more than 25 m out of the field with no such warning | `RAN-OFF` |
 
 Two operators:
@@ -71,8 +71,9 @@ When AgOpenWeb says "No U-turn fits inside the boundary at this end - take over 
 "U-turn blocked: ... take over manually", or that a U-turn was missed ("U-turn missed: ... Take
 over manually"; "No U-turn can be made from the headland on this pass. Take over manually at the
 end of the field", #761), the operator takes over and the job stops, as a person would
-(`TURN-REFUSED`; a missed turn is `TURN-MISSED`, expected where the operator caused it, as T10's
-AutoSteer off in the headland). A warning for "the end of the field" comes mid-pass: the operator
+(`TURN-REFUSED` when no turn fits; a blocked turn is the app refusing a swing into a hard boundary
+or an obstacle, as it must (#698), noted; a missed turn is `TURN-MISSED`, expected where the
+operator caused it, as T10's AutoSteer off in the headland). A warning for "the end of the field" comes mid-pass: the operator
 drives the pass to its end (the implement out of the cultivated area with none ahead, or the
 tractor at the boundary) and takes over there. The ground left from there is the consequence of
 that one finding, not `FIELD-NOT-FINISHED` too. A tractor that drives on after such a warning is
@@ -137,7 +138,11 @@ the new pass, and stops when no lap is left: when the ground deep enough for the
 gone, or falls into pieces one closed line cannot go round (`DepthGrid`). What no lap reaches is
 counted apart (left for an AB line or by hand), and so are the laps' corners, where an inner lap
 pulls away from the outer one. AgOpenWeb's clock runs on the job's simulated time (`SimClock.cs`):
-contour rebuilds its line every 2 s of it.
+contour rebuilds its line every 2 s of it. When AgOpenWeb warns that the contour line ahead can't
+be driven as a lap (it turns back tighter than the rig turns, runs onto ground already sprayed, or
+ends: where the field narrows), the operator takes over, drives that stretch of the lap by hand and
+engages again past it. Driving by hand, the operator looks ahead on the line that keeps its
+distance from every side of the reference, so a sharp corner is driven round, not overshot.
 
 Findings these jobs add:
 

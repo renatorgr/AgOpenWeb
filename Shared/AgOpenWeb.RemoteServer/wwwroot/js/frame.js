@@ -120,6 +120,7 @@ function skFrame(ts) {
     updateTramLights();
     updatePassHud();
     updateHeadlandHud();
+    updateContourAheadHud();
     renderStatusBar();
     renderSimBar();
     renderSectionBar();

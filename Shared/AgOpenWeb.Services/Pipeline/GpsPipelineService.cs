@@ -861,6 +861,16 @@ public sealed class GpsPipelineService : IGpsPipelineService
             pos.Speed, posEasting, posNorthing, data.HasDualHeading);
         _headingFusion.UpdateDualHeadingWarning(data.FixQuality);
         pos = pos with { Heading = fusedHeading };
+        // A sideways position jump (the receiver changed its solution): the heading was kept
+        // across it; say so, since AutoSteer now follows a position that moved.
+        string? jumpNotice = null;
+        if (_headingFusion.JumpCount != _lastJumpCount)
+        {
+            _lastJumpCount = _headingFusion.JumpCount;
+            jumpNotice = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "GPS position jumped {0:F1} m sideways (the receiver changed its solution): heading kept, AutoSteer follows the new position",
+                _headingFusion.LastJumpM);
+        }
         // Reverse (#125): guidance, U-turn and hydraulic lift need to know, and the
         // heading above already faces the way the vehicle points.
         _isReverse = _headingFusion.IsReverse;
@@ -1584,6 +1594,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
             HeadlandProximityDistance = headlandDist,
             HeadlandProximityWarning = headlandWarning,
 
+            // Contour: a stretch ahead that can't be driven as a lap
+            ContourAhead = (byte)_contourAhead.What,
+            ContourAheadM = _contourAhead.AtM,
+
             // Phase E: first-fix LocalPlane auto-create — non-null only on
             // the single cycle where the cycle bootstrapped the plane.
             FirstFixLocalPlane = firstFixLocalPlane,
@@ -1596,7 +1610,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             FarFromFieldWarning = farFromFieldWarning,
 
             // Status
-            StatusMessage = statusMessage ?? youTurnTickEffects?.StatusMessage ?? fixRejectionReason,
+            StatusMessage = jumpNotice ?? statusMessage ?? youTurnTickEffects?.StatusMessage ?? fixRejectionReason,
             ObstacleNotice = Interlocked.Exchange(ref _obstacleNotice, null),
         };
 
@@ -1976,9 +1990,34 @@ public sealed class GpsPipelineService : IGpsPipelineService
             }
             _contourLockedShown = contourOn && _contour.IsLocked;
             _contourHasPending = _contour.PendingSave.Count > 0;
+
+            // Look along the line ahead for a stretch that can't be driven as a lap, early enough
+            // for the operator to take over; the alarm sounds once as it appears.
+            // Checked again when the line changes or the tractor has moved a metre.
+            if (!contourOn || _contour.Line.Count < 3)
+            {
+                _contourAhead = (ContourAhead.Clear, 0);
+                _contourAheadVersion = -1;
+            }
+            else if (_contour.LineVersion != _contourAheadVersion
+                || Math.Abs(pivotE - _contourAheadPos.Easting) + Math.Abs(pivotN - _contourAheadPos.Northing) > 1)
+            {
+                _contourAheadVersion = _contour.LineVersion;
+                _contourAheadPos = new Vec2(pivotE, pivotN);
+                var ahead = ContourAheadCheck.Check(_contour.Line, _contourAheadPos, headingRad,
+                    ContourAheadCheck.Reach(speedKmh), _isPointCovered, config.Guidance.UTurnRadius);
+                if (ahead.What != ContourAhead.Clear && _contourAhead.What != ahead.What && autoSteerEngaged)
+                    _audioService.Play(SoundEffect.BoundaryAlarm);
+                _contourAhead = ahead;
+            }
         }
         return steer;
     }
+
+    /// <summary>What the contour line ahead holds (<see cref="ContourAheadCheck"/>), and how far ahead.</summary>
+    private (ContourAhead What, double AtM) _contourAhead;
+    private int _contourAheadVersion = -1;
+    private Vec2 _contourAheadPos;
 
     private ContourParams ContourParamsFor(double speedKmh)
     {
@@ -2608,6 +2647,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     // Monotonic ms clock; tests substitute it to step past the below-min-speed grace period.
     internal Func<long> NowMs { get; set; } = () => Environment.TickCount64;
     private long? _belowMinSteerSpeedSinceMs;
+    private int _lastJumpCount; // the fusion's JumpCount already told
     private const long BelowMinSteerSpeedGraceMs = 8000; // AgOpenGPS: 80 frames at 10 Hz
 
     /// <summary>Why AutoSteer won't steer with a dual heading that runs across the direction of
