@@ -19,104 +19,281 @@ namespace AgOpenWeb.Services.Network;
 /// <summary>
 /// The quick half of the web cards' "Search the network" (Plans/ADD_ON_CARDS_PLAN.md): asks the host's
 /// networks by multicast DNS for the web pages that announce themselves (DNS-SD <c>_http._tcp</c>, RFC 6763:
-/// an AiO board's page, a XIAO's, a sprayer or seed drill module's, a printer's) and has them in about a
-/// second, each with the name its maker gave it. <see cref="WebPageScanner"/> then sweeps every address for
-/// the pages that announce nothing. The question goes out from an ordinary port, so responders answer it by
-/// unicast (RFC 6762 section 6.7): no port 5353 to share with the system's own mDNS and no multicast group to
-/// join. Where multicast is not allowed (iOS without the entitlement) the question fails quietly and the
-/// sweep alone finds the pages.
+/// an AiO board's page, a XIAO's, a sprayer or seed drill module's, a printer's) and has them in a second or
+/// two, each with the name its maker gave it. <see cref="WebPageScanner"/> then sweeps every address for
+/// the pages that announce nothing.
+/// <para>The question is asked both ways a module may answer, and more than once, since a multicast
+/// question is sent over Wi-Fi once, unacknowledged: from an ordinary port, which a responder answers by
+/// unicast (RFC 6762 section 6.7), and from port 5353 shared with the system's own mDNS, which it answers
+/// to the group, as it does for the operating system. A page the sweep found whose module was not heard
+/// is then asked for its name directly, at its own address (<see cref="AskHostsAsync"/>): no multicast
+/// in that, for a network that keeps multicast off its Wi-Fi. Where multicast is not allowed (iOS
+/// without the entitlement) the first question fails quietly.</para>
 /// </summary>
 public static class MdnsHttpBrowser
 {
     public const string ServiceType = "_http._tcp";
     internal const string ServiceName = ServiceType + ".local";
     internal const ushort TypeA = 1, TypePtr = 12, TypeTxt = 16, TypeSrv = 33;
-    private static readonly IPEndPoint Group = new(IPAddress.Parse("224.0.0.251"), 5353);
-    private static readonly TimeSpan FirstListen = TimeSpan.FromMilliseconds(900), MoreListen = TimeSpan.FromMilliseconds(500);
+    internal const int MdnsPort = 5353;
+    private static readonly IPAddress GroupAddress = IPAddress.Parse("224.0.0.251");
+    // When a question is sent, in ms from its first sending, and how long its answers are awaited. A Wi-Fi
+    // access point holds a multicast frame for its next beacons (up to 0.3 s) and a responder waits up to
+    // 0.2 s before it answers, so the last sending leaves 0.7 s.
+    private static readonly int[] FirstAsks = [0, 250, 700], MoreAsks = [0, 250], DirectAsks = [0, 200];
+    private const int FirstListen = 1400, MoreListen = 600, DirectListen = 500;
     private const int MaxMessage = 9000;
 
     /// <summary>
     /// Asks every IPv4 network in <paramref name="local"/> for the pages announcing themselves and returns
-    /// them, by name, in about one to two seconds. A page on one of the host's own addresses gets
-    /// <c>{host}</c> in its URL, as the sweep gives it. Never throws for a network that refuses: it
-    /// returns what it heard.
+    /// them, by name, in about one and a half to three seconds. A page on one of the host's own addresses
+    /// gets <c>{host}</c> in its URL, as the sweep gives it. Never throws for a network that refuses: it
+    /// returns what it heard. <paramref name="note"/> gets one line on what was asked and who answered,
+    /// for the log.
     /// </summary>
-    public static Task<List<FoundWebPage>> BrowseAsync(IEnumerable<LocalNetworkAddress> local, ISet<IPAddress> own, CancellationToken ct) =>
-        Task.Run(() => Browse(local, own, ct), ct);
+    public static Task<List<FoundWebPage>> BrowseAsync(IEnumerable<LocalNetworkAddress> local, ISet<IPAddress> own,
+        CancellationToken ct, Action<string>? note = null) =>
+        Task.Run(() => Browse(local, own, ct, note), ct);
 
-    private static List<FoundWebPage> Browse(IEnumerable<LocalNetworkAddress> local, ISet<IPAddress> own, CancellationToken ct)
+    /// <summary>
+    /// Asks each of <paramref name="hosts"/> at its own address (a question sent straight to a responder's
+    /// port 5353 is answered straight back, RFC 6762 section 5.5) for the pages it announces: the names of
+    /// the modules the sweep found and the multicast question did not reach. Half a second.
+    /// </summary>
+    public static Task<List<FoundWebPage>> AskHostsAsync(IEnumerable<LocalNetworkAddress> local, ISet<IPAddress> own,
+        IReadOnlyCollection<IPAddress> hosts, CancellationToken ct, Action<string>? note = null) =>
+        Task.Run(() => AskHosts(local, own, hosts, MdnsPort, false, ct, note), ct);
+
+    /// <summary>The addresses of the pages in <paramref name="swept"/> that no page in
+    /// <paramref name="announced"/> is at: the hosts to ask for their name directly.</summary>
+    public static List<IPAddress> Unnamed(IEnumerable<FoundWebPage> announced, IEnumerable<FoundWebPage> swept)
     {
-        var answers = new Answers();
-        var sockets = OpenSockets(local);
-        try
-        {
-            if (sockets.Count == 0) return [];
-            // The instances first; then what their answers left out (an instance's SRV and TXT, its host's
-            // address), twice at most, for a responder that sends the records one question at a time.
-            Ask(sockets, [(ServiceName, TypePtr)], answers, FirstListen, ct);
-            for (int round = 0; round < 2 && !ct.IsCancellationRequested; round++)
-            {
-                var missing = answers.Missing();
-                if (missing.Count == 0) break;
-                Ask(sockets, missing, answers, MoreListen, ct);
-            }
-        }
-        finally
-        {
-            foreach (var s in sockets) s.Socket.Dispose();
-        }
-        return answers.Pages(own);
+        var named = new HashSet<IPAddress>(announced.Select(HostOf).OfType<IPAddress>());
+        return swept.Select(HostOf).OfType<IPAddress>().Where(a => !named.Contains(a)).Distinct().ToList();
     }
 
-    // One socket per IPv4 address of the host, so the question goes out on each network; the address and
-    // mask tell which answers came from that network.
-    private static List<(Socket Socket, uint Address, uint Mask)> OpenSockets(IEnumerable<LocalNetworkAddress> local)
+    private static IPAddress? HostOf(FoundWebPage page) =>
+        Uri.TryCreate(page.Url, UriKind.Absolute, out var u) && u.HostNameType == UriHostNameType.IPv4
+            && IPAddress.TryParse(u.Host, out var a) ? a : null;
+
+    private static List<FoundWebPage> Browse(IEnumerable<LocalNetworkAddress> local, ISet<IPAddress> own, CancellationToken ct, Action<string>? note)
     {
-        var list = new List<(Socket, uint, uint)>();
-        foreach (var a in local)
+        var answers = new Answers();
+        using var link = new Link(local, false, shared: MdnsPort);
+        if (link.Own.Count == 0) return [];
+        var heard = new Heard();
+        // The instances first; then what their answers left out (an instance's SRV and TXT, its host's
+        // address), twice at most, for a responder that sends the records one question at a time.
+        Ask(link, Answers.Query([(ServiceName, TypePtr)]), null, MdnsPort, FirstAsks, FirstListen, answers, heard, null, ct);
+        for (int round = 0; round < 2 && !ct.IsCancellationRequested; round++)
         {
-            if (a.Address.AddressFamily != AddressFamily.InterNetwork || IPAddress.IsLoopback(a.Address)) continue;
+            var missing = answers.Missing();
+            if (missing.Count == 0) break;
+            Ask(link, Answers.Query(missing), null, MdnsPort, MoreAsks, MoreListen, answers, heard, () => answers.Missing().Count == 0, ct);
+        }
+        var pages = answers.Pages(own);
+        note?.Invoke($"mDNS: asked {ServiceName} on {string.Join(", ", link.Own.Select(o => o.Net.Ip))} "
+            + $"(own port{(link.Shared != null ? " and port 5353" : "; port 5353 not available")}); {heard}; {Listed(pages)}");
+        return pages;
+    }
+
+    internal static List<FoundWebPage> AskHosts(IEnumerable<LocalNetworkAddress> local, ISet<IPAddress> own,
+        IReadOnlyCollection<IPAddress> hosts, int port, bool loopback, CancellationToken ct, Action<string>? note)
+    {
+        var answers = new Answers();
+        using var link = new Link(local, loopback, shared: 0);
+        // Only hosts on one of the host's own networks: the question leaves by that network's socket.
+        var asked = hosts.Where(h => h.AddressFamily == AddressFamily.InterNetwork && link.For(Answers.ToUInt(h)) != null).Distinct().ToList();
+        if (asked.Count == 0) return [];
+        var heard = new Heard();
+        Ask(link, Answers.Query([(ServiceName, TypePtr)]), asked, port, DirectAsks, DirectListen, answers, heard,
+            () => asked.All(heard.From), ct);
+        var missing = answers.Missing();
+        if (missing.Count > 0 && !ct.IsCancellationRequested)
+            Ask(link, Answers.Query(missing), asked, port, DirectAsks, DirectListen, answers, heard, () => answers.Missing().Count == 0, ct);
+        var pages = answers.Pages(own);
+        note?.Invoke($"mDNS: asked {string.Join(", ", asked)} directly; {heard}; {Listed(pages)}");
+        return pages;
+    }
+
+    private static string Listed(List<FoundWebPage> pages) =>
+        pages.Count == 0 ? "no pages" : "pages: " + string.Join(", ", pages.Select(p => $"{p.Title} {p.Url}"));
+
+    // One of the host's IPv4 addresses and its network.
+    private readonly record struct Net(IPAddress Ip, uint Address, uint Mask)
+    {
+        public bool Holds(uint a) => Mask != 0 && (a & Mask) == (Address & Mask);
+    }
+
+    // Who answered, and on which socket: the line for the log tells which way a module was heard.
+    private sealed class Heard
+    {
+        private readonly SortedDictionary<uint, (bool Own, bool Shared)> _from = [];
+
+        public void Add(uint address, bool shared)
+        {
+            _from.TryGetValue(address, out var w);
+            _from[address] = shared ? (w.Own, true) : (true, w.Shared);
+        }
+
+        public bool From(IPAddress a) => _from.ContainsKey(Answers.ToUInt(a));
+
+        public override string ToString() => _from.Count == 0 ? "no answers" : "answers from " + string.Join(", ", _from.Select(kv =>
+            $"{kv.Key >> 24}.{kv.Key >> 16 & 255}.{kv.Key >> 8 & 255}.{kv.Key & 255} ({(kv.Value.Own ? kv.Value.Shared ? "own port, port 5353" : "own port" : "port 5353")})"));
+    }
+
+    // The sockets of one search: one per IPv4 address of the host on an ordinary port, so a question goes
+    // out on each network and its unicast answers come back there; and, for a multicast search, one on the
+    // mDNS port itself, shared with whatever else on the host speaks mDNS and joined to the group on every
+    // address, which hears the answers sent to the group.
+    private sealed class Link : IDisposable
+    {
+        public readonly List<(Socket Socket, Net Net)> Own = [];
+        public readonly Socket? Shared;
+        public readonly List<Net> SharedNets = [];
+
+        public Link(IEnumerable<LocalNetworkAddress> local, bool loopback, int shared)
+        {
+            foreach (var a in local)
+            {
+                if (a.Address.AddressFamily != AddressFamily.InterNetwork || (!loopback && IPAddress.IsLoopback(a.Address))) continue;
+                if (Own.Exists(o => o.Net.Ip.Equals(a.Address))) continue;
+                var s = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+                try
+                {
+                    s.Bind(new IPEndPoint(a.Address, 0));
+                    s.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface, a.Address.GetAddressBytes());
+                    s.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 255);
+                    QuietResets(s);
+                    uint mask = a.PrefixLength is >= 1 and <= 32 ? uint.MaxValue << (32 - a.PrefixLength) : 0xFFFFFF00;
+                    Own.Add((s, new Net(a.Address, Answers.ToUInt(a.Address), mask)));
+                }
+                catch (SocketException) { s.Dispose(); }
+            }
+            if (shared > 0 && Own.Count > 0) Shared = OpenShared(shared);
+        }
+
+        // Port 5353 is the system's (Windows' DNS client, avahi, mDNSResponder) and other programs': it is
+        // taken with address reuse, as they take it, and left alone when that is refused.
+        private Socket? OpenShared(int port)
+        {
             var s = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             try
             {
-                s.Bind(new IPEndPoint(a.Address, 0));
-                s.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface, a.Address.GetAddressBytes());
+                s.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                s.Bind(new IPEndPoint(IPAddress.Any, port));
                 s.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastTimeToLive, 255);
-                uint mask = a.PrefixLength is >= 1 and <= 32 ? uint.MaxValue << (32 - a.PrefixLength) : 0xFFFFFF00;
-                list.Add((s, Answers.ToUInt(a.Address), mask));
+                QuietResets(s);
+                foreach (var (_, net) in Own)
+                {
+                    try
+                    {
+                        s.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.AddMembership, new MulticastOption(GroupAddress, net.Ip));
+                        SharedNets.Add(net);
+                    }
+                    catch (SocketException) { }   // no multicast on this network
+                }
+                if (SharedNets.Count > 0) return s;
             }
-            catch (SocketException) { s.Dispose(); }
+            catch (SocketException) { }
+            s.Dispose();
+            return null;
         }
-        return list;
+
+        // On Windows an "unreachable" answer to a question (a host with no mDNS) makes the socket's next
+        // read fail as a reset connection; the reads here also skip a failed read.
+        private static void QuietResets(Socket s)
+        {
+            if (!OperatingSystem.IsWindows()) return;
+            try { s.IOControl(unchecked((int)0x9800000C), [0], null); }   // SIO_UDP_CONNRESET off
+            catch (Exception e) when (e is SocketException or InvalidOperationException or NotSupportedException) { }
+        }
+
+        /// <summary>The socket of the network <paramref name="address"/> is on, or none.</summary>
+        public (Socket Socket, Net Net)? For(uint address)
+        {
+            foreach (var o in Own) if (o.Net.Holds(address)) return o;
+            return null;
+        }
+
+        public List<Socket> Sockets()
+        {
+            var list = Own.Select(o => o.Socket).ToList();
+            if (Shared != null) list.Add(Shared);
+            return list;
+        }
+
+        public void Dispose()
+        {
+            foreach (var o in Own) o.Socket.Dispose();
+            Shared?.Dispose();
+        }
     }
 
-    // Sends the questions on every socket and reads the answers until the time is up.
-    private static void Ask(List<(Socket Socket, uint Address, uint Mask)> sockets, IReadOnlyCollection<(string Name, ushort Type)> questions,
-        Answers answers, TimeSpan listen, CancellationToken ct)
+    // Sends the query at each of the times in asks, to the group on every network (or to each of hosts
+    // at its own address), and reads the answers until the time is up or done says there is nothing left to wait for.
+    private static void Ask(Link link, byte[] query, List<IPAddress>? hosts, int port, int[] asks, int listen,
+        Answers answers, Heard heard, Func<bool>? done, CancellationToken ct)
     {
-        var query = Answers.Query(questions);
-        foreach (var s in sockets)
-        {
-            try { s.Socket.SendTo(query, Group); }
-            catch (SocketException) { }   // no multicast on this network
-        }
         var buffer = new byte[MaxMessage];
-        long until = Environment.TickCount64 + (long)listen.TotalMilliseconds;
+        EndPoint from = new IPEndPoint(IPAddress.Any, 0);
+        long start = Environment.TickCount64;
+        int sent = 0;
         while (!ct.IsCancellationRequested)
         {
-            long left = until - Environment.TickCount64;
-            if (left <= 0) break;
-            var ready = sockets.Select(s => s.Socket).ToList();
-            try { Socket.Select(ready, null, null, (int)Math.Min(left, 100) * 1000); }
+            long now = Environment.TickCount64 - start;
+            if (sent < asks.Length && now >= asks[sent])
+            {
+                // A host that answered is not asked again.
+                Send(link, query, hosts?.Where(h => !heard.From(h)).ToList(), port);
+                sent++;
+            }
+            if (now >= listen) break;
+            long wait = Math.Min(listen - now, sent < asks.Length ? asks[sent] - now : long.MaxValue);
+            var ready = link.Sockets();
+            try { Socket.Select(ready, null, null, (int)Math.Clamp(wait, 1, 100) * 1000); }
             catch (SocketException) { break; }
             foreach (var sock in ready)
             {
                 int n;
-                try { n = sock.Receive(buffer); }
+                try { n = sock.ReceiveFrom(buffer, ref from); }
                 catch (SocketException) { continue; }
-                var via = sockets.Find(s => s.Socket == sock);
-                answers.Read(buffer.AsSpan(0, n), via.Address, via.Mask);
+                uint sender = from is IPEndPoint { AddressFamily: AddressFamily.InterNetwork } ep ? Answers.ToUInt(ep.Address) : 0;
+                bool shared = sock == link.Shared;
+                // The network the answer came in on: the socket's own, or for the shared one the sender's.
+                var via = shared ? link.For(sender)?.Net ?? default : link.Own.Find(o => o.Socket == sock).Net;
+                if (answers.Read(buffer.AsSpan(0, n), via.Address, via.Mask)) heard.Add(sender, shared);
             }
+            if (done != null && done()) break;
+        }
+    }
+
+    private static void Send(Link link, byte[] query, List<IPAddress>? hosts, int port)
+    {
+        if (hosts != null)
+        {
+            foreach (var h in hosts)
+            {
+                try { link.For(Answers.ToUInt(h))?.Socket.SendTo(query, new IPEndPoint(h, port)); }
+                catch (SocketException) { }
+            }
+            return;
+        }
+        var group = new IPEndPoint(GroupAddress, port);
+        foreach (var (socket, _) in link.Own)
+        {
+            try { socket.SendTo(query, group); }
+            catch (SocketException) { }   // no multicast on this network
+        }
+        if (link.Shared == null) return;
+        foreach (var net in link.SharedNets)
+        {
+            try
+            {
+                link.Shared.SetSocketOption(SocketOptionLevel.IP, SocketOptionName.MulticastInterface, net.Ip.GetAddressBytes());
+                link.Shared.SendTo(query, group);
+            }
+            catch (SocketException) { }
         }
     }
 
@@ -187,16 +364,18 @@ public static class MdnsHttpBrowser
             return t.Length > WebCardBookmarks.MaxName ? t[..WebCardBookmarks.MaxName].TrimEnd() : t;
         }
 
-        /// <summary>Takes one message's records in. Anything that is not a DNS response, or is cut short, is ignored.</summary>
-        public void Read(ReadOnlySpan<byte> m, uint viaAddress, uint viaMask)
+        /// <summary>Takes one message's records in. Anything that is not a DNS response, or is cut short, is
+        /// ignored. True when the message said something about the service: an instance of it, an instance's
+        /// host or text, or the address of an instance's host.</summary>
+        public bool Read(ReadOnlySpan<byte> m, uint viaAddress, uint viaMask)
         {
-            try { ReadRecords(m, viaAddress, viaMask); }
-            catch (Exception e) when (e is IndexOutOfRangeException or ArgumentOutOfRangeException or FormatException or ArgumentException) { }
+            try { return ReadRecords(m, viaAddress, viaMask); }
+            catch (Exception e) when (e is IndexOutOfRangeException or ArgumentOutOfRangeException or FormatException or ArgumentException) { return false; }
         }
 
-        private void ReadRecords(ReadOnlySpan<byte> m, uint viaAddress, uint viaMask)
+        private bool ReadRecords(ReadOnlySpan<byte> m, uint viaAddress, uint viaMask)
         {
-            if (m.Length < 12 || (m[2] & 0x80) == 0) return;   // not a response
+            if (m.Length < 12 || (m[2] & 0x80) == 0) return false;   // not a response
             int questions = m[4] << 8 | m[5];
             int records = (m[6] << 8 | m[7]) + (m[8] << 8 | m[9]) + (m[10] << 8 | m[11]);
             int p = 12;
@@ -209,14 +388,16 @@ public static class MdnsHttpBrowser
                 uint ttl = (uint)(m[p + 4] << 24 | m[p + 5] << 16 | m[p + 6] << 8 | m[p + 7]);
                 int length = m[p + 8] << 8 | m[p + 9];
                 p += 10;
-                if (p + length > m.Length) return;
+                if (p + length > m.Length) return false;
                 found.Add((owner, type, ttl, p, p + length));
                 p += length;
             }
+            bool about = false;
             // The instances first, whatever the order in the message, so their SRV, TXT and A records are kept.
             foreach (var (owner, type, ttl, data, _) in found)
             {
                 if (type != TypePtr || !owner.Equals(ServiceName, StringComparison.OrdinalIgnoreCase)) continue;
+                about = true;
                 int at = data;
                 var labels = ReadLabels(m, ref at);
                 string name = string.Join('.', labels);
@@ -230,6 +411,7 @@ public static class MdnsHttpBrowser
                 switch (type)
                 {
                     case TypeSrv when _instances.TryGetValue(owner, out var i):
+                        about = true;
                         i.Port = m[at + 4] << 8 | m[at + 5];
                         at += 6;
                         var target = string.Join('.', ReadLabels(m, ref at));
@@ -237,6 +419,7 @@ public static class MdnsHttpBrowser
                         break;
                     case TypeTxt when _instances.TryGetValue(owner, out var i):
                     {
+                        about = true;
                         var txt = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                         while (at < end)
                         {
@@ -261,6 +444,8 @@ public static class MdnsHttpBrowser
                     }
                 }
             }
+            // An address alone counts when it is the address of an instance's host (the answer to a later question).
+            return about || found.Any(f => f.Type == TypeA && _instances.Values.Any(i => i.Target.Equals(f.Owner, StringComparison.OrdinalIgnoreCase)));
         }
 
         // A name's labels, following compression pointers; the position moves past the name as written in place.
