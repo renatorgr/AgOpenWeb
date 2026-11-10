@@ -112,8 +112,8 @@ public class UdpCommunicationService : IUdpCommunicationService, IDisposable
 
     private const int HELLO_TIMEOUT_MS = 3000; // 3 seconds for hello response (tolerates Wi-Fi jitter)
     private const int DATA_TIMEOUT_STEER_MACHINE_MS = 1500; // 50Hz data, allow 1500ms for Wi-Fi latency jitter
-    // The machine module's own messages (PGN 237 five times a second; 160 and 161 once a second
-    // from a sprayer) count in the same window as its hello reply.
+    // The machine module's own messages (PGN 237 five times a second or more; a sprayer's 160 and
+    // 161 once a second) count in the same window as its hello reply.
     private const int DATA_TIMEOUT_MACHINE_MS = HELLO_TIMEOUT_MS;
     private const int DATA_TIMEOUT_IMU_MS = 1500; // 10Hz data, allow 1500ms for Wi-Fi latency jitter
 
@@ -645,9 +645,9 @@ public class UdpCommunicationService : IUdpCommunicationService, IDisposable
                 break;
 
             // The machine module talking on its own: present, as with its hello reply. Over Wi-Fi
-            // the hello and its reply are both broadcasts, which nothing resends, while 237 alone
-            // comes five times a second; on the hello alone the Modules dot went amber for seconds
-            // with the module working.
+            // the hello and its reply are both broadcasts, which nothing resends, while 237 comes
+            // five times a second or more; on the hello alone the Modules dot went amber for
+            // seconds with the module working.
             case PgnNumbers.FROM_MACHINE: // 237 - what the module's outputs do
             case PgnNumbers.SPRAYER_DATA: // 160 - sprayer readings from the machine module; SprayerService reads it
             case PgnNumbers.SPRAYER_PROCESS_DATA: // 161 - the module's own rate, target and alarms; SprayerService reads it

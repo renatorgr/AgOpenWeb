@@ -172,8 +172,8 @@ public static class PgnNumbers
     public const byte HELLO_FROM_MACHINE = 123;
 
     /// <summary>
-    /// From Machine (0xED = 237): what the machine module's outputs do, sent by the module
-    /// on its own (the AiO v26 machine code and Sprayer_ESP32 every 200 ms). Docs/PGN.md.
+    /// From Machine (0xED = 237), sent by the machine module on its own: Machine_UDP_v5 and
+    /// Sprayer_ESP32 every 200 ms, the AiO v26 machine code 50 times a second. Docs/PGN.md.
     /// </summary>
     public const byte FROM_MACHINE = 237;
 
