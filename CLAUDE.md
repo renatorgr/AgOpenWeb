@@ -542,7 +542,7 @@ The test values are in the settings only while it runs. Every way out (Stop, ✕
 steer switch, a kickout, wheels held, wheels moving while only held or the wrong way, too fast) lets go of the
 module and puts the operator's values back; the values found are used only after *Use these values* and saved with
 the profile on Finish. With no kickout sensor the step itself notices a hand on the wheel (wheels that stop
-answering: under 2.6 s of push in any part). Web client: `case 'tune'` in `js/wizards.js` (buttons shown by
+answering; the wheel taken at every tenth of a second of a run on three simulated steerings is let go within 2.5 s). Web client: `case 'tune'` in `js/wizards.js` (buttons shown by
 `testStage`; the result's `Measurements:` tail is folded away). Tests: `SteerWizardTuneTests` on a simulated
 steering (`FakeSteering`); the tuning stories of the steer wizard harness (`TuneScenarios.cs`). Not tried on a
 tractor yet.
