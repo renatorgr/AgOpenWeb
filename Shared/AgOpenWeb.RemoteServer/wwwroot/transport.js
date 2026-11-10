@@ -216,6 +216,8 @@ window.RemoteTransport = {
             ntripSession = { usingFallback: !!u8(), mainIsBack: !!u8(), hasFallback: !!u8(), profilePerField: !!u8(),
               state: u8(), lastError: i32(), attempts: i32(), retrySeconds: f32(), notice: str(), profile: str(), service: str() };
           }
+          // The simulator moves the real steering, a bench test (append-only).
+          const simDrivesSteering = !!u8();
           // Sprayer readout (append-only): PGN 160 from the machine module; null until heard.
           // alarms = SprayerAlarms bits. moduleChecks: PGN 161 from the module, which checks the
           // sprayer with its own settings; rateLha, targetLha, pressureNeededBar, minPressureBar,
@@ -239,7 +241,7 @@ window.RemoteTransport = {
             gpsIp, moduleSubnet, hostIps, ntripConnected, ntripStatus, ntripBytes, ntripDestination, ntripUnicast, rtcmBroadcast, ntripEnabled, ntripTestStatus,
             simPanelVisible, driftEasting, driftNorthing, unsavedCoveragePrompt,
             devOverlay, gpsToPgnLatencyMs, gpsSentence, dualHeadingMissing, ntripRtcm, systemData,
-            gpsLost, isobus, fieldData, sendCorrectedPosition, scanReplySubnet, ntripSession, sprayer,
+            gpsLost, isobus, fieldData, sendCorrectedPosition, scanReplySubnet, ntripSession, simDrivesSteering, sprayer,
           });
           break;
         }
