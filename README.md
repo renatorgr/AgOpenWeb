@@ -45,8 +45,15 @@ The beta is not rebuilt on a schedule. To build a new one from `pulverizador`, g
 |---|---|
 | `pulverizador` (default) | The official `develop` plus the changes above. All work on this fork goes here. |
 | `develop` | An exact copy of the official `develop`. Don't commit to it. |
+| `sync-pulverizador` | The daily update on its way into `pulverizador`. Don't commit to it. |
 
-Every day at 18:00 UTC, a GitHub Action ([`sync-pulverizador.yml`](.github/workflows/sync-pulverizador.yml)) brings `develop` up to date with the official repository. If there is anything new, it opens a pull request, "Update pulverizador with the official AgOpenWeb". Merge it (don't close it) to bring the official changes into `pulverizador`. CI doesn't start on that pull request by itself, so wait for the CI run on `pulverizador` after merging.
+The official changes come in once a day, with nothing to press:
+
+1. The newest official `develop` commit is merged into `sync-pulverizador`, and any conflict with this fork's changes is resolved there.
+2. A pull request, "Sync pulverizador with official develop …", runs CI on it.
+3. It is merged into `pulverizador` only when every check has passed on that same commit. With a red check it stays open until it is fixed.
+
+This is done by a scheduled Claude Code session, not by a GitHub Action: an Action can't resolve a conflict, may not change workflow files, and a pull request it opens starts no CI. Don't use "Sync fork" or "Discard commits" on `pulverizador`. A GitHub Action ([`sync-develop.yml`](.github/workflows/sync-develop.yml)) only keeps `develop` a copy of the official one; its run fails when `pulverizador` has fallen more than three days behind, which means the daily update has stopped.
 
 The `beta` tag belongs to the beta release: leave it alone. The `v…` tags are copies of the official ones. Don't push tags to this fork from a computer: a `v…` tag pushed here starts a release build.
 
