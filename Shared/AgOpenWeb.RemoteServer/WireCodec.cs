@@ -877,6 +877,8 @@ public static class WireCodec
             WriteStr(w, ns.Profile);
             WriteStr(w, ns.Service);
         }
+        // The simulator moves the real steering, a bench test (append-only): u8.
+        w.Write((byte)(s.SimDrivesSteering ? 1 : 0));
         // Sprayer readout (append-only): [u8 present] then f32 pressure (bar), f32 flow
         // (L/min), f64 total (L), u8 master, u8 sections, f32 open width (m), u8 alarms,
         // u8 module checks, f32 module rate (L/ha), f32 module target (L/ha), f32 pressure

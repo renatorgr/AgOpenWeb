@@ -324,6 +324,9 @@ public record StatusDto(
     string ScanReplySubnet = "",
     // The NTRIP session: which service is in use, the failover state, the last failure (NTRIP plan).
     NtripSessionDto? NtripSession = null,
+    // The operator let the simulator move the real steering (a bench test). False, the steer
+    // module is never asked to steer on the simulator.
+    bool SimDrivesSteering = false,
     // Sprayer readout from the machine module (PGN 160); null until it is heard.
     SprayerDto? Sprayer = null);
 

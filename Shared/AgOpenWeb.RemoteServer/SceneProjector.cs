@@ -478,6 +478,7 @@ public sealed class SceneProjector : System.IDisposable
             cfg.SendCorrectedPosition,
             c.ScanReplySubnet ?? "",
             BuildNtripSession(cfg.NtripProfilePerField, c),
+            _state.Simulator.DrivesSteering,
             SprayerProvider?.Invoke());
     }
 
