@@ -543,7 +543,7 @@ public partial class YouTurnCreationService
         // cross the boundary (a bare offset curve stops at the field edge → generator fails →
         // straight fallback). The offset pass (bent round its Go around obstacles) is built
         // above, before the turn lines; it runs on only past the ends the offset kept (#694).
-        List<Vec3> currentCurvePoints = CurveProcessing.ExtendPassForTurn((offsetCurve, pass.PercentRemoved, pass.StartKept, pass.EndKept));
+        List<Vec3> currentCurvePoints = CurveProcessing.ExtendPassForTurn((offsetCurve, pass.PercentRemoved, pass.StartKept, pass.EndKept, pass.StartIsEnd, pass.EndIsEnd));
 
         int currentLocationIndex = 0;
         double minDistSq = double.MaxValue;

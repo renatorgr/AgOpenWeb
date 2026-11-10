@@ -1464,7 +1464,7 @@ namespace AgOpenWeb.Services.YouTurn
             _straightDestination = pass;
             if (input.BendPass != null) pass = input.BendPass(distAway, pass);
             _bentDestination = pass;
-            return CurveProcessing.ExtendPassForTurn((pass, made.PercentRemoved, made.StartKept, made.EndKept));
+            return CurveProcessing.ExtendPassForTurn((pass, made.PercentRemoved, made.StartKept, made.EndKept, made.StartIsEnd, made.EndIsEnd));
         }
 
         // The destination pass of the last build, straight and bent round its Go around obstacles
