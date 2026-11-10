@@ -114,6 +114,10 @@ public partial class MainViewModel
             _lastHydLiftState = result.HydLiftState;
         }
 
+        // What the dual antenna says about the direction of travel, for the engage check.
+        _dualHeadingOffTravelDeg = result.IsDualHeadingOffTravel ? result.DualHeadingOffTravelDeg : double.NaN;
+        _dualReadsReverse = result.IsReverse && ConfigStore.Connections.IsDualGps && !result.IsDualHeadingMissing;
+
         // Autosteer state
         if (result.AutoSteerDisengagedThisCycle)
         {
@@ -282,6 +286,10 @@ public partial class MainViewModel
         State.Field.HeadlandProximityDistance = result.HeadlandProximityDistance;
         State.Field.HeadlandProximityWarning = result.HeadlandProximityWarning;
 
+        // Contour: a stretch ahead that can't be driven as a lap
+        State.Guidance.ContourAhead = result.ContourAhead;
+        State.Guidance.ContourAheadM = result.ContourAheadM;
+
         // Phase E E1: the cycle's first-fix LocalPlane auto-create arrives
         // here. The cycle already holds a cache of it for coord conversion;
         // we commit to the observable so subsequent UI readers see it. Only
@@ -401,4 +409,6 @@ public partial class MainViewModel
     }
 
     private byte _lastHydLiftState; // for the lift sounds (#110)
+    private double _dualHeadingOffTravelDeg = double.NaN; // dual heading across the travel, last cycle
+    private bool _dualReadsReverse;                      // the dual antenna read reversing, last cycle
 }

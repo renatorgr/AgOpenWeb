@@ -37,6 +37,12 @@ public record GpsCycleResult
     public bool ImuValid { get; init; }
     public bool IsReverse { get; init; }
     public bool IsDualHeadingMissing { get; init; }
+    /// <summary>The dual heading runs across the direction of travel (its offset doesn't match
+    /// how the antennas are mounted): AutoSteer won't engage, and disengages.</summary>
+    public bool IsDualHeadingOffTravel { get; init; }
+    /// <summary>How far the dual heading was from the direction of travel at the last check,
+    /// degrees 0–90; NaN until measured, and while the heading isn't from the dual antenna.</summary>
+    public double DualHeadingOffTravelDeg { get; init; } = double.NaN;
     public bool GpsValid { get; init; }
 
     // Tool position
@@ -80,6 +86,11 @@ public record GpsCycleResult
     // Headland proximity
     public double? HeadlandProximityDistance { get; init; }
     public bool HeadlandProximityWarning { get; init; }
+
+    /// <summary>Contour: what the line ahead holds (AgOpenWeb.Services.Contour.ContourAhead:
+    /// 0 clear, 1 turns back, 2 runs over sprayed ground, 3 ends), and how far ahead along the line (m).</summary>
+    public byte ContourAhead { get; init; }
+    public double ContourAheadM { get; init; }
 
     /// <summary>
     /// Phase E: non-null on the single cycle where the cycle worker auto-creates
