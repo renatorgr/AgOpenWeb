@@ -1,0 +1,48 @@
+name: Sync develop
+
+# renatorgr fork only. develop stays a copy of AgOpenGPS-Official/develop; pulverizador is the
+# official develop plus this fork's changes and is the default branch (the beta is built from
+# it, by hand). This workflow keeps develop up to date ("Sync fork") and nothing more.
+#
+# It used to open a pull request from develop into pulverizador. It no longer does: a pull
+# request opened by a workflow starts no CI, its head (develop) keeps moving until it is merged,
+# a workflow can't resolve a conflict, and GitHub's token may not push a change to a workflow
+# file. The official changes reach pulverizador through the branch sync-pulverizador instead:
+# once a day one official commit is merged into it, conflicts are resolved, and it is merged
+# into pulverizador only when every CI check has passed on that commit (README, "Branches
+# and tags").
+on:
+  schedule:
+    # GitHub starts this hours late on most days. That is fine for a copy.
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.repository == 'renatorgr/AgOpenWeb'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Sync develop with the official repository
+        run: gh api -X POST "repos/$REPO/merge-upstream" -f branch=develop --jq .message
+
+      # The daily sync of pulverizador is done outside this repository, so nothing here would
+      # notice if it stopped. This fails the run (a red mark in the Actions tab) when an official
+      # change has been waiting for more than three days.
+      - name: Check that pulverizador is not falling behind
+        run: |
+          git init -q check && cd check
+          git fetch -q --filter=blob:none "https://github.com/AgOpenGPS-Official/AgOpenWeb" develop:official
+          git fetch -q --filter=blob:none "https://github.com/$REPO" pulverizador:pulverizador
+          waiting=$(git rev-list --count --first-parent official ^pulverizador)
+          stale=$(git rev-list --count --first-parent --before="3 days ago" official ^pulverizador)
+          echo "official changes not in pulverizador yet: $waiting, older than three days: $stale"
+          if [ "$stale" -gt 0 ]; then
+            echo "::error::pulverizador is more than three days behind the official develop: the daily sync is not running. Ask for a sync in the AgOpenWeb project; don't press Discard commits."
+            exit 1
+          fi
