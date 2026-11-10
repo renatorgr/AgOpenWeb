@@ -1,6 +1,6 @@
 # AgOpenWeb with a sprayer readout
 
-This is a fork of [AgOpenGPS-Official/AgOpenWeb](https://github.com/AgOpenGPS-Official/AgOpenWeb) that adds a **sprayer readout**: boom pressure, flow and alarms from the sprayer's machine module, shown in a strip above the section buttons. Everything else is the official AgOpenWeb, brought up to date every day.
+This is a fork of [AgOpenGPS-Official/AgOpenWeb](https://github.com/AgOpenGPS-Official/AgOpenWeb) that adds a **sprayer readout**: boom pressure, flow and alarms from the sprayer's machine module, shown in a strip above the section buttons. It also carries [some changes that the official version doesn't have yet](#other-changes-in-this-fork). Everything else is the official AgOpenWeb `develop`, brought in by a pull request each day.
 
 The official README follows [below](#agopenweb).
 
@@ -11,24 +11,41 @@ The official README follows [below](#agopenweb).
 - Warns when the module doesn't open or close a section that AgOpenWeb asked for.
 - With a target rate set, shows the pressure that gives that rate at the current speed. It only advises: nothing is regulated.
 - The settings (target rate, nozzles, pressure limits, flow tolerance) are on the module's own web page ([Sprayer_ESP32](https://github.com/renatorgr/Boards/tree/main/Sprayer/Sprayer_ESP32) 0.10 and newer, Settings tab), not in AgOpenWeb. The module works out the rate, the pressure for the target and the alarms; AgOpenWeb shows and sounds what it sends, as the official AgOpenWeb leaves the rate settings to the rate controllers. The section widths stay in AgOpenWeb (Tool tab). With an older module program (PGN 160 only) the strip shows the pressure, flow and sections, without a rate or alarms.
-- The strip only appears while a sprayer module is sending data. Without one, AgOpenWeb works exactly like the official version.
+- The strip only appears while a sprayer module is sending data.
 
 The module sends PGN 160 to port 9999 once a second, then PGN 161 with ISOBUS process data (DDIs), see [Docs/PGN.md](Docs/PGN.md#sprayer-readout). Firmware is in [renatorgr/Boards](https://github.com/renatorgr/Boards/tree/main/Sprayer): Sprayer_ESP32 for an ESP32 relay board, and the older Sprayer_Nano for an Arduino Nano with a relay board.
 
 The readout was proposed to the official project in [AgOpenGPS-Official/AgOpenWeb#390](https://github.com/AgOpenGPS-Official/AgOpenWeb/issues/390). The maintainers would rather handle sprayer data the ISOBUS way, so it lives in this fork for now.
 
+## Other changes in this fork
+
+Most of these have been offered to the official project too. When one is merged there, it comes off this list.
+
+- **Obstacles.** In the boundary list, each obstacle gets its own choice: a U-turn before it, Go around (the pass bends round it), or Drive through. Trees can be added as circles with "+ Circles", and small obstacles made round. The Go around curve radius and safety margin are on the U-turn tab. Go around is still being tested: don't use it with AutoSteer on a real tractor yet.
+- **Headland gaps.** With "Drive across a headland gap up to" set on the U-turn tab, a pass that crosses a narrow tip of the field is driven on with the sections off, and the turn is made at the far end.
+- **U-turns with no room.** When no proper turn fits, the simple turn is moved back into the field instead of crossing the boundary. Where the headland clips a corner off the pass, AutoSteer drives on across it and says so.
+- **Closing a field.** It also stops a recorded path that is being driven or recorded. With no field open, the section buttons, their hotkeys and the work switch do nothing, so no section can come on with no buttons on the screen to turn it off.
+- **When the operator's screen goes away.** If the screen in control stops answering (a tablet out of Wi-Fi range, a closed tab), it shows Disconnected after 1.5 s. Free Drive and any section switched On by hand are turned off.
+- **Dual antenna check.** AutoSteer won't turn on, and turns off, when the dual heading points across the direction of travel. That means the antennas are set up the wrong way round.
+- **AgOpenGPS settings.** Tractors and implements from AgOpenGPS 6.8.2 or newer, and AgIO's NTRIP caster, are converted when AgOpenWeb starts, once they are copied into its data folder.
+- **Web cards.** ⚙ › "Search the network" finds the modules' web pages: first the ones that announce themselves by mDNS, then by asking each address on the local network. Each page has a zoom button, and the card's header buttons are big enough to hit in a moving cab.
+
 ## Download
 
-Get the [Beta build of this fork](https://github.com/renatorgr/AgOpenWeb/releases/tag/beta). It is rebuilt from `pulverizador` every evening when there are changes, and has the same files as the official Beta (see "Download & run" below). Links below that point to AgOpenGPS-Official give you the official build, without the sprayer readout.
+Get the [Beta build of this fork](https://github.com/renatorgr/AgOpenWeb/releases/tag/beta). It has the same files as the official Beta (see "Download & run" below), and its title shows when it was built and from which commit. Links below that point to AgOpenGPS-Official give you the official build, without the changes above.
 
-## Branches
+The beta is not rebuilt on a schedule. To build a new one from `pulverizador`, go to Actions › Build Deployment Bundles › Run workflow, and keep "publish" on `beta`.
+
+## Branches and tags
 
 | Branch | What it holds |
 |---|---|
-| `pulverizador` (default) | The official `develop` plus the sprayer readout. All work on this fork goes here. |
+| `pulverizador` (default) | The official `develop` plus the changes above. All work on this fork goes here. |
 | `develop` | An exact copy of the official `develop`. Don't commit to it. |
 
-Once a day, a GitHub Action ([`sync-pulverizador.yml`](.github/workflows/sync-pulverizador.yml)) brings `develop` up to date with the official repository. If there is anything new, it opens a pull request, "Update pulverizador with the official AgOpenWeb". Merge it to bring the official changes into `pulverizador`.
+Every day at 18:00 UTC, a GitHub Action ([`sync-pulverizador.yml`](.github/workflows/sync-pulverizador.yml)) brings `develop` up to date with the official repository. If there is anything new, it opens a pull request, "Update pulverizador with the official AgOpenWeb". Merge it (don't close it) to bring the official changes into `pulverizador`. CI doesn't start on that pull request by itself, so wait for the CI run on `pulverizador` after merging.
+
+The `beta` tag belongs to the beta release: leave it alone. The `v…` tags are copies of the official ones. Don't push tags to this fork from a computer: a `v…` tag pushed here starts a release build.
 
 ---
 
