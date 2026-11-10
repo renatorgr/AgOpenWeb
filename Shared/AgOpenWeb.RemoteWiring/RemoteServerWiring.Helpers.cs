@@ -754,10 +754,13 @@ public static partial class RemoteServerWiring
 
     // Asks the host's own networks for web pages off the UI thread and puts what it found in the state,
     // for the bookmark editor to offer: first the pages that announce themselves by mDNS (MdnsHttpBrowser,
-    // about a second, listed at once while the search goes on), then every address of the host's networks
-    // (WebPageScanner), for the pages that announce nothing; a page found both ways is listed once.
+    // a second or two, listed at once while the search goes on), then every address of the host's networks
+    // (WebPageScanner), for the pages that announce nothing; a page the sweep found whose module the mDNS
+    // question did not reach is asked for its name directly; a page found both ways is listed once.
+    // What was asked and who answered goes to the log (logs.txt in a bug report).
     private static async Task ScanWebPagesAsync(IUiDispatcher dispatcher,
-        AgOpenWeb.Models.State.ApplicationState state, AgOpenWeb.Services.Interfaces.ILocalNetworkInfoProvider net)
+        AgOpenWeb.Models.State.ApplicationState state, AgOpenWeb.Services.Interfaces.ILocalNetworkInfoProvider net,
+        Microsoft.Extensions.Logging.ILogger? log)
     {
         if (Interlocked.Exchange(ref _webScanRunning, 1) == 1) return;
         try
@@ -769,28 +772,40 @@ public static partial class RemoteServerWiring
             state.Connections.WebPageScan = new AgOpenWeb.Models.WebPageScan(seq, "searching", nets, []);
             var own = new HashSet<System.Net.IPAddress>(local.Select(a => a.Address));
             var pages = new List<AgOpenWeb.Models.FoundWebPage>();
+            Action<string> note = line =>
+            {
+                if (log != null) Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(log, "{Line}", line);
+            };
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             try
             {
-                pages = await AgOpenWeb.Services.Network.MdnsHttpBrowser.BrowseAsync(local, own, cts.Token);
+                pages = await AgOpenWeb.Services.Network.MdnsHttpBrowser.BrowseAsync(local, own, cts.Token, note);
                 if (pages.Count > 0)
                 {
                     var announced = pages;
                     dispatcher.Post(() => state.Connections.WebPageScan = new AgOpenWeb.Models.WebPageScan(seq, "searching", nets, announced));
                 }
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                note("mDNS failed: " + e.Message);
                 pages = [];
             }
             try
             {
                 var swept = await Task.Run(() => AgOpenWeb.Services.Network.WebPageScanner.ScanAsync(targets, own, cts.Token));
+                note($"sweep of {nets}: " + (swept.Count == 0 ? "no pages" : string.Join(", ", swept.Select(p => $"{p.Title} {p.Url}"))));
+                var unnamed = AgOpenWeb.Services.Network.MdnsHttpBrowser.Unnamed(pages, swept);
+                if (unnamed.Count > 0)
+                {
+                    var asked = await AgOpenWeb.Services.Network.MdnsHttpBrowser.AskHostsAsync(local, own, unnamed, cts.Token, note);
+                    pages = AgOpenWeb.Services.Network.WebPageScanner.Merge(pages, asked);
+                }
                 pages = AgOpenWeb.Services.Network.WebPageScanner.Merge(pages, swept);
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                // what mDNS found stays
+                note("sweep failed: " + e.Message);   // what mDNS found stays
             }
             var found = pages;
             dispatcher.Post(() => state.Connections.WebPageScan = new AgOpenWeb.Models.WebPageScan(seq, "done", nets, found));

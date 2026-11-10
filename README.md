@@ -29,7 +29,7 @@ Most of these have been offered to the official project too. When one is merged 
 - **Dual antenna check.** AutoSteer won't turn on, and turns off, when the dual heading points across the direction of travel. That means the antennas are set up the wrong way round.
 - **AgOpenGPS settings.** Tractors and implements from AgOpenGPS 6.8.2 or newer, and AgIO's NTRIP caster, are converted when AgOpenWeb starts, once they are copied into its data folder.
 - **Steer Wizard: tuning the wheels.** A new step after the Ackermann circle finds Minimum To Move, Max Limit and Proportional Gain by itself. It first checks that the stop works, then moves the wheels a few degrees while the tractor stands still. Nothing changes until "Use these values" is pressed. So far it has only been tested on a simulated steering: not on a tractor yet.
-- **Web cards.** ⚙ › "Search the network" finds the modules' web pages: first the ones that announce themselves by mDNS, then by asking each address on the local network. Each page has a zoom button, and the card's header buttons are big enough to hit in a moving cab.
+- **Web cards.** ⚙ › "Search the network" finds the modules' web pages: first the ones that announce themselves by mDNS, then by asking each address on the local network; a module found that way is then asked for its own name, so it is listed by name even where the network loses mDNS on its way to the Wi-Fi. Each page has a zoom button, and the card's header buttons are big enough to hit in a moving cab.
 
 ## Download
 
