@@ -400,6 +400,47 @@ public partial class YouTurnCreationService
         return clearance.IsClear;
     }
 
+    /// <summary>
+    /// The hard-boundary check for a turn the operator asks for where the tractor is. The implement
+    /// keeps the U-turn distance from the fence along the whole turn, as in an automatic turn,
+    /// unless it is already nearer than that at the press (the pass along a fence, a pass that
+    /// meets the fence at a shallow angle): that distance is gone before the turn starts, so the
+    /// turn only has to keep the implement inside the fence, and an implement already across it
+    /// no further across. Judged against the full distance, such a turn was refused for where the
+    /// implement already stood, also when it turned away from the fence: an 8 m front boom
+    /// 1.5 m from the fence on its right could not turn left, and nothing but driving on into the
+    /// corner was left. <paramref name="intrusion"/> is how far the worst implement point is
+    /// inside the U-turn distance (over the distance itself: across the fence).
+    /// </summary>
+    private static bool ManualTurnClearsHardBoundary(
+        IReadOnlyList<Vec3> path, Boundary? boundary, ConfigurationStore config, out double intrusion)
+    {
+        intrusion = 0.0;
+        if (boundary?.OuterBoundary == null || !boundary.OuterBoundary.IsValid
+            || !boundary.OuterBoundary.IsHard || path == null || path.Count < 2)
+            return true;
+
+        var outerPolygon = boundary.OuterBoundary.Points.Select(p => new Vec2(p.Easting, p.Northing)).ToList();
+        var swept = ImplementSweptPath.Compute(path, BuildToolGeometry(config));
+        double margin = Math.Max(0.0, config.Guidance.UTurnDistanceFromBoundary);
+        var clearance = TurnClearance.Evaluate(swept, outerPolygon, TurnClearance.KeepSide.Inside, margin);
+        intrusion = clearance.MaxIntrusion;
+        if (clearance.IsClear) return true;
+
+        // Where the implement is at the press: the path's first point is the tractor.
+        var atPress = TurnClearance.Evaluate(
+            new[] { swept.FrontLeft[0], swept.FrontRight[0], swept.RearLeft[0], swept.RearRight[0] },
+            outerPolygon, TurnClearance.KeepSide.Inside, margin);
+        if (atPress.IsClear) return false; // it has the distance now and the turn would take it
+
+        // Inside the distance already: up to the fence. Across it already: no further.
+        return clearance.MaxIntrusion <= Math.Max(margin, atPress.MaxIntrusion + ManualTurnFenceSlack);
+    }
+
+    /// <summary>What an implement already across a hard fence at the press may move in a manual
+    /// turn before it counts as going further across (m): the turn's first point is the press itself.</summary>
+    private const double ManualTurnFenceSlack = 0.01;
+
     // ── Input builder ───────────────────────────────────────────────────
 
     private YouTurnCreationInput? BuildCreationInput(
@@ -1212,12 +1253,17 @@ public partial class YouTurnCreationService
         Boundary? boundary,
         GuidanceWorkingState guidance,
         int uTurnSkipRows,
-        Models.Track.Track? targetPass = null) =>
+        Models.Track.Track? targetPass = null,
+        bool startedByTheApp = false) =>
         CreateManualArcPath(currentPosition, abHeading, turnLeft, boundary, guidance, uTurnSkipRows,
-            targetPass, out _);
+            targetPass, out _, startedByTheApp);
 
     /// <param name="obstacleInTheWay">True when the turn was refused because it would cross an
     /// obstacle chosen as U-turn.</param>
+    /// <param name="startedByTheApp">True for a turn the app starts by itself from where the tractor
+    /// is (a planned arc already behind it): the implement keeps the whole U-turn distance from a
+    /// hard boundary. A turn the operator asks for is judged from where the implement is at the
+    /// press (<see cref="ManualTurnClearsHardBoundary"/>).</param>
     public List<Vec3> CreateManualArcPath(
         Position currentPosition,
         double abHeading,
@@ -1226,7 +1272,8 @@ public partial class YouTurnCreationService
         GuidanceWorkingState guidance,
         int uTurnSkipRows,
         Models.Track.Track? targetPass,
-        out bool obstacleInTheWay)
+        out bool obstacleInTheWay,
+        bool startedByTheApp = false)
     {
         obstacleInTheWay = false;
         var path = new List<Vec3>();
@@ -1323,7 +1370,11 @@ public partial class YouTurnCreationService
 
         // Hard boundary: a manual turn is anchored at the tractor, so it can't be
         // shifted inward — if the implement would swing into the fence, refuse it.
-        if (!ImplementClearsHardBoundary(path, boundary, config, out double intrusion))
+        double intrusion;
+        bool clear = startedByTheApp
+            ? ImplementClearsHardBoundary(path, boundary, config, out intrusion)
+            : ManualTurnClearsHardBoundary(path, boundary, config, out intrusion);
+        if (!clear)
         {
             _logger.LogWarning("[ManualYouTurn] Implement would swing into hard boundary (intrusion {I:F2}m) — refusing",
                 intrusion);

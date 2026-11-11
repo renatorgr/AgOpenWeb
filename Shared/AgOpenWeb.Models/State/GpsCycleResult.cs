@@ -131,6 +131,12 @@ public record GpsCycleResult
     /// around with no room to go round them (a U-turn is made before them): shown to the operator.
     /// </summary>
     public string? ObstacleNotice { get; init; }
+
+    /// <summary>
+    /// Non-null on the cycle where a manual U-turn was refused, or a turn could not be made or
+    /// was missed (once, with its sound): why, shown to the operator.
+    /// </summary>
+    public string? YouTurnNotice { get; init; }
 }
 
 /// <summary>
