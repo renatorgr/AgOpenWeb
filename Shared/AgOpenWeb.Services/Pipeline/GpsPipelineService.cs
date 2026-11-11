@@ -1626,6 +1626,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             // Status
             StatusMessage = jumpNotice ?? statusMessage ?? youTurnTickEffects?.StatusMessage ?? fixRejectionReason,
             ObstacleNotice = Interlocked.Exchange(ref _obstacleNotice, null),
+            YouTurnNotice = youTurnTickEffects is { TellOperator: true } ? youTurnTickEffects.StatusMessage : null,
         };
 
         CycleCompleted?.Invoke(result);
