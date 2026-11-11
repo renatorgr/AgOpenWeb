@@ -135,6 +135,13 @@ public sealed class WebClientRig : IAsyncDisposable
             port: FreePort());
         await hostLoop.InvokeAsync(() =>
             RemoteServerWiring.Wire(server, vm, sp, configService, new NoImagery()));
+        // The tractor here is the internal simulator, and the harness reads what the steer module
+        // is told. On the simulator that is "don't steer" unless the operator chose the bench
+        // test, so the rig makes that choice: PGN 254 then says what it says on a receiver.
+        await hostLoop.InvokeAsync(() => vm.IsSimulatorDrivingSteering = true);
+        if (!vm.IsSimulatorDrivingSteering)
+            throw new InvalidOperationException("The rig's simulator may not drive the steer module: "
+                + "PGN 254 would say 'don't steer' whatever a scenario does (is the simulator off?).");
 
         var rig = new WebClientRig(dataRoot, sp, vm, server, hostLoop, module);
         while (events.TryDequeue(out var e)) rig._events.Enqueue(e);
@@ -261,6 +268,10 @@ public sealed class WebClientRig : IAsyncDisposable
     /// 8 m boom in eight 1 m sections, the field from a KML file, an AB line along it, a job.</summary>
     public async Task<string?> SetUpJobAsync()
     {
+        // Auto day/night switches the theme by the clock (the hours, then the sun at the field once
+        // there is a fix) during the run: O2 read that as the observer changing IsDayMode. Off, so
+        // the theme is the same whenever the run starts.
+        await SendAsync("config.set", "display.autoDayNight:0");
         await SendAsync("config.set", "tool.numSections:8");
         for (int i = 0; i < 8; i++) await SendAsync("config.set", F($"tool.sectionWidth:{i},100"));
         await SendAsync("profile.save");

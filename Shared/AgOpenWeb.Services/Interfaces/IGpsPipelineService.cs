@@ -74,6 +74,11 @@ public interface IGpsPipelineService
     /// </summary>
     void SetDriftCompensation(double driftE, double driftN);
 
+    /// <summary>A recorded route playing (P7): what AutoSteer follows instead of the track, the
+    /// Dubins approach (if any) and then the route from its point nearest the tractor; a null
+    /// route when playback stops.</summary>
+    void SetRecordedPathGuidance(IReadOnlyList<Vec3>? approach, IReadOnlyList<Vec3>? route, int routeStartIndex);
+
     // ── Contour (#110, AgOpenGPS CContour) ───────────────────────────────
 
     /// <summary>Contour button: guide along recorded contour strips instead of the track.</summary>
@@ -113,8 +118,13 @@ public interface IGpsPipelineService
     /// </summary>
     void SetLocalPlane(Models.LocalPlane? localPlane);
 
-    /// <summary>Whether the internal simulator is the GPS source (steer speed limits are off then).</summary>
+    /// <summary>Whether the internal simulator is the GPS source: steer speed limits are off
+    /// then, and the steer module is not asked to steer (PGN 254 status stays 0).</summary>
     void SetSimulatorEnabled(bool enabled);
+
+    /// <summary>Whether the simulator may steer the module on the network (a bench test). Off by
+    /// default: PGN 254 status stays 0 while the simulator is the GPS source.</summary>
+    void SetSimulatorSteersModule(bool steers);
 
     /// <summary>The headland toggle: the headland distance HUD and the hydraulic lift follow it.</summary>
     void SetHeadlandOn(bool on);

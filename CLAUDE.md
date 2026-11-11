@@ -131,6 +131,14 @@ Several browsers may be connected; only one holds control (`ControlAuthority`, d
 Every command is dropped unless the sender holds fresh control: the others are observers, who
 see everything and change nothing (#397). `ObserverIds` lists the few requests an observer may
 send. A client can't take control from a live operator, only fill an empty seat.
+The deadman (1.5 s without the holder's presence) runs on a timer of its own. The page sends
+presence on a timer and on every frame from the host (`sendPresence` in `js/control.js`): a
+minimized window or a background tab gets its timers throttled but still hears the host (#766). When control
+ends, `MainViewModel.OnBrowserControlEnded` turns off AutoSteer, Free Drive, the sections (a
+section On by hand too) and the steer wizard, and the next screen to take control is told why.
+`WebSocketHub` gives each browser its own outgoing queue: a broadcast never waits on a socket,
+and a browser that stops reading for 15 s is cut off (it reconnects and gets a fresh seed).
+The page drops a link that has carried no frame for 2.5 s and reconnects (`transport.js`).
 
 ### Section control timing
 `SectionControlService` runs every section by its own button state (Off / Auto / On); the master
@@ -142,6 +150,24 @@ installs at AgOpenGPS's 1.0 s on / 0.5 s off (`ToolConfig.DefaultLookAheadOn/Off
 assumes a sprayer's valves take; saved profiles keep their own.
 The control loop sends the PGNs at 100 Hz, PGN 229 every tick whatever the section count (the
 ISOBUS task controller reads sections from 229 only).
+
+### The simulator never steers the module
+The steer module stays on the network while the simulator runs. While the simulator is the chosen GPS
+source (`GpsPipelineService.SetSimulatorEnabled`, from the moment it is chosen) `VehicleState.SimulatorHoldsSteering`
+is set (`IAutoSteerService.SetSimulatorHoldsSteering`) and `PgnBuilder.BuildAutoSteerPgn` sends status 0:
+the module would open the lock valve and steer a parked tractor to a simulated line. AutoSteer stays
+engaged in the app, so the simulator follows the line, and the red "module not steering" button is not
+shown. Turning the simulator on or off (the receiver's fix arriving does it too) takes AutoSteer off
+first. Free Drive is the operator's own test of the steering and still sends status 1; PGN 239/229
+(sections, lift) still go to the machine module, as a bench test of a sprayer needs. The hold is the
+app's simulator, not the label on a fix: the scenario rigs feed their own fixes as
+`GpsSentenceType.Simulator` with the simulator off, and are steered.
+
+**Bench choice** (a steering motor on the desk): not in the UI yet (an enhancement). The seam is there:
+`MainViewModel.IsSimulatorDrivingSteering` (`GpsPipelineService.SetSimulatorSteersModule`) lets AutoSteer on
+the simulator send status 1; never saved, dropped when the simulator is turned off and when the steer module
+goes silent, and a change takes AutoSteer off first. The web client harness reads PGN 254 on the simulator,
+so its rig sets it (`WebClientRig`).
 
 ### Host ↔ client commands
 The client sends `id|arg` strings (`transport.send('track.select|0')`). `RemoteServerWiring`
@@ -219,7 +245,7 @@ public class Track
 AgOpenWeb may use different/improved formats from AgOpenGPS when it benefits code simplicity or features. Provide **one-way import** from AgOpenGPS formats rather than maintaining full backwards compatibility.
 
 - **Formats**: a field is `field.geojson` (origin, boundaries, headland, tracks, flags, headland lines, background image placement) beside `background.png`, `contours.geojson`, `recorded-paths.geojson` and `elevation.csv`; a job's coverage is world-anchored tiles under `jobs/<task>/coverage/`. Profiles are JSON; the spec for other programs is `Docs/FIELD_FILE_FORMATS.md` (keep it in step with the code).
-- **Migration**: AgOpenGPS files found in a field folder are imported once (on open) and **deleted**; AgOpenWeb never writes AgOpenGPS formats. No compatibility code for files from older AgOpenWeb builds (no installed base yet). See `Plans/Completed/FILE_FORMAT_MODERNIZATION_PLAN.md`.
+- **Migration**: AgOpenGPS files found in a field folder are imported once (on open) and **deleted**; AgOpenWeb never writes AgOpenGPS formats. AgOpenGPS 6.8.2+ profiles copied into the data folder (`VehicleProfiles/`, `ToolProfiles/`, `Environment/environment.xml` or, on a fresh 6.8.2+ install, `DefaultEnvironment.xml`, as AgOpenGPS reads them) and AgIO's NTRIP caster (`AgIO/*.xml`; not the one AgIO ships with, and the default only if NTRIP was on there) are converted at start the same way (`AgOpenGpsProfileImport`, one mapping in `AgOpenGpsSettings`, which turns AgOpenGPS's signs and units into AgOpenWeb's; `NtripProfileService.ImportAgIoCastersAsync`), a profile of the same name left alone. No compatibility code for files from older AgOpenWeb builds (no installed base yet). See `Plans/Completed/FILE_FORMAT_MODERNIZATION_PLAN.md`.
 
 ## Technology Stack
 
@@ -467,12 +493,14 @@ dotnet run --project TestRunner/TestRunner.csproj
 - `AgOpenWeb.SteerWizardScenarios.Tests` - end-to-end steer wizard scenarios: the whole backend in-process, an emulated AiO steer module (firmware P controller on its 25 ms loop, WAS formula, locks, either motor wiring) and a moving tractor, a careful and a careless operator, a safety watch on the wheels at 50 Hz, a findings report; about 10 minutes, so CI only builds it and `steer-wizard-scenarios.yml` runs it nightly (its `README.md`)
 - `AgOpenWeb.MachineModuleScenarios.Tests` - an emulated Sprayer_ESP32 machine module on the real UDP: sections vs valves, settings reaching the module, restarts and outages (`machine-module-scenarios.yml`)
 - `AgOpenWeb.GpsNtripScenarios.Tests` - receivers, sentence families and an NTRIP caster on the loopback: corrections, network changes, dual heading (`gps-ntrip-scenarios.yml`; one scenario needs Linux's 127.0.0.2)
-- `AgOpenWeb.FieldJobScenarios.Tests` - whole jobs on real fields with AutoSteer, U-turns and auto sections, measuring where product really went on a 0.2 m grid (`field-job-scenarios.yml`, up to 2 h); its `PathJobScenarioTests` do the same on curves, the boundary as a loop, a water pivot, contour and a recorded path (`path-job-scenarios.yml`, about 30 min); `RigJobScenarioTests` with the testers' rigs: an implement shifted to one side, a curve recorded by driving, a wide implement skipping rows (`rig-job-scenarios.yml`); `TurnInterventionScenarioTests` with an operator who acts during a U-turn, and manual U-turns (`turn-intervention-scenarios.yml`); `ImperialJobScenarioTests` the job typed in feet and inches through the real web client, headless Chromium (`imperial-job-scenarios.yml`)
+- `AgOpenWeb.FieldJobScenarios.Tests` - whole jobs on real fields with AutoSteer, U-turns and auto sections, measuring where product really went on a 0.2 m grid (`FieldJobScenarioTests`, the careful and the careless operator); its `PathJobScenarioTests` do the same on curves, the boundary as a loop, a water pivot, contour and a recorded path; `RigJobScenarioTests` with the testers' rigs: an implement shifted to one side, a curve recorded by driving, a wide implement skipping rows; `TurnInterventionScenarioTests` with an operator who acts during a U-turn, and manual U-turns; `ImperialJobScenarioTests` the job typed in feet and inches through the real web client, headless Chromium. One engine (`JobRun`), so one nightly, `job-scenarios.yml`: the six side by side, then one combined report listing each finding once with every harness and job it was seen in (`Tools/combine-job-reports.py`). **Short runs:** `AGOPENWEB_SCENARIO_TURNS=N` stops each job at its (N+1)th U-turn, `AGOPENWEB_SCENARIO_MINUTES=N` after N simulated minutes, `AGOPENWEB_SCENARIO_FROM_PASS=K` starts on pass K (rework passes 28-32 of a finding: `FROM_PASS=28 TURNS=4`) (a job of a few passes in under a minute, not 5-80), with the whole-field checks skipped; `AGOPENWEB_SCENARIO_ONLY=J1,J8` picks jobs; the workflow's `only`, `turns`, `from_pass` and `minutes` inputs do the same on GitHub. Confirm a fix with a unit test first, then a short fix-vs-base run of the jobs it touches on the harness host, then merge: the nightly on develop is the full check the next morning (`FROM_PASS` works on AB lines and curves)
 - `AgOpenWeb.IsobusScenarios.Tests` - an emulated AOG-TaskController and its implements (`isobus-scenarios.yml`)
-- `AgOpenWeb.WebClientScenarios.Tests` - the real web client in headless Chromium (Playwright) on the screens a farm uses (tablets, a 720p PC, a 5" screen, a phone), a second screen as observer, and the operator's screen going away while working (tab closed, Wi-Fi silent or cut, tablet asleep, Free Drive, a section on by hand), read at the module port; and the operator's flows done by taps and typing (tracks made every way but the water pivot, boundary and headland, tram lines, fields and jobs, the section bar, the U-turn and lateral buttons) with a careful and a careless operator (`web-client-scenarios.yml`)
+- `AgOpenWeb.WebClientScenarios.Tests` - the real web client in headless Chromium (Playwright) on the screen target, a 10" tablet in landscape (1280×800 CSS px, the Panasonic FZ-G1; other screens are out of scope, `Docs/WEB_CLIENT.md`), a second tablet as observer, and the operator's screen going away while working (tab closed, Wi-Fi silent or cut, tablet asleep, Free Drive, a section on by hand), read at the module port; and the operator's flows done by taps and typing (tracks made every way but the water pivot, boundary and headland, tram lines, fields and jobs, the section bar, the U-turn and lateral buttons) with a careful and a careless operator (`web-client-scenarios.yml`)
 - `AgOpenWeb.UpdateScenarios.Tests` - settings, profiles, casters, fields and a job made on older releases (their Linux bundles, SHA-256 checked) then read back by this build, a rollback; on this build a restart, a power cut, damaged and leftover files, a moved data folder, a comma-decimal locale, AgOpenGPS fields and a whole AgOpenGPS 6.8.6 folder; about 15 minutes (`update-scenarios.yml`)
 - `AgOpenWeb.WorkingDayScenarios.Tests` - an eight-hour working day in one process (fields, refills, lunch, a tablet and a phone that drop, stall and reconnect, the next morning): memory baselines, heap census, cycle and tick times, the deadman with a second browser; about 45 minutes (`working-day-scenarios.yml`)
 - `AgOpenWeb.DumpReplayScenarios.Tests` - the bug report dumps attached to public issues, replayed on this build: the reporter's settings, field, job and track, their GPS log fed back through the pipeline and compared with what their build did, then a machine of their shape taken over with AutoSteer and U-turns; the bug report service's dumps only in a local run (`AGOPENWEB_REPLAY_PRIVATE=1`), never in CI (`dump-replay-scenarios.yml`)
+
+**Running the harnesses:** on the harness host, never on a development machine (`Tools/harness-runner`: a Docker image run on the `runner` context; `runner-compare.sh` runs a fix and its base side by side and lists the findings new, gone and in both, `Tools/compare-reports.py`). Every harness stops at the start when another process holds UDP 9999 or 8888 (`Tests/ScenarioShared/PortGuard.cs`, linked into each): an app left running shares the packets and the findings are noise. Before rerunning, read the saved report, pictures and traces; one confirming run per fix.
 
 CI also runs `Tools/i18n-extract.py --check` so `en.json` stays current, `Tools/license-headers.py --check` for the licence headers, and `Tools/i18n-limits.py --check` (job `translations-fit`, only when a change touches `wwwroot/`, the check, its baseline or the workflow; otherwise skipped, which counts as passed) so every translated label fits the English layout.
 
@@ -486,6 +514,8 @@ turns from the on-screen buttons) with paths built by `YouTurnCreationService`:
 - Rows wider than twice the turn radius (a wide spreader, skipped rows) get AgOpenGPS's wide turn (`CreateCurveWideTurn`): a quarter circle out of the pass, tangent to the turn line, the turn line itself, a quarter circle into the next pass, so the distance from the boundary holds on an angled headland (#544). The omega turn (one shape square to the track) is the fallback when it can't be built.
 - Manual: a Dubins path at the configured `UTurnRadius` from 4 m ahead of the tractor to the point abreast on the target pass (an omega when the radius exceeds half the pass offset), laid out along the track's local heading (the curve's heading at the nearest point); the path's first point is the tractor itself. Like AgOpenGPS `BuildManualYouTurn`.
 - The turn hands back to line guidance with 4 m of arc remaining (`EarlyCompletionLookahead`).
+- While a turn is driven (`IsExecuting`) the pass shown is the one it lands on (`GpsPipelineService.TurnTargetPass`): the highlighted line, the tool's band, the guidelines and the pass label, as AgOpenGPS, which moves to the next pass when the turn starts (`CYouTurn.YouTurnTrigger`). The pass worked (`HowManyPathsAway`: the worked-pass mark, the snake order, a turn backed out of, #588) still moves on in `CompleteTurn`.
+- A turn that loops (the next pass closer than twice the radius) is moved in to stay inside the turn line, as AgOpenGPS; when the headland is narrower than the loop is deep it leaves its pass inside the headland line, still working, and the status says "Headland too narrow for this U-turn" with how far before the line (`TurnStartInsideHeadlandLine`).
 - The turn is built from the headland crossing **ahead** of the tractor (`FindTrackHeadlandIntersectionAhead`; one behind only past the last crossing). When no real turn fits, the simple fallback (a semicircle) is used only if every point of it stays in the field, outside obstacles a turn may not drive through (`LeavesField`, #698); otherwise no turn and the creation-failed sound, as AgOpenGPS (which has no fallback). A hard boundary refuses a turn that would start under or behind the tractor.
 - The next pass must have room at this end: at least 20 m of it inside the cultivated area back from the end ahead (`IsPathLandable` / `LandingLength`), not just any piece of it inside the field; otherwise "End of field reached - no room on the next pass at this end" (#712). Driving on across a headland gap to the next piece is not done (an enhancement).
 - An open curve whose ends face each other (a boundary curve made the long way round, A and B with an opening between them): A and B are the line's ends, no run-on past them, and the opening is a virtual boundary (`CurveEndOpening`): the U-turn turns there into the next pass as at a headland. Past an open curve's end with no turn to take over, AutoSteer goes off ("past end of curve", AgOpenGPS `CABCurve`) instead of steering back (#694).
@@ -516,14 +546,18 @@ GitHub Actions workflows, split by purpose:
     beta from `develop` right away (title carries build time + commit); `release` publishes
     the Release named by `release_tag`; `none` builds + uploads artifacts only (dry run).
 
-- **Scenario harnesses, nightly** — fifteen workflows, each running one harness on `develop` (when it has a
+- **Scenario harnesses, nightly** — eleven workflows, each running its harness on `develop` (when it has a
   commit from the last 25 hours) or by hand, keeping its findings report as an artifact and in the run's
   summary; PR CI only builds them. GitHub's own schedule started them 5–8 hours late every day, so the bug
-  report Worker starts them (`Tools/bugreport-worker`, `NIGHTLY_CRON` 05:07 UTC, 23:07 US Central) as a
-  `workflow_dispatch` with `nightly=true`, which keeps the 25-hour check; all fifteen side by side, each on its
-  own runner: `field-scenarios.yml`, `steer-wizard-scenarios.yml` (also fails when its safety watch saw the
+  report Worker starts them (`Tools/bugreport-worker`, `NIGHTLY_CRON` 05:07 UTC, 23:07 US Central, `NIGHTLY_WORKFLOWS`
+  in its `wrangler.toml`: a change there needs `wrangler deploy`) as a `workflow_dispatch` with `nightly=true`, which keeps the 25-hour check;
+  side by side, each on its own runner: `field-scenarios.yml`, `steer-wizard-scenarios.yml` (also fails when its safety watch saw the
   wheels move when they shouldn't), `vehicle-tool-scenarios.yml`, `machine-module-scenarios.yml`,
-  `gps-ntrip-scenarios.yml`, `field-job-scenarios.yml` (the longest, up to 2 h), `isobus-scenarios.yml`, `path-job-scenarios.yml`, `web-client-scenarios.yml`, `update-scenarios.yml`, `working-day-scenarios.yml`, `dump-replay-scenarios.yml`, `rig-job-scenarios.yml`, `turn-intervention-scenarios.yml`, `imperial-job-scenarios.yml` (Playwright's Chromium). Each harness's `README.md` says what it covers.
+  `gps-ntrip-scenarios.yml`, `job-scenarios.yml` (the five job harnesses, up to about 80 min, one combined report), `isobus-scenarios.yml`,
+  `web-client-scenarios.yml`, `update-scenarios.yml`, `working-day-scenarios.yml`, `dump-replay-scenarios.yml`.
+  The slow ones that rarely change (the Vehicle & Tool settings sweep, working day, update, dump replay) run only when a
+  commit of the last 25 hours touched what they cover, and every Sunday whatever changed (`.github/scripts/nightly-fresh.sh`,
+  the paths in each workflow; add a path there when a harness starts covering more). Each harness's `README.md` says what it covers.
 
 To cut a release (about weekly, so each one stays small): bump `sys/version.h` and the three heads' display versions, then push a tag — `git tag v26.7.x && git push origin v26.7.x`. A summary on top of the generated list goes in with `gh release edit`.
 

@@ -152,6 +152,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     // it changes: field open, the cycle's own first-fix / re-anchor commits, field close.
     private LocalPlane? _committedLocalPlane;
     private bool _simulatorEnabled;
+    private bool _simulatorSteersModule;
     private bool _headlandOn;
     // Set by SetYouTurnConfig when the skip pattern changes, so the cycle drops the snake
     // sequence and the next turn rebuilds it for the new pattern.
@@ -359,6 +360,13 @@ public sealed class GpsPipelineService : IGpsPipelineService
         lock (_stateLock) { _driftE = driftE; _driftN = driftN; }
     }
 
+    // Recorded route playback (P7): the line AutoSteer follows while a route plays, set from
+    // the UI thread, followed by the cycle.
+    private PathPlanning.RecordedRouteGuide? _recordedPath;
+
+    public void SetRecordedPathGuidance(IReadOnlyList<Vec3>? approach, IReadOnlyList<Vec3>? route, int routeStartIndex) =>
+        Volatile.Write(ref _recordedPath, route is { Count: >= 2 } ? new PathPlanning.RecordedRouteGuide(approach, route, routeStartIndex) : null);
+
     public void SetContourMode(bool on)
     {
         lock (_contourLock)
@@ -415,10 +423,36 @@ public sealed class GpsPipelineService : IGpsPipelineService
         lock (_stateLock) _committedLocalPlane = localPlane;
     }
 
-    /// <summary>Whether the internal simulator is the GPS source (no steer speed limits then, #106).</summary>
+    /// <summary>Whether the internal simulator is the GPS source (no steer speed limits then, #106).
+    /// It does not steer the real module (<see cref="HoldSteeringOnTheSimulator"/>).</summary>
     public void SetSimulatorEnabled(bool enabled)
     {
         lock (_stateLock) _simulatorEnabled = enabled;
+        HoldSteeringOnTheSimulator();
+    }
+
+    /// <summary>The operator let the simulator move the real steering, for a bench test. Off, a
+    /// simulated drive never asks the steer module to steer (the default).</summary>
+    public void SetSimulatorSteersModule(bool steers)
+    {
+        lock (_stateLock) _simulatorSteersModule = steers;
+        HoldSteeringOnTheSimulator();
+    }
+
+    /// <summary>
+    /// The simulator does not steer the real module. The steer module stays on the network
+    /// while the simulator runs; PGN 254 status 1 with the simulator's speed made it open the
+    /// lock valve and drive the steering valve of a parked tractor. So the status stays 0
+    /// while the simulator is the chosen source, from the moment it is chosen and not from the
+    /// next fix (the receiver's first fixes arrive before the simulator's timer notices them
+    /// and stops), unless the operator let it move the steering for a bench test. AutoSteer
+    /// stays engaged in the app, so the simulator follows the line.
+    /// </summary>
+    private void HoldSteeringOnTheSimulator()
+    {
+        bool hold;
+        lock (_stateLock) hold = _simulatorEnabled && !_simulatorSteersModule;
+        _autoSteerService.SetSimulatorHoldsSteering(hold);
     }
 
     /// <summary>The headland toggle: the distance HUD and the hydraulic lift follow it (#106).</summary>
@@ -720,6 +754,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         bool contourOn;
         lock (_contourLock) contourOn = _contourOn;
         _guidanceWorking.IsContourMode = contourOn;
+        var recordedPath = contourOn ? null : Volatile.Read(ref _recordedPath);
 
         var pos = data.CurrentPosition;
         bool hasTrack = track != null && track.Points.Count >= 2;
@@ -899,7 +934,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         YouTurnEffects? youTurnTickEffects = null;
         bool hasValidHeadlandLine = headlandLine != null && headlandLine.Count >= 3;
         // No U-turns in contour mode (AgOpenGPS DisableYouTurnButtons).
-        bool hasTickableTrack = track != null && track.Points.Count >= 2 && !contourOn;
+        bool hasTickableTrack = track != null && track.Points.Count >= 2 && !contourOn && recordedPath == null;
 
         var tickPosition = pos with { Easting = driftedEasting, Northing = driftedNorthing };
         // An open curve whose ends face each other turns at the opening between them as at a
@@ -1094,6 +1129,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         (double Width, double Shift, bool Extend, int Count)? guideArgs = null;
         IReadOnlyList<Vec3>? toolPass = null;
         (double Width, bool Extend)? toolPassArgs = null;
+        int? shownLandingPass = null; // the pass a U-turn being driven lands on, while it is the one shown
 
         // Always compute the display track when we have a track (for map visualization)
         if (hasTrack)
@@ -1107,7 +1143,20 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 _guidanceWorking.IsHeadingSameWay = IsHeadingSameWayOn(track!, driftedEasting, driftedNorthing, headingRad);
             double toolShift = Models.Track.PassGeometry.ToolShift(config2.Tool.Offset, _guidanceWorking.IsHeadingSameWay);
             double widthMinusOverlap = config2.ActualToolWidth - config2.Tool.Overlap;
-            double distAway = Models.Track.PassGeometry.Offset(track, passNumber, widthMinusOverlap, nudgeOffset, toolShift);
+            // While a U-turn is driven, the pass shown is the one it lands on, as AgOpenGPS, which
+            // moves to the next pass when the turn starts (CYouTurn.YouTurnTrigger): the line, the
+            // tool's band, the guidelines and the pass label. The pass worked (HowManyPathsAway)
+            // moves on when the turn completes, so a turn backed out of keeps its pass (#588).
+            // The landing pass is driven the other way: its tool shift has the other sign (#446).
+            int shownPass = passNumber;
+            double shownShift = toolShift;
+            if (isInYouTurn && TurnTargetPass() is { } landing)
+            {
+                shownPass = landing;
+                shownShift = -toolShift;
+                shownLandingPass = landing;
+            }
+            double distAway = Models.Track.PassGeometry.Offset(track, shownPass, widthMinusOverlap, nudgeOffset, shownShift);
 
             // Curve tracks: extend the displayed (magenta) line straight to the U-turn so
             // there's no visible gap between the guidance line and the turn (the line the
@@ -1123,7 +1172,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
                     // it isn't drawn twice at the same position.
                     displayTrack = new Models.Track.Track
                     {
-                        Name = $"{track.Name} (path {passNumber})",
+                        Name = $"{track.Name} (path {shownPass})",
                         Points = CurveProcessing.ExtendCurveEnds(track.Points),
                         Type = track.Type, IsVisible = true, IsActive = true, IsClosed = track.IsClosed
                     };
@@ -1140,7 +1189,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 var offsetPoints = extendDisp ? CurveProcessing.ExtendPass(pass) : new List<Vec3>(pass.Points);
                 displayTrack = new Models.Track.Track
                 {
-                    Name = $"{track.Name} (path {passNumber})",
+                    Name = $"{track.Name} (path {shownPass})",
                     Points = offsetPoints,
                     Type = track.Type,
                     IsVisible = true,
@@ -1150,12 +1199,12 @@ public sealed class GpsPipelineService : IGpsPipelineService
             }
 
             toolPassArgs = (widthMinusOverlap, extendDisp);
-            toolPass = ToolPass(track, passNumber, widthMinusOverlap, nudgeOffset, extendDisp);
+            toolPass = ToolPass(track, shownPass, widthMinusOverlap, nudgeOffset, extendDisp);
 
             if (config2.Display.ExtraGuidelines)
             {
                 guideArgs = (widthMinusOverlap, toolShift, extendDisp, config2.Display.ExtraGuidelinesCount);
-                guideLines = GuideLines(track, passNumber, widthMinusOverlap, nudgeOffset, toolShift, extendDisp,
+                guideLines = GuideLines(track, shownPass, widthMinusOverlap, nudgeOffset, toolShift, extendDisp,
                     config2.Display.ExtraGuidelinesCount, TurnTargetPass());
             }
         }
@@ -1183,6 +1232,36 @@ public sealed class GpsPipelineService : IGpsPipelineService
                     Volatile.Write(ref _simulatorSteerAngle, steerAngle);
                     _autoSteerService.UpdateGuidanceResults(steerAngle, crossTrackError);
                 }
+            }
+        }
+        else if (recordedPath != null)
+        {
+            // A recorded route playing replaces the track, as contour does: AutoSteer steers
+            // along it (AgOpenGPS steers the module along it; here the operator engages AutoSteer).
+            var cfgRp = _configStore.Vehicle;
+            if (recordedPath.Follow(driftedEasting, driftedNorthing, headingRad, cfgRp.Wheelbase, cfgRp.MaxSteerAngle) is { } rp)
+            {
+                crossTrackError = rp.CrossTrackError;
+                goalE = rp.GoalE;
+                goalN = rp.GoalN;
+                hasGoal = !_configStore.Guidance.IsStanley;
+                if (autoSteerEngaged)
+                {
+                    steerAngle = rp.SteerAngleDegrees;
+                    hasGuidance = true;
+                    Volatile.Write(ref _simulatorSteerAngle, steerAngle);
+                    _autoSteerService.UpdateGuidanceResults(steerAngle, crossTrackError);
+                }
+            }
+            else if (autoSteerEngaged)
+            {
+                // The end of the route: nothing left ahead to steer to. AutoSteer off with the
+                // reason, as past the end of an open curve (AgOpenGPS stops playback there).
+                autoSteerEngaged = false;
+                autoSteerDisengaged = true;
+                disengageReason = RecordedPathEndReason;
+                lock (_stateLock) _autoSteerEngaged = false;
+                _autoSteerService.UpdateGuidanceResults(0, NoLineDistance);
             }
         }
         else if (autoSteerEngaged && hasTrack)
@@ -1482,7 +1561,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 _youTurn,
                 justCompleted: youTurnCompleted || (youTurnTickEffects?.TurnCompleted ?? false)),
             Guidance = BuildGuidanceSnapshot(
-                WithLineLabel(_guidanceWorking), displayTrack, baseTrack, hasGuidance,
+                WithLineLabel(_guidanceWorking, shownLandingPass), displayTrack, baseTrack, hasGuidance,
                 diagPathAnchorA, diagPathAnchorB, diagTurnPathCount, diagAntiTangentGuardFired) with { GuideLines = guideLines, ToolPass = toolPass },
 
             // Sections
@@ -1578,10 +1657,12 @@ public sealed class GpsPipelineService : IGpsPipelineService
     // The pass label, as AgOpenGPS's DrawTrackInfo: an arrow for the way you drive (up = A→B, its
     // font's '{'; down = B→A, its '}') and the pass counted from the reference line, which is the
     // edge between passes: pass 0 is 1R, pass −1 is 1L. The map adds the nudge in its own units.
-    private static GuidanceWorkingState WithLineLabel(GuidanceWorkingState g)
+    // The label names the pass shown: during a U-turn the pass it lands on, driven the other way.
+    private static GuidanceWorkingState WithLineLabel(GuidanceWorkingState g, int? landingPass = null)
     {
-        int pass = g.HowManyPathsAway;
-        g.CurrentLineLabel = (g.IsHeadingSameWay ? "↑" : "↓") + (pass >= 0 ? $"{pass + 1}R" : $"{-pass}L");
+        int pass = landingPass ?? g.HowManyPathsAway;
+        bool sameWay = landingPass.HasValue ? !g.IsHeadingSameWay : g.IsHeadingSameWay;
+        g.CurrentLineLabel = (sameWay ? "↑" : "↓") + (pass >= 0 ? $"{pass + 1}R" : $"{-pass}L");
         return g;
     }
 
@@ -1661,6 +1742,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
 
     /// <summary>Why AutoSteer went off at the end of an open curve (AgOpenGPS gsGuidanceStopped, gsPastEndOfCurve).</summary>
     public const string PastEndOfCurveReason = "AutoSteer disengaged - past end of curve";
+    public const string RecordedPathEndReason = "AutoSteer disengaged - end of the recorded path";
 
     private (double steerAngle, double xte, double goalE, double goalN, string? statusMessage, bool hasLine, bool atEnd)?
         CalculateTrackGuidance(
