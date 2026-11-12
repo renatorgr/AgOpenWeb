@@ -463,6 +463,7 @@ public class DebugDumpService
                 store.Connections.MinFixQuality,
                 store.Connections.RtkLostAlarm,
                 store.Connections.RtkLostAction,
+                store.Connections.RtkHold,
                 store.Connections.MaxDifferentialAge,
                 store.Connections.MaxHdop
             },

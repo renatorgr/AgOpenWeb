@@ -176,8 +176,20 @@ public class VehicleState : ObservableObject
         set => SetProperty(ref _imuYawRate, value);
     }
 
+    private double _rtkHoldM;
+    /// <summary>How far the position is held off the receiver's after RTK was lost, m (fork only;
+    /// <c>RtkLossHold</c>). Shown with the fix.</summary>
+    public double RtkHoldM
+    {
+        get => _rtkHoldM;
+        set
+        {
+            if (SetProperty(ref _rtkHoldM, value)) OnPropertyChanged(nameof(FixQualityText));
+        }
+    }
+
     // Computed properties
-    public string FixQualityText => FixQuality switch
+    public string FixQualityText => (FixQuality switch
     {
         0 => "No Fix",
         1 => "GPS Fix",
@@ -185,7 +197,9 @@ public class VehicleState : ObservableObject
         4 => "RTK Fixed",
         5 => "RTK Float",
         _ => $"Unknown ({FixQuality})"
-    };
+    }) + (FixQuality > 0 && _rtkHoldM >= 0.05
+        ? ", held " + _rtkHoldM.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " m"
+        : "");
 
     public bool HasValidFix => FixQuality > 0 && SatelliteCount >= 4;
     public bool HasRtkFix => FixQuality == 4;

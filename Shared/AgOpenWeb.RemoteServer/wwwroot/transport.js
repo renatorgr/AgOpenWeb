@@ -355,6 +355,7 @@ window.RemoteTransport = {
             isDualGps: !!u8(), dualHeadingOffset: f64(), dualReverseDistance: f64(),
             autoDualFix: !!u8(), dualSwitchSpeed: f64(), minGpsStep: f64(), fixToFixDistance: f64(),
             headingFusionWeight: f64(), reverseDetection: !!u8(), rtkLostAlarm: !!u8(), rtkLostAction: i32(),
+            rtkHold: !!u8(), // fork only
           };
           const roll = { rollZero: f64(), rollFilter: f64(), isRollInvert: !!u8() };
           const rdF64 = () => { const n = i32(), a = new Array(n); for (let k = 0; k < n; k++) a[k] = f64(); return a; };

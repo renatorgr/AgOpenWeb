@@ -560,7 +560,8 @@ public record GpsConfigDto(
     double HeadingFusionWeight,
     bool ReverseDetection,
     bool RtkLostAlarm,
-    int RtkLostAction);  // 0 Warn, 1 Pause AutoSteer
+    int RtkLostAction,   // 0 Warn, 1 Pause AutoSteer
+    bool RtkHold);       // hold the line when RTK is lost (fork only)
 
 /// <summary>Data Sources → Roll tab (ConfigStore.Ahrs).</summary>
 public record RollConfigDto(

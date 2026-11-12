@@ -230,6 +230,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
     // ── RTK quality tracking ────────────────────────────────────────────
     private int _previousFixQuality;
 
+    // Hold the line when RTK is lost (fork only): the receiver's step taken out, cycle-owned.
+    private readonly RtkLossHold _rtkHold = new();
+    private bool _rtkHoldSimulator;
+
     // ── Curve limit warning throttling ──────────────────────────────────
     private DateTime _lastCurveLimitWarning = DateTime.MinValue;
     private double? _lastHeadlandDistance;
@@ -849,7 +853,31 @@ public sealed class GpsPipelineService : IGpsPipelineService
         if (!ReferenceEquals(headingPlane, _headingPlane))
         {
             _headingFusion.Reset();
+            _rtkHold.Reset();
             _headingPlane = headingPlane;
+        }
+
+        // ── Hold the line when RTK is lost (fork only) ──────────────────
+        // The step the receiver's position makes when it leaves RTK fixed (no corrections in a
+        // valley) is taken out here, before the heading and everything after it, so neither the
+        // heading nor AutoSteer sees a jump; it goes out gently when RTK fixed is back.
+        if (simulatorEnabled != _rtkHoldSimulator)
+        {
+            _rtkHold.Reset(); // another position source
+            _rtkHoldSimulator = simulatorEnabled;
+        }
+        string? rtkHoldNotice = null;
+        if (data.FixQuality > 0)
+        {
+            var clock = Clock.Current;
+            var held = _rtkHold.Update(data.FixQuality, posEasting, posNorthing,
+                clock.GetTimestamp() / (double)clock.Frequency,
+                _configStore.Connections.RtkHold && !simulatorEnabled);
+            rtkHoldNotice = RtkHoldNotice(held, _rtkHold.OffsetM);
+            if (held.What == RtkLossHold.Change.LimitReached && _configStore.Connections.RtkLostAlarm)
+                _audioService.Play(SoundEffect.RtkLost);
+            posEasting += _rtkHold.OffsetE;
+            posNorthing += _rtkHold.OffsetN;
         }
 
         // Stage 3 (Phase B C2): Heading fusion. Replaces the raw NMEA heading
@@ -1626,6 +1654,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
             // Status
             StatusMessage = jumpNotice ?? statusMessage ?? youTurnTickEffects?.StatusMessage ?? fixRejectionReason,
             ObstacleNotice = Interlocked.Exchange(ref _obstacleNotice, null),
+            RtkHoldNotice = rtkHoldNotice,
+            RtkHoldM = _rtkHold.OffsetM,
             YouTurnNotice = youTurnTickEffects is { TellOperator: true } ? youTurnTickEffects.StatusMessage : null,
         };
 
@@ -2713,6 +2743,24 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// the caller disengages. Both settings used to be ignored (#106): the sound played
     /// regardless and autosteer never stopped.
     /// </summary>
+    /// <summary>What the operator is told when the RTK hold starts, ends at its limit, or lets go
+    /// (fork only); null when there is nothing worth a message.</summary>
+    internal static string? RtkHoldNotice(RtkLossHold.Step held, double offsetM)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        int limitMin = (int)Math.Round(RtkLossHold.HoldLimitS / 60);
+        return held.What switch
+        {
+            RtkLossHold.Change.Held when held.StepM >= 0.05 => string.Format(inv,
+                "RTK lost: the {0:0.0} m jump of the position is taken out and the line held for up to {1} min", held.StepM, limitMin),
+            RtkLossHold.Change.LimitReached => string.Format(inv,
+                "RTK lost for {0} min: the line now goes over to the receiver's position, slowly", limitMin),
+            RtkLossHold.Change.Back when offsetM >= 0.05 => string.Format(inv,
+                "RTK back: the line moves the {0:0.0} m it was held to the true position, slowly", offsetM),
+            _ => null,
+        };
+    }
+
     private bool CheckRtkQualityChange(int fixQuality)
     {
         if (fixQuality == _previousFixQuality) return false;

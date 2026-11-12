@@ -93,6 +93,21 @@ frame's CRC-32 is checked; a mismatch counts as a bad checksum.
 | Incomplete epochs | Standard-set epochs closed with a learned member missing |
 | Source | The sender's address and the port |
 
+## When RTK is lost (fork only)
+
+When a receiver leaves RTK fixed (the corrections stopped, or it lost the fix under trees), its
+position steps half a metre to two metres sideways at once, and AutoSteer used to pull the tractor
+across to it. With *Hold the line when RTK is lost* (Vehicle › GPS › RTK; on by default, saved with
+the vehicle) the step is measured against where the tractor would be from its own travel (the last
+two fixes, per epoch of the receiver) and taken out of the position (`RtkLossHold`, in
+`GpsPipelineService` before the heading fusion), so the tractor stays on its pass. Each further change
+of fix quality while held (float to DGPS) is taken out the same way; a position that wanders with no
+change of quality is followed. The receiver's own error grows with the minutes, so the hold lasts
+3 minutes at most (then the RTK lost sound, if the alarm is on); then, and when RTK fixed is back (its
+own step taken out too, so no jump either way), the offset goes to 0 at 5 cm/s. The operator is told
+each time in a message, and the fix label says how far the position is held. Steps over 5 m and
+fixes more than 1 s apart are followed, not held; the simulator is never held.
+
 ## Setting up a receiver
 
 ### Bynav T1-FD / Unicore UM982, dual antenna
@@ -112,6 +127,10 @@ GPHPR 0.1
 
 With `HEADING OFFSET` set on the receiver, the app's Dual Heading Offset stays 0. The
 receiver's `SMOOTH` settings do their own filtering; the app adds none.
+
+`RTK TIMEOUT` is also how long the receiver keeps RTK fixed on the last corrections when they
+stop (a valley with no mobile network): a few minutes takes a tractor through a short gap with
+no step at all, the accuracy fading slowly; past it, the receiver falls to a plain fix.
 
 The app holds the dual heading against the way the antenna moves (`GpsHeadingFusionService`,
 every 2 m above 2 km/h). An offset 90° out (antennas across the cab with neither offset

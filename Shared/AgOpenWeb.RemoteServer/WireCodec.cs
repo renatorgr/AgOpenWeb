@@ -379,6 +379,7 @@ public static class WireCodec
         w.Write((byte)(g.ReverseDetection ? 1 : 0));
         w.Write((byte)(g.RtkLostAlarm ? 1 : 0));
         w.Write(g.RtkLostAction);      // i32
+        w.Write((byte)(g.RtkHold ? 1 : 0)); // fork only
         var r = c.Roll;
         w.Write(r.RollZero);           // f64
         w.Write(r.RollFilter);
