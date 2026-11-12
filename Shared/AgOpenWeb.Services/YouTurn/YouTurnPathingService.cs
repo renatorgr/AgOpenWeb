@@ -484,6 +484,82 @@ public sealed class YouTurnPathingService
     /// <summary>How far past the ray's headland distance the pass may still be inside before it is not the pass end at all.</summary>
     private const double RunOnLimit = 50.0;
 
+    /// <summary>How far ahead <see cref="PassLeavesFieldAhead"/> walks the pass for the fence.</summary>
+    public const double MaxWalkToFence = 300.0;
+
+    /// <summary>
+    /// Does pass <paramref name="pathsAway"/>, walked from <paramref name="position"/> the way the
+    /// tractor is heading, leave the outer boundary before it is inside the cultivated area again
+    /// for <see cref="MinRunAfterGap"/>? So the tractor, in the headland, is at the end of its pass
+    /// heading out, not heading into the field or across a gap with more field past it. False when
+    /// the fence is not met within <see cref="MaxWalkToFence"/>, the pass (a curve) ends first, or
+    /// there is no usable outer boundary. Fork only.
+    /// </summary>
+    public bool PassLeavesFieldAhead(Models.Track.Track track, double abHeading, int pathsAway,
+        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay)
+    {
+        var outer = boundary?.OuterBoundary;
+        if (outer == null || !outer.IsValid || track.Points.Count < 2) return false;
+        double distAway = PassGeometry.Offset(track, pathsAway, _configStore.ActualToolWidth - _configStore.Tool.Overlap);
+        const double Step = 1.0;
+
+        // The pass's points ahead, a metre apart, from abreast of the tractor.
+        IEnumerable<Vec2> Ahead()
+        {
+            if (track.Points.Count > 2)
+            {
+                var curve = CurveProcessing.CreateOffsetCurve(track.Points, distAway);
+                if (curve.Count < 2) yield break;
+                int near = 0;
+                double best = double.MaxValue;
+                for (int i = 0; i < curve.Count; i++)
+                {
+                    double de = curve[i].Easting - position.Easting, dn = curve[i].Northing - position.Northing;
+                    double d = de * de + dn * dn;
+                    if (d < best) { best = d; near = i; }
+                }
+                int i1 = Math.Min(near + 1, curve.Count - 1), i0 = Math.Max(near - 1, 0);
+                double tdx = curve[i1].Easting - curve[i0].Easting, tdy = curve[i1].Northing - curve[i0].Northing;
+                double travel = headingSameWay ? abHeading : abHeading + Math.PI;
+                int fwd = tdx * Math.Sin(travel) + tdy * Math.Cos(travel) >= 0 ? 1 : -1;
+                double walked = 0;
+                for (int i = near; i + fwd >= 0 && i + fwd < curve.Count && walked <= MaxWalkToFence; i += fwd)
+                {
+                    double de = curve[i + fwd].Easting - curve[i].Easting, dn = curve[i + fwd].Northing - curve[i].Northing;
+                    walked += Math.Sqrt(de * de + dn * dn);
+                    yield return new Vec2(curve[i + fwd].Easting, curve[i + fwd].Northing);
+                }
+                yield break;
+            }
+            var a = track.Points[0];
+            var b = track.Points[^1];
+            double abDx = b.Easting - a.Easting, abDy = b.Northing - a.Northing;
+            double abLen = Math.Sqrt(abDx * abDx + abDy * abDy);
+            if (abLen < 0.01) yield break;
+            double nx = abDx / abLen, ny = abDy / abLen;
+            double perp = abHeading + Math.PI / 2;
+            double midE = (a.Easting + b.Easting) / 2 + Math.Sin(perp) * distAway;
+            double midN = (a.Northing + b.Northing) / 2 + Math.Cos(perp) * distAway;
+            double s = headingSameWay ? 1 : -1;
+            double t0 = (position.Easting - midE) * nx + (position.Northing - midN) * ny;
+            for (double d = Step; d <= MaxWalkToFence; d += Step)
+                yield return new Vec2(midE + nx * (t0 + s * d), midN + ny * (t0 + s * d));
+        }
+
+        double insideRun = 0;
+        foreach (var p in Ahead())
+        {
+            if (!outer.IsPointInside(p.Easting, p.Northing)) return true;
+            if (IsPointInsideCultivatedArea(p.Easting, p.Northing, boundary, headlandLine))
+            {
+                insideRun += Step;
+                if (insideRun >= MinRunAfterGap) return false;
+            }
+            else insideRun = 0;
+        }
+        return false;
+    }
+
     private bool CheckOffsetLineInsideCultivated(
         Models.Track.Track currentTrack, double abHeading, int nextPathsAway,
         Boundary? boundary, IReadOnlyList<Vec3>? headlandLine,
