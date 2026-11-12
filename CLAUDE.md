@@ -587,6 +587,18 @@ toast (`GpsCycleResult.ObstacleNotice`). The bend is built once per pass and cac
 steered (`CalculateTrackGuidance`), the line shown and the light bar's line, AutoSteer on or off.
 U-turn planning and pass numbering keep the straight pass. Closed tracks are not bent.
 
+## A closed track's pass across a neck
+On a closed track (a boundary curve) the offset leaves out the points too near the reference and joins what
+is left, so where the field is narrower than twice a pass's offset the pass runs across the gap along the
+fence (a tester's field: the second lap 0.1 m from the fence of a bump, an 8 m boom). `CurveProcessing.PassUnfit`
+marks the points nearer the reference than the offset by more than half a pass (never under 0.5 m; a bend
+opened to the turn radius is let off by how far it moved, judged against the pass as offset), worked out once
+per pass (`OffsetPassCache.Unfit`, `GpsPipelineService.PassUnfit`). The pass shown, the implement's band and
+the guidelines leave that stretch out (the stretch nearest the tractor: `FitPieceShown`, `CurveProcessing.FitPieces`),
+and with AutoSteer on, such a stretch within 10 m plus 2 s of travel ahead on the pass steered
+(`CurveProcessing.UnfitAhead`, from `CalculateTrackGuidance`) takes AutoSteer off with the alarm
+(`GpsPipelineService.PassDoesNotFitReason`). Tests: `ClosedPassFitTests` (Models), `ClosedPassNeckTests`. Fork only.
+
 ## Steer wizard: tuning the wheels
 The Steer Wizard's *Tune steering* step (`TuneSteeringStepViewModel`, after the Ackermann circle and before the
 gains page; arithmetic in `SteerTuneMath`; fork only) finds the three settings of the module's own loop,

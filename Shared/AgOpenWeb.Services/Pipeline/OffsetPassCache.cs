@@ -27,6 +27,9 @@ internal sealed class OffsetPassCache
     private int _count;
     private (Vec3 Center, double Radius)? _pivot;
     private double _minTurnRadius;
+    // Where each closed pass does not fit (null: all of it fits), kept with the passes. Fork only.
+    private readonly Dictionary<double, bool[]?> _unfit = new();
+    private double _unfitTolerance;
 
     /// <param name="minTurnRadius">No bend of a curve's pass is tighter than this (the U-turn radius,
     /// what the rig can turn); 0 leaves the passes as offset.</param>
@@ -39,13 +42,18 @@ internal sealed class OffsetPassCache
             {
                 _minTurnRadius = minTurnRadius;
                 _passes.Clear();
+                _unfit.Clear();
                 _pivot = null;
                 _track = track;
                 _points = track.Points;
                 _count = track.Points.Count;
             }
             if (_passes.TryGetValue(distAway, out var hit)) return hit;
-            if (_passes.Count >= Capacity) _passes.Clear();
+            if (_passes.Count >= Capacity)
+            {
+                _passes.Clear();
+                _unfit.Clear();
+            }
             (List<Vec3> Points, double PercentRemoved, bool StartKept, bool EndKept, bool StartIsEnd, bool EndIsEnd) made;
             if (track.IsPivot)
             {
@@ -60,6 +68,35 @@ internal sealed class OffsetPassCache
                 made = CurveProcessing.CurvePass(track.Points, distAway, track.IsClosed, minTurnRadius);
             }
             _passes[distAway] = made;
+            return made;
+        }
+    }
+
+    /// <summary>
+    /// Where pass <paramref name="distAway"/> of a closed track does not fit
+    /// (<see cref="CurveProcessing.PassUnfit"/>: nearer the reference than its offset by more than
+    /// <paramref name="tolerance"/>), worked out once with the pass. Null when all of it fits, and
+    /// for an open curve, a water pivot or the reference itself. Fork only.
+    /// </summary>
+    public bool[]? Unfit(Models.Track.Track track, double distAway, double minTurnRadius, double tolerance)
+    {
+        if (!track.IsClosed || track.IsPivot || track.Points.Count <= 2 || Math.Abs(distAway) < 0.01) return null;
+        var pass = Get(track, distAway, minTurnRadius);
+        lock (_lock)
+        {
+            if (tolerance != _unfitTolerance)
+            {
+                _unfit.Clear();
+                _unfitTolerance = tolerance;
+            }
+            if (_unfit.TryGetValue(distAway, out var hit)) return hit;
+            // Bends opened to the turn radius come nearer the reference round a corner's outside:
+            // judged against the pass as offset, only when a point is near enough to ask.
+            var made = CurveProcessing.PassUnfit(track.Points, pass.Points, distAway, tolerance);
+            if (made != null && minTurnRadius > 0)
+                made = CurveProcessing.PassUnfit(track.Points, pass.Points, distAway, tolerance,
+                    CurveProcessing.CreateOffsetCurveWithInfo(track.Points, distAway, closed: true).Points);
+            if (ReferenceEquals(track, _track)) _unfit[distAway] = made;
             return made;
         }
     }

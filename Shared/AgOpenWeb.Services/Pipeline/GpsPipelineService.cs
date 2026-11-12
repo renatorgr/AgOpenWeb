@@ -1427,6 +1427,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
                     IsVisible = true,
                     IsActive = true
                 };
+                // A closed track's pass is shown only where it fits (CurveProcessing.PassUnfit).
+                if (track.IsClosed)
+                    displayTrack = FitPieceShown(track, distAway, displayTrack, driftedEasting, driftedNorthing);
                 baseTrack = track;
             }
 
@@ -1438,7 +1441,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             }
 
             toolPassArgs = (widthMinusOverlap, extendDisp);
-            toolPass = ToolPass(track, shownPass, widthMinusOverlap, nudgeOffset, extendDisp);
+            toolPass = ToolPass(track, shownPass, widthMinusOverlap, nudgeOffset, extendDisp, driftedEasting, driftedNorthing);
 
             if (config2.Display.ExtraGuidelines)
             {
@@ -1569,6 +1572,17 @@ public sealed class GpsPipelineService : IGpsPipelineService
                     lock (_stateLock) _autoSteerEngaged = false;
                     _autoSteerService.UpdateGuidanceResults(0, NoLineDistance);
                 }
+                else if (guidanceResult is { unfitAhead: true })
+                {
+                    // A closed track's pass that does not fit ahead: AutoSteer off with the alarm
+                    // before it, so the operator takes another pass or steers by hand. Fork only.
+                    autoSteerEngaged = false;
+                    autoSteerDisengaged = true;
+                    disengageReason = PassDoesNotFitReason;
+                    lock (_stateLock) _autoSteerEngaged = false;
+                    _autoSteerService.UpdateGuidanceResults(0, NoLineDistance);
+                    _audioService.Play(SoundEffect.UTurnTooClose);
+                }
                 else if (guidanceResult != null)
                 {
                     steerAngle = guidanceResult.Value.steerAngle;
@@ -1627,7 +1641,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 if (guideArgs is { } ga)
                     guideLines = GuideLines(track!, nearestPass, ga.Width, nudgeOffset, ga.Shift, ga.Extend, ga.Count, TurnTargetPass());
                 if (toolPassArgs is { } ta)
-                    toolPass = ToolPass(track!, nearestPass, ta.Width, nudgeOffset, ta.Extend);
+                    toolPass = ToolPass(track!, nearestPass, ta.Width, nudgeOffset, ta.Extend, driftedEasting, driftedNorthing);
 
                 // #95: show where Pure Pursuit would aim if engaged now, so the operator
                 // can see the target (field vs. ditch) before engaging. The steer angle it
@@ -2001,8 +2015,11 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// <summary>Why AutoSteer went off at the end of an open curve (AgOpenGPS gsGuidanceStopped, gsPastEndOfCurve).</summary>
     public const string PastEndOfCurveReason = "AutoSteer disengaged - past end of curve";
     public const string RecordedPathEndReason = "AutoSteer disengaged - end of the recorded path";
+    /// <summary>Why AutoSteer went off before a stretch of a closed track's pass that does not fit
+    /// (<see cref="CurveProcessing.PassUnfit"/>). Fork only.</summary>
+    public const string PassDoesNotFitReason = "AutoSteer off: the field ahead is too narrow for this pass. Take another pass or steer by hand.";
 
-    private (double steerAngle, double xte, double goalE, double goalN, string? statusMessage, bool hasLine, bool atEnd)?
+    private (double steerAngle, double xte, double goalE, double goalN, string? statusMessage, bool hasLine, bool atEnd, bool unfitAhead)?
         CalculateTrackGuidance(
             Position currentPosition, Models.Track.Track track, int passNumber, double nudgeOffset,
             double driftedEasting, double driftedNorthing, double headingRad,
@@ -2086,7 +2103,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             // No pass here: the offset removed all of it (#694). Nothing to steer to, as in
             // AgOpenGPS, whose empty pass sends the module its no-line distance (32000).
             if (offsetPoints.Count < 2)
-                return (0, 0, 0, 0, statusMessage, false, false);
+                return (0, 0, 0, 0, statusMessage, false, false, false);
         }
 
         // Round the Go around obstacles on this pass, tractor and implement kept out of them. The
@@ -2153,8 +2170,26 @@ public sealed class GpsPipelineService : IGpsPipelineService
             _trackGuidanceState.CurrentLocationIndex = output.CurrentLocationIndex;
 
         _lastLineXte = output.CrossTrackError; // from the bent line: the Go around net (5b'') reads it
+
+        // A closed track's pass that does not fit ahead (a neck of the field narrower than twice
+        // the pass's offset, where the offset joins across it along the fence): AutoSteer goes off
+        // 10 m plus 2 s of travel before it, as before a U-turn obstacle with no turn. Only passes
+        // with such a stretch get a look, and the stretch is found once per pass. Fork only.
+        bool unfitAhead = false;
+        if (track.IsClosed && bent == null && Math.Abs(distAway) >= 0.01
+            && PassUnfit(track, distAway) is { } unfit
+            && unfit.Length == currentTrack.Points.Count)
+        {
+            int at = output.CurrentLocationIndex >= 0 && output.CurrentLocationIndex < unfit.Length
+                ? output.CurrentLocationIndex
+                : CurveProcessing.NearestIndex(currentTrack.Points, driftedEasting, driftedNorthing);
+            double travel = _isReverse ? headingRad + Math.PI : headingRad;
+            double reach = ObstacleStopDistance + ObstacleStopSeconds * Math.Abs(currentPosition.Speed);
+            unfitAhead = CurveProcessing.UnfitAhead(currentTrack.Points, unfit, at, travel, reach);
+        }
+
         return (output.SteerAngle, output.CrossTrackError, output.GoalPoint.Easting, output.GoalPoint.Northing,
-                statusMessage, true, output.IsAtEndOfTrack);
+                statusMessage, true, output.IsAtEndOfTrack, unfitAhead);
     }
 
     /// <summary>
@@ -2332,7 +2367,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// Returns the detected nearest pass number, the offset display track and the pivot's
     /// cross-track error to it (m, the engaged guidance's sign) for the light bar.
     /// </summary>
-    private (Models.Track.Track Track, int Pass, double Width, double Nudge, bool Extend, double Radius) _toolPassKey;
+    private (Models.Track.Track Track, int Pass, double Width, double Nudge, bool Extend, double Radius, int Piece) _toolPassKey;
     private IReadOnlyList<Vec3>? _toolPass;
 
     /// <summary>
@@ -2340,14 +2375,20 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// tractor's line has (PassGeometry). The map draws the tool's width along it, as AgOpenGPS's
     /// shadow on the current AB line shows where the tool will land; on a curve it follows the
     /// pass, its corners rounded as the tractor will drive them. The same list until the pass
-    /// changes.
+    /// changes. On a closed track, only the stretch of the pass that fits nearest the tractor
+    /// (<see cref="CurveProcessing.PassUnfit"/>).
     /// </summary>
-    private IReadOnlyList<Vec3> ToolPass(Models.Track.Track track, int pass, double widthMinusOverlap, double nudge, bool extend)
+    private IReadOnlyList<Vec3> ToolPass(Models.Track.Track track, int pass, double widthMinusOverlap, double nudge, bool extend,
+        double easting, double northing)
     {
         double radius = _configStore.Guidance.UTurnRadius;
-        var key = (track, pass, widthMinusOverlap, nudge, extend, radius);
-        if (_toolPass != null && _toolPassKey.Equals(key)) return _toolPass;
         double dist = Models.Track.PassGeometry.Offset(track, pass, widthMinusOverlap, nudge);
+        // A closed track's pass that does not fit everywhere: the stretch that fits nearest the
+        // tractor (found each cycle only on such a pass).
+        bool[]? unfit = track.IsClosed && Math.Abs(dist) >= 0.01 ? PassUnfit(track, dist) : null;
+        int piece = unfit != null ? CurveProcessing.FitPieceStart(_offsetPasses.Get(track, dist, radius).Points, unfit, easting, northing) : 0;
+        var key = (track, pass, widthMinusOverlap, nudge, extend, radius, piece);
+        if (_toolPass != null && _toolPassKey.Equals(key)) return _toolPass;
         IReadOnlyList<Vec3> line;
         if (track.Points.Count == 2)
         {
@@ -2360,7 +2401,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
         else
         {
             var made = Math.Abs(dist) < 0.01 ? CurveProcessing.ReferencePass(track.Points, track.IsClosed) : _offsetPasses.Get(track, dist, radius);
-            line = extend ? CurveProcessing.ExtendPass(made) : made.Points;
+            line = unfit != null && unfit.Length == made.Points.Count ? CurveProcessing.FitPieceFrom(made.Points, unfit, piece)
+                : extend ? CurveProcessing.ExtendPass(made) : made.Points;
         }
         _toolPassKey = key;
         return _toolPass = line;
@@ -2372,6 +2414,48 @@ public sealed class GpsPipelineService : IGpsPipelineService
 
     private (Models.Track.Track Track, int Pass, double Width, double Nudge, double Shift, bool Extend, int Count, int? Target) _guideKey;
     private IReadOnlyList<IReadOnlyList<Vec3>>? _guideLines;
+
+    /// <summary>
+    /// Where a closed track's pass does not fit (<see cref="CurveProcessing.PassUnfit"/>): nearer
+    /// the reference than its offset by more than half a pass (never under 0.5 m), so there it runs
+    /// nearer the next pass out than its own. Across a neck of the field narrower than twice the
+    /// pass's offset the offset joins the pass along the fence (a tester's field: 0.1 m from it with
+    /// an 8 m boom); a passage only a little narrower leaves the pass a metre or two in, which
+    /// AutoSteer drives. Fork only.
+    /// </summary>
+    private bool[]? PassUnfit(Models.Track.Track track, double distAway)
+    {
+        double half = (_configStore.ActualToolWidth - _configStore.Tool.Overlap) / 2;
+        return _offsetPasses.Unfit(track, distAway, _configStore.Guidance.UTurnRadius, Math.Max(0.5, half));
+    }
+
+    private (Models.Track.Track Track, double DistAway, int Start, int Count) _fitPieceKey;
+    private Models.Track.Track? _fitPiece;
+
+    /// <summary>
+    /// The pass shown on a closed track: where part of it does not fit (a neck of the field
+    /// narrower than twice its offset, <see cref="CurveProcessing.PassUnfit"/>), only the stretch
+    /// that fits nearest the tractor, so the line across the neck along the fence is not shown as
+    /// one to follow. The whole pass otherwise. Kept while the stretch is the same. Fork only.
+    /// </summary>
+    private Models.Track.Track FitPieceShown(Models.Track.Track track, double distAway, Models.Track.Track shown,
+        double easting, double northing)
+    {
+        var unfit = PassUnfit(track, distAway);
+        if (unfit == null || unfit.Length != shown.Points.Count) return shown;
+        int start = CurveProcessing.FitPieceStart(shown.Points, unfit, easting, northing);
+        var key = (track, distAway, start, shown.Points.Count);
+        if (_fitPiece != null && _fitPieceKey.Equals(key)) return _fitPiece;
+        _fitPieceKey = key;
+        return _fitPiece = new Models.Track.Track
+        {
+            Name = shown.Name,
+            Points = CurveProcessing.FitPieceFrom(shown.Points, unfit, start),
+            Type = shown.Type,
+            IsVisible = true,
+            IsActive = true
+        };
+    }
 
     /// <summary>
     /// The extra guidelines of a track: <paramref name="count"/> passes each side of
@@ -2411,6 +2495,13 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 }
                 var made = Math.Abs(dist) < 0.01 ? CurveProcessing.ReferencePass(track.Points, track.IsClosed) : _offsetPasses.Get(track, dist, _configStore.Guidance.UTurnRadius);
                 if (made.Points.Count < 2) continue; // no pass there (#694)
+                // A closed track's pass is drawn only where it fits (CurveProcessing.PassUnfit).
+                if (track.IsClosed && PassUnfit(track, dist) is { } unfit
+                    && unfit.Length == made.Points.Count)
+                {
+                    lines.AddRange(CurveProcessing.FitPieces(made.Points, unfit));
+                    continue;
+                }
                 lines.Add(extend ? CurveProcessing.ExtendPass(made) : made.Points);
             }
         _guideKey = key;
@@ -2500,6 +2591,11 @@ public sealed class GpsPipelineService : IGpsPipelineService
             _cachedOffsetTurnRadius = turnRadius;
             _cachedOffsetTrack = resultTrack;
         }
+
+        // A closed track's pass is shown only where it fits (CurveProcessing.PassUnfit), the
+        // stretch nearest the tractor. Closed tracks are not bent round obstacles.
+        if (track.IsClosed && !onReference)
+            resultTrack = FitPieceShown(track, distAway, resultTrack, pivotEasting, pivotNorthing);
 
         // The pass bent round its Go around obstacles is the line shown, and the light bar
         // shows the distance to it: driving by hand, the operator follows the bend.

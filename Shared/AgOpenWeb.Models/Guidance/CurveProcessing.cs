@@ -296,6 +296,184 @@ namespace AgOpenWeb.Models.Guidance
         }
 
         /// <summary>
+        /// Where a closed track's pass does not fit: true for each point of <paramref name="pass"/>
+        /// nearer the reference's points than the pass's offset by more than <paramref name="tolerance"/>
+        /// (the pipeline: half a pass, so the point is nearer the next pass out than its own).
+        /// The offset leaves out the points that come too near the reference and joins what is left,
+        /// so where the field is narrower than twice the offset (a neck between the fence and a bump
+        /// of it) the pass runs straight across the gap, along the fence: on a boundary curve the
+        /// implement on it is over the fence. Null when every point fits, as on most passes.
+        /// <para>A pass whose bends were opened to the turn radius (<see cref="LimitTurnRadius"/>)
+        /// comes nearer the reference round the outside of a corner by as much as the bend moved:
+        /// with the pass as offset (<paramref name="unrounded"/>, <see cref="CreateOffsetCurveWithInfo"/>),
+        /// a point is let off by its distance from that line, so only the stretch joined across a
+        /// neck counts. Fork only.</para>
+        /// </summary>
+        public static bool[]? PassUnfit(IReadOnlyList<Vec3> reference, IReadOnlyList<Vec3> pass, double distAway,
+            double tolerance, IReadOnlyList<Vec3>? unrounded = null)
+        {
+            double limit = Math.Abs(distAway) - tolerance;
+            if (limit <= 0 || reference == null || reference.Count < 2 || pass == null || pass.Count < 2) return null;
+            var near = reference.Count > NearGridMinPoints ? new PointGrid(reference, limit) : null;
+            bool Closer(double e, double n, double within) => within > 0 && (near != null
+                ? near.AnyCloser(reference, e, n, within * within)
+                : AnyCloser(reference, e, n, within * within));
+            bool[]? unfit = null;
+            for (int i = 0; i < pass.Count; i++)
+            {
+                var p = pass[i];
+                if (!Closer(p.Easting, p.Northing, limit)) continue;
+                if (unrounded is { Count: >= 2 }
+                    && !Closer(p.Easting, p.Northing, limit - DistanceToLine(unrounded, p.Easting, p.Northing))) continue;
+                (unfit ??= new bool[pass.Count])[i] = true;
+            }
+            return unfit;
+        }
+
+        /// <summary>The distance from (<paramref name="e"/>, <paramref name="n"/>) to the polyline.</summary>
+        private static double DistanceToLine(IReadOnlyList<Vec3> line, double e, double n)
+        {
+            double best = double.MaxValue;
+            for (int i = 0; i + 1 < line.Count; i++)
+            {
+                var a = line[i];
+                var b = line[i + 1];
+                double dx = b.Easting - a.Easting, dy = b.Northing - a.Northing, len = dx * dx + dy * dy;
+                double t = len < 1e-12 ? 0 : Math.Clamp(((e - a.Easting) * dx + (n - a.Northing) * dy) / len, 0, 1);
+                double ex = a.Easting + t * dx - e, ey = a.Northing + t * dy - n, d = ex * ex + ey * ey;
+                if (d < best) best = d;
+            }
+            return Math.Sqrt(best);
+        }
+
+        /// <summary>
+        /// The points of a closed pass once round: its last point repeats the first, so it is left out
+        /// when walking round.
+        /// </summary>
+        private static int RingLength(IReadOnlyList<Vec3> pass)
+        {
+            int count = pass.Count;
+            if (count > 2)
+            {
+                var first = pass[0];
+                var last = pass[count - 1];
+                if (Math.Abs(first.Easting - last.Easting) < 1e-6 && Math.Abs(first.Northing - last.Northing) < 1e-6)
+                    return count - 1;
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// A closed pass cut where it does not fit (<paramref name="unfit"/>, from <see cref="PassUnfit"/>):
+        /// the stretches that fit, each in the pass's order and running on round the seam. The whole
+        /// pass when every point fits. A stretch of two points is left out: the map draws a line of two
+        /// points as an AB line, across the field. Fork only.
+        /// </summary>
+        public static List<List<Vec3>> FitPieces(IReadOnlyList<Vec3> pass, bool[] unfit)
+        {
+            var pieces = new List<List<Vec3>>();
+            int ring = RingLength(pass);
+            int start = Array.IndexOf(unfit, true, 0, Math.Min(ring, unfit.Length));
+            if (start < 0)
+            {
+                pieces.Add(new List<Vec3>(pass));
+                return pieces;
+            }
+            List<Vec3>? piece = null;
+            for (int k = 1; k <= ring; k++)
+            {
+                int i = (start + k) % ring;
+                if (unfit[i])
+                {
+                    if (piece is { Count: >= 3 }) pieces.Add(piece);
+                    piece = null;
+                    continue;
+                }
+                (piece ??= new List<Vec3>()).Add(pass[i]);
+            }
+            if (piece is { Count: >= 3 }) pieces.Add(piece);
+            return pieces;
+        }
+
+        /// <summary>
+        /// Where the stretch of a closed pass that fits (<see cref="FitPieces"/>) nearest the point
+        /// (<paramref name="e"/>, <paramref name="n"/>) starts: the index of its first point, -1 when
+        /// no point fits. Fork only.
+        /// </summary>
+        public static int FitPieceStart(IReadOnlyList<Vec3> pass, bool[] unfit, double e, double n)
+        {
+            int ring = RingLength(pass), best = -1;
+            double bestSq = double.MaxValue;
+            for (int i = 0; i < ring; i++)
+            {
+                if (unfit[i]) continue;
+                double de = pass[i].Easting - e, dn = pass[i].Northing - n, d = de * de + dn * dn;
+                if (d < bestSq) { bestSq = d; best = i; }
+            }
+            if (best < 0) return -1;
+            int start = best;
+            for (int k = 0; k < ring && !unfit[(start - 1 + ring) % ring]; k++)
+                start = (start - 1 + ring) % ring;
+            return start;
+        }
+
+        /// <summary>
+        /// The stretch of a closed pass that fits from its first point <paramref name="start"/>
+        /// (<see cref="FitPieceStart"/>) to the last before it no longer fits; none when that is two
+        /// points or fewer (<see cref="FitPieces"/>). Fork only.
+        /// </summary>
+        public static List<Vec3> FitPieceFrom(IReadOnlyList<Vec3> pass, bool[] unfit, int start)
+        {
+            var points = new List<Vec3>();
+            int ring = RingLength(pass);
+            if (start < 0 || start >= ring) return points;
+            for (int k = 0, i = start; k < ring && !unfit[i]; k++, i = (i + 1) % ring)
+                points.Add(pass[i]);
+            if (points.Count < 3) points.Clear();
+            return points;
+        }
+
+        /// <summary>
+        /// Does a closed pass, driven from its point <paramref name="from"/> the way
+        /// <paramref name="headingRad"/> faces, reach a point that does not fit (<see cref="PassUnfit"/>)
+        /// within <paramref name="ahead"/> metres? True also when that point itself does not fit. Fork only.
+        /// </summary>
+        public static bool UnfitAhead(IReadOnlyList<Vec3> pass, bool[] unfit, int from, double headingRad, double ahead)
+        {
+            int ring = RingLength(pass);
+            if (ring < 2 || from < 0 || from >= pass.Count) return false;
+            from %= ring;
+            if (unfit[from]) return true;
+            int i1 = (from + 1) % ring, i0 = (from - 1 + ring) % ring;
+            double tdx = pass[i1].Easting - pass[i0].Easting, tdy = pass[i1].Northing - pass[i0].Northing;
+            int step = tdx * Math.Sin(headingRad) + tdy * Math.Cos(headingRad) >= 0 ? 1 : -1;
+            double walked = 0;
+            for (int k = 0, at = from; k < ring; k++)
+            {
+                int next = (at + step + ring) % ring;
+                double de = pass[next].Easting - pass[at].Easting, dn = pass[next].Northing - pass[at].Northing;
+                walked += Math.Sqrt(de * de + dn * dn);
+                if (walked > ahead) return false;
+                if (unfit[next]) return true;
+                at = next;
+            }
+            return false;
+        }
+
+        /// <summary>The index of the point of <paramref name="points"/> nearest (<paramref name="e"/>, <paramref name="n"/>).</summary>
+        public static int NearestIndex(IReadOnlyList<Vec3> points, double e, double n)
+        {
+            int best = -1;
+            double bestSq = double.MaxValue;
+            for (int i = 0; i < points.Count; i++)
+            {
+                double de = points[i].Easting - e, dn = points[i].Northing - n, d = de * de + dn * dn;
+                if (d < bestSq) { bestSq = d; best = i; }
+            }
+            return best;
+        }
+
+        /// <summary>
         /// The reference itself (pass 0) as a pass, without copying it: its ends as they are, with
         /// its own verdict on whether they are the line's real ends (<see cref="EndsFacingEachOther"/>).
         /// </summary>
