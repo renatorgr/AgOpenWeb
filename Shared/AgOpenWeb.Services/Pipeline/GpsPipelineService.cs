@@ -2508,12 +2508,21 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// nearer the next pass out than its own. Across a neck of the field narrower than twice the
     /// pass's offset the offset joins the pass along the fence (a tester's field: 0.1 m from it with
     /// an 8 m boom); a passage only a little narrower leaves the pass a metre or two in, which
-    /// AutoSteer drives. Fork only.
+    /// AutoSteer drives.
+    /// <para>With a soft outer boundary a stretch that goes out of the field fits: the operator says
+    /// the boundary may be crossed (a dirt track cut into a tester's field, which every lap from the
+    /// second on crosses where it nearly meets the far fence), as the fence guard and the U-turns'
+    /// distance from the fence are for a hard one only. A stretch that stays inside (a lap that runs
+    /// up a narrow arm of the field and back along itself) still does not fit
+    /// (<see cref="CurveProcessing.UnfitInside"/>). Fork only.</para>
     /// </summary>
     private bool[]? PassUnfit(Models.Track.Track track, double distAway)
     {
+        Boundary? boundary;
+        lock (_stateLock) boundary = _boundary;
+        var soft = boundary?.OuterBoundary is { IsHard: false, IsValid: true } outer ? outer : null;
         double half = (_configStore.ActualToolWidth - _configStore.Tool.Overlap) / 2;
-        return _offsetPasses.Unfit(track, distAway, _configStore.Guidance.UTurnRadius, Math.Max(0.5, half));
+        return _offsetPasses.Unfit(track, distAway, _configStore.Guidance.UTurnRadius, Math.Max(0.5, half), soft);
     }
 
     private (Models.Track.Track Track, double DistAway, int Start, int Count) _fitPieceKey;

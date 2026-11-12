@@ -162,4 +162,45 @@ public class ClosedPassFitTests
             Assert.That(CurveProcessing.UnfitAhead(pass, unfit, inNeck, 0, 1), Is.True, "on it already");
         });
     }
+
+    // The same field size with a 4 m track cut in from the east between N 0 and N 4, its end 2 m
+    // from the west fence: every lap from the second on crosses the track there (twice, the lap
+    // round each block joined across it), as on a tester's field with a dirt track.
+    private static readonly List<Vec3> Track = new()
+    {
+        new(-50, -100, 0), new(-50, 100, 0), new(50, 100, 0), new(50, 4, 0),
+        new(-48, 4, 0), new(-48, 0, 0), new(50, 0, 0), new(50, -100, 0),
+    };
+
+    [Test]
+    public void With_a_soft_fence_a_lap_that_crosses_a_track_cut_into_the_field_fits()
+    {
+        var reference = CurveProcessing.DensifyLoop(Track);
+        var pass = CurveProcessing.CurvePass(reference, 12, closed: true, minTurnRadius: TurnRadius).Points;
+        var unfit = Unfit(reference, pass, 12);
+        Assert.That(unfit, Is.Not.Null, "across the track the lap is nearer the fence than 8 m");
+        Assert.That(CurveProcessing.UnfitInside(pass, unfit, (e, n) => GeometryMath.IsPointInPolygon(Track, e, n)), Is.Null,
+            "each stretch that does not fit goes out of the field, across the track");
+    }
+
+    [Test]
+    public void With_a_soft_fence_a_lap_across_a_neck_inside_the_field_still_does_not_fit()
+    {
+        var pass = Pass(12);
+        var unfit = Unfit(Reference(), pass, 12)!;
+        var left = CurveProcessing.UnfitInside(pass, unfit, (e, n) => GeometryMath.IsPointInPolygon(Fence, e, n));
+        Assert.That(left, Is.EqualTo(unfit), "the stretch along the fence across the neck stays inside");
+    }
+
+    [Test]
+    public void Only_the_stretch_that_goes_out_is_let_off()
+    {
+        // A square lap whose points 2-3 and 6-7 do not fit; the step from 6 to 7 goes out.
+        var pass = new List<Vec3> { new(0, 0, 0), new(0, 10, 0), new(0, 20, 0), new(0, 30, 0), new(10, 30, 0),
+            new(20, 30, 0), new(30, 30, 0), new(30, 20, 0), new(30, 10, 0), new(30, 0, 0), new(0, 0, 0) };
+        var unfit = new bool[pass.Count];
+        unfit[2] = unfit[3] = unfit[6] = unfit[7] = true;
+        var left = CurveProcessing.UnfitInside(pass, unfit, (e, n) => !(e > 30.0 - 1e-9 && n > 24 && n < 26))!;
+        Assert.That(left.Select((u, i) => u ? i : -1).Where(i => i >= 0), Is.EqualTo(new[] { 2, 3 }));
+    }
 }

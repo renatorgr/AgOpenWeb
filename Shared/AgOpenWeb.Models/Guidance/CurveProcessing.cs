@@ -330,6 +330,47 @@ namespace AgOpenWeb.Models.Guidance
             return unfit;
         }
 
+        /// <summary>
+        /// <paramref name="unfit"/> (<see cref="PassUnfit"/>) less every stretch of the closed pass that
+        /// goes out of the field (<paramref name="inField"/> false somewhere on it, or on the steps into
+        /// and out of it, looked at every 0.5 m): with a soft outer boundary, which the operator may
+        /// cross, such a stretch is the lap crossing a track cut into the field (a tester's field: every
+        /// lap from the second on crosses a dirt track where it nearly meets the far fence). A stretch
+        /// that stays inside still does not fit: there the lap runs up a narrow arm of the field and
+        /// back along itself, and a tractor coming back down could be steered onto the way up. Null
+        /// when nothing is left. Fork only.
+        /// </summary>
+        public static bool[]? UnfitInside(IReadOnlyList<Vec3> pass, bool[]? unfit, Func<double, double, bool> inField)
+        {
+            if (unfit == null || pass == null || unfit.Length != pass.Count) return unfit;
+            int n = pass.Count;
+            // The runs, walked from a point that fits so that none is split at the seam.
+            int start = Array.IndexOf(unfit, false);
+            if (start < 0) return unfit;
+            bool[]? left = null;
+            int k = 0;
+            while (k < n)
+            {
+                if (!unfit[(start + k) % n]) { k++; continue; }
+                int first = k;
+                while (k < n && unfit[(start + k) % n]) k++;
+                bool goesOut = false;
+                for (int j = first - 1; j < k && !goesOut; j++)
+                {
+                    var a = pass[(start + j) % n];
+                    var b = pass[(start + j + 1) % n];
+                    double dx = b.Easting - a.Easting, dy = b.Northing - a.Northing;
+                    int steps = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(dx * dx + dy * dy) / 0.5));
+                    for (int t = 0; t <= steps && !goesOut; t++)
+                        goesOut = !inField(a.Easting + dx * t / steps, a.Northing + dy * t / steps);
+                }
+                if (goesOut) continue;
+                left ??= new bool[n];
+                for (int j = first; j < k; j++) left[(start + j) % n] = true;
+            }
+            return left;
+        }
+
         /// <summary>The distance from (<paramref name="e"/>, <paramref name="n"/>) to the polyline.</summary>
         private static double DistanceToLine(IReadOnlyList<Vec3> line, double e, double n)
         {

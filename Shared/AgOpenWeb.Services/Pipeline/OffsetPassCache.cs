@@ -2,6 +2,7 @@
 // Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+using AgOpenWeb.Models;
 using AgOpenWeb.Models.Base;
 using AgOpenWeb.Models.Guidance;
 
@@ -30,6 +31,7 @@ internal sealed class OffsetPassCache
     // Where each closed pass does not fit (null: all of it fits), kept with the passes. Fork only.
     private readonly Dictionary<double, bool[]?> _unfit = new();
     private double _unfitTolerance;
+    private BoundaryPolygon? _unfitSoftFence;
 
     /// <param name="minTurnRadius">No bend of a curve's pass is tighter than this (the U-turn radius,
     /// what the rig can turn); 0 leaves the passes as offset.</param>
@@ -76,18 +78,22 @@ internal sealed class OffsetPassCache
     /// Where pass <paramref name="distAway"/> of a closed track does not fit
     /// (<see cref="CurveProcessing.PassUnfit"/>: nearer the reference than its offset by more than
     /// <paramref name="tolerance"/>), worked out once with the pass. Null when all of it fits, and
-    /// for an open curve, a water pivot or the reference itself. Fork only.
+    /// for an open curve, a water pivot or the reference itself. With a soft outer boundary
+    /// (<paramref name="softFence"/>) a stretch that goes out of the field fits
+    /// (<see cref="CurveProcessing.UnfitInside"/>). Fork only.
     /// </summary>
-    public bool[]? Unfit(Models.Track.Track track, double distAway, double minTurnRadius, double tolerance)
+    public bool[]? Unfit(Models.Track.Track track, double distAway, double minTurnRadius, double tolerance,
+        BoundaryPolygon? softFence = null)
     {
         if (!track.IsClosed || track.IsPivot || track.Points.Count <= 2 || Math.Abs(distAway) < 0.01) return null;
         var pass = Get(track, distAway, minTurnRadius);
         lock (_lock)
         {
-            if (tolerance != _unfitTolerance)
+            if (tolerance != _unfitTolerance || !ReferenceEquals(softFence, _unfitSoftFence))
             {
                 _unfit.Clear();
                 _unfitTolerance = tolerance;
+                _unfitSoftFence = softFence;
             }
             if (_unfit.TryGetValue(distAway, out var hit)) return hit;
             // Bends opened to the turn radius come nearer the reference round a corner's outside:
@@ -96,6 +102,8 @@ internal sealed class OffsetPassCache
             if (made != null && minTurnRadius > 0)
                 made = CurveProcessing.PassUnfit(track.Points, pass.Points, distAway, tolerance,
                     CurveProcessing.CreateOffsetCurveWithInfo(track.Points, distAway, closed: true).Points);
+            if (made != null && softFence != null)
+                made = CurveProcessing.UnfitInside(pass.Points, made, softFence.IsPointInside);
             if (ReferenceEquals(track, _track)) _unfit[distAway] = made;
             return made;
         }

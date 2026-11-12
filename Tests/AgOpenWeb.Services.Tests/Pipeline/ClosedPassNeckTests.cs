@@ -113,25 +113,33 @@ public class ClosedPassNeckTests
         new(-33, 40, 0), new(-33, 20, 0), new(50, 20, 0), new(50, -100, 0),
     };
 
-    private static Models.Track.Track BoundaryCurve() => new()
+    // The same field size with a 4 m dirt track cut in from the east between N 0 and N 4, its end
+    // 2 m from the west fence: every lap from the second on crosses it (a tester's field).
+    private static readonly List<Vec3> DirtTrack = new()
+    {
+        new(-50, -100, 0), new(-50, 100, 0), new(50, 100, 0), new(50, 4, 0),
+        new(-48, 4, 0), new(-48, 0, 0), new(50, 0, 0), new(50, -100, 0),
+    };
+
+    private static Models.Track.Track BoundaryCurve(List<Vec3>? fence = null) => new()
     {
         Name = "Boundary Curve",
-        Points = CurveProcessing.DensifyLoop(Fence),
+        Points = CurveProcessing.DensifyLoop(fence ?? Fence),
         Type = Models.Track.TrackType.Curve,
         IsClosed = true,
     };
 
-    private void Open(int pass)
+    private void Open(int pass, bool hard = true, List<Vec3>? fence = null)
     {
         _pipeline.SetBoundary(new Boundary
         {
             OuterBoundary = new BoundaryPolygon
             {
-                Points = Fence.Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(),
-                IsHard = true,
+                Points = (fence ?? Fence).Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(),
+                IsHard = hard,
             },
         });
-        _pipeline.SetActiveTrack(BoundaryCurve(), passNumber: pass, nudgeOffset: 0);
+        _pipeline.SetActiveTrack(BoundaryCurve(fence), passNumber: pass, nudgeOffset: 0);
         _pipeline.SetAutoSteerEngaged(true);
     }
 
@@ -235,6 +243,37 @@ public class ClosedPassNeckTests
                 "no guideline inside the neck but lap 1's");
             Assert.That(lines.Count, Is.GreaterThan(4), "the laps cut into their pieces");
         });
+    }
+
+    // A soft fence may be crossed: the lap across a dirt track cut into the field is driven, as
+    // the second lap on a tester's field; with a hard fence AutoSteer goes off before it.
+    [Test]
+    public void With_a_soft_fence_the_lap_across_a_dirt_track_is_driven([Values(false, true)] bool hard)
+    {
+        Open(pass: 1, hard: hard, fence: DirtTrack);
+        var (offAt, last) = DriveNorth(-38, untilN: 30);
+        if (hard)
+        {
+            Assert.That(offAt, Is.Not.Null, "AutoSteer went off before the track");
+            Assert.That(last.DisengageReason, Is.EqualTo(GpsPipelineService.PassDoesNotFitReason));
+            return;
+        }
+        Assert.Multiple(() =>
+        {
+            Assert.That(offAt, Is.Null, last.DisengageReason);
+            Assert.That(Math.Abs(last.Guidance!.CrossTrackError), Is.LessThan(0.5), "on the lap, past the track");
+            _audio.DidNotReceive().Play(SoundEffect.UTurnTooClose);
+        });
+    }
+
+    // Across the neck the lap runs along the fence inside the field: soft or hard, that does not fit.
+    [Test]
+    public void With_a_soft_fence_AutoSteer_still_goes_off_before_the_lap_runs_along_the_fence()
+    {
+        Open(pass: 1, hard: false);
+        var (offAt, last) = DriveNorth(-38, untilN: 40);
+        Assert.That(offAt, Is.Not.Null, "AutoSteer went off");
+        Assert.That(last.DisengageReason, Is.EqualTo(GpsPipelineService.PassDoesNotFitReason));
     }
 
     [Test]

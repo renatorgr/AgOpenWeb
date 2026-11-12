@@ -607,7 +607,12 @@ per pass (`OffsetPassCache.Unfit`, `GpsPipelineService.PassUnfit`). The pass sho
 the guidelines leave that stretch out (the stretch nearest the tractor: `FitPieceShown`, `CurveProcessing.FitPieces`),
 and with AutoSteer on, such a stretch within 10 m plus 2 s of travel ahead on the pass steered
 (`CurveProcessing.UnfitAhead`, from `CalculateTrackGuidance`) takes AutoSteer off with the alarm
-(`GpsPipelineService.PassDoesNotFitReason`). Tests: `ClosedPassFitTests` (Models), `ClosedPassNeckTests`. Fork only.
+(`GpsPipelineService.PassDoesNotFitReason`). With a soft outer boundary, which the operator may cross, a stretch
+that goes out of the field fits (`CurveProcessing.UnfitInside`, in the pass cache): a tester's field has a dirt
+track cut into it that nearly meets the far fence, and every lap from the second on crosses it. A stretch that
+stays inside (along the fence across a neck, or up a narrow arm of the field and back along itself, where a
+tractor coming back down could be steered onto the way up) still does not fit. Tests: `ClosedPassFitTests`
+(Models), `ClosedPassNeckTests`. Fork only.
 
 **The seam.** A closed track's last point repeats its first, so `CreateOffsetCurveWithInfo` offset the seam's
 point twice (along the last stretch's normal and the first's); on the inside of the bend there the second copy
