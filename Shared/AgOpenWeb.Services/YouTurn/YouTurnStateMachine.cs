@@ -714,6 +714,31 @@ public sealed class YouTurnStateMachine
     }
 
     /// <summary>
+    /// The tractor, in the headland, is at the end of its pass heading out of the field (the pass
+    /// leaves the outer boundary ahead with no more field on it first: not heading in, not a gap
+    /// it drives on across), on the line, and no U-turn is planned or driven: none could be made
+    /// at this end ("End of field reached", no turn that fits), or U-turns are off. The pipeline
+    /// asks once as the tractor enters the headland and, with a hard outer boundary, takes
+    /// AutoSteer off, so the operator has the headland to turn by hand. Fork only.
+    /// </summary>
+    public bool EndOfPassWithoutTurn(in TickContext ctx, GuidanceWorkingState guidance, YouTurnWorkingState turn)
+    {
+        if (turn.IsExecuting || turn.TurnPath != null) return false;
+        var track = ctx.SelectedTrack;
+        if (track == null || track.Points.Count < 2) return false;
+        var p = ctx.CurrentPosition;
+        double heading = p.Heading * Math.PI / 180.0;
+        double abHeading = track.Points.Count > 2
+            ? LocalCurveHeading(track, p)
+            : Math.Atan2(track.Points[1].Easting - track.Points[0].Easting, track.Points[1].Northing - track.Points[0].Northing);
+        double diff = Math.IEEERemainder(heading - abHeading, 2 * Math.PI);
+        // Off the line's direction (turning by hand) is not the end of a pass.
+        if (Math.Abs(diff) > AlignmentTolerance && Math.PI - Math.Abs(diff) > AlignmentTolerance) return false;
+        bool sameWay = Math.Abs(diff) < Math.PI / 2;
+        return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.HeadlandLine, p, sameWay);
+    }
+
+    /// <summary>
     /// Manually trigger a U-turn in the specified direction. Used for tracks along boundaries
     /// where automatic headland detection doesn't fire.
     /// </summary>
