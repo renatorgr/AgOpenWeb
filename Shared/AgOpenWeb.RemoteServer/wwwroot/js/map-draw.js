@@ -261,6 +261,8 @@ function drawBoundaryRecordingSk(canvas) {
 // don't collapse into a band. The host builds them from the reference like the pass itself
 // (#450): a curve keeps its shape at corners, and the spacing is width − overlap with the tool
 // offset on alternate sides. An AB line's come as two points each and are drawn across the field.
+// A guideline that doesn't enter the field is not drawn (fork): round a boundary curve the passes
+// on the fence's outer side are rings outside the field, eight of the twenty on Tapada da Casa's.
 function drawExtraGuidelinesSk(canvas) {
   const d = config && config.display;
   if (!d || !d.extraGuidelines) return;
@@ -271,12 +273,58 @@ function drawExtraGuidelinesSk(canvas) {
   // All the lines in one path, drawn once with the shadow and once with the green: Skia strokes a
   // path that bends through a mask the size of the path on the screen, and a boundary curve's
   // guidelines each go round the field, a screen-sized mask each, forty a frame with ten each side.
-  const cmds = [];
+  const cmds = [], outer = outerBoundary();
   for (const gl of scene.guideLines || []) {
-    const pts = extendAbLine(gl);
-    if (pts && pts.length >= 2) lineCmds(drawnPts(pts), false, cmds);
+    if (!gl || gl.length < 2 || (outer && !entersField(gl, outer))) continue;
+    lineCmds(drawnPts(extendAbLine(gl)), false, cmds);
   }
   strokeCmdsSk(canvas, cmds, [SKP.extraGuideShadow, SKP.extraGuide]);
+}
+// The field's outer boundary ring from the Scene, or null with none (the inner rings follow it).
+function outerBoundary() {
+  const b = scene && scene.boundaries;
+  if (!b || !b.length || b[0].length < 3) return null;
+  const k = scene.boundaryKind ? scene.boundaryKind[0] : (scene.boundaryInner && scene.boundaryInner[0] ? 1 : 0);
+  return k === 0 ? b[0] : null;
+}
+// Whether a guideline enters the field. An AB line's (two points, drawn across the field): the
+// boundary has corners on both sides of it. A curve's: one of its points is inside the boundary,
+// up to 256 of them looked at (one every few metres round a field, enough for a pass that would
+// be driven). Kept per line (the Scene's arrays are replaced, not changed, with the boundary).
+const _entersField = new WeakMap();
+function entersField(gl, outer) {
+  let r = _entersField.get(gl);
+  if (r !== undefined) return r;
+  if (gl.length === 2) {
+    const a = gl[0], b = gl[1], de = b.e - a.e, dn = b.n - a.n;
+    let left = false, right = false;
+    for (const p of outer) {
+      const s = de * (p.n - a.n) - dn * (p.e - a.e);
+      if (s > 0) left = true; else if (s < 0) right = true;
+      if (left && right) break;
+    }
+    r = left && right;
+  } else {
+    let e0 = Infinity, e1 = -Infinity, n0 = Infinity, n1 = -Infinity;
+    for (const p of outer) { e0 = Math.min(e0, p.e); e1 = Math.max(e1, p.e); n0 = Math.min(n0, p.n); n1 = Math.max(n1, p.n); }
+    const step = Math.max(1, Math.ceil(gl.length / 256));
+    r = false;
+    for (let i = 0; i < gl.length && !r; i += step) {
+      const p = gl[i];
+      r = p.e >= e0 && p.e <= e1 && p.n >= n0 && p.n <= n1 && insideRing(p.e, p.n, outer);
+    }
+  }
+  _entersField.set(gl, r);
+  return r;
+}
+// Even-odd point-in-polygon on a ring of {e, n} points.
+function insideRing(e, n, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j];
+    if ((a.n > n) !== (b.n > n) && e < (b.e - a.e) * (n - a.n) / (b.n - a.n) + a.e) inside = !inside;
+  }
+  return inside;
 }
 // Live boundary draw-on-map preview — the polygon vertices tapped on the
 // satellite imagery so far. Closed white outline + outlined dots; client-side only.
