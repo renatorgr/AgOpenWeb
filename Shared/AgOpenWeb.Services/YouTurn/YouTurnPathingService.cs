@@ -835,6 +835,142 @@ public sealed class YouTurnPathingService
         return inside > 0 && covered * 2 >= inside;
     }
 
+    /// <summary>
+    /// The stretch of a pass next to the end a turn lands on it at that <see cref="IsPassOpenAtThisEnd"/>
+    /// looks at, m: as much as a turn needs to land (<see cref="MinLandingLength"/>).
+    /// </summary>
+    public const double OpenEndStretch = MinLandingLength;
+
+    /// <summary>
+    /// Is pass <paramref name="pathsAway"/>, worked on the whole (<see cref="IsPassWorked"/>), still
+    /// to do at the end the tractor is heading for (<paramref name="headlandAhead"/> m ahead of
+    /// <paramref name="position"/>)? It is when less than half of its first
+    /// <see cref="OpenEndStretch"/> inside the cultivated area back from that end is covered on the
+    /// job's map. A pass worked from the other end and left short of this one counted as worked,
+    /// so the snake turned past it: on Tapada da Casa 27R was 71 % covered with its last 100 m at
+    /// the north-east end left, and the turn from 29R at that end found no pass to go to. Sections
+    /// that went off a metre or two early at the headland leave far less than half. False with no
+    /// map. Fork only.
+    /// </summary>
+    public bool IsPassOpenAtThisEnd(Models.Track.Track track, double abHeading, int pathsAway, double nudgeOffset,
+        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead,
+        Func<double, double, bool>? isPointCovered)
+    {
+        if (isPointCovered == null || track.Points.Count < 2) return false;
+        var stretch = EndStretch(track, abHeading, pathsAway, nudgeOffset, boundary, headlandLine, position, headingSameWay, headlandAhead);
+        if (stretch.Count == 0) return false;
+        int covered = 0;
+        foreach (var p in stretch)
+            if (isPointCovered(p.Easting, p.Northing)) covered++;
+        return covered * 2 < stretch.Count;
+    }
+
+    /// <summary>
+    /// Points every metre along the first <see cref="OpenEndStretch"/> of pass
+    /// <paramref name="pathsAway"/> inside the cultivated area back from the end the tractor is
+    /// heading for: from where the pass leaves the area at that end (found from the point abreast
+    /// of the end, forward to the edge when that point is inside, back to the area when it is
+    /// past the pass's end, as <see cref="LandingLength"/>), back the way the tractor came.
+    /// </summary>
+    private List<Vec2> EndStretch(Models.Track.Track track, double abHeading, int pathsAway, double nudgeOffset,
+        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead)
+    {
+        const double Step = 1.0;
+        const double Search = 300.0;
+        var points = new List<Vec2>();
+        if (headlandLine is not { Count: >= 3 } && boundary?.OuterBoundary is not { IsValid: true }) return points;
+        var config = _configStore;
+        double widthMinusOverlap = config.ActualToolWidth - config.Tool.Overlap;
+        double distAway = PassGeometry.Offset(track, pathsAway, widthMinusOverlap, nudgeOffset);
+        double ahead = Math.Clamp(double.IsFinite(headlandAhead) ? headlandAhead : 0, 0, 2000);
+
+        if (track.Points.Count > 2)
+        {
+            var curve = CurveProcessing.CreateOffsetCurve(track.Points, distAway);
+            if (curve.Count < 2) return points;
+            int near = 0;
+            double best = double.MaxValue;
+            for (int i = 0; i < curve.Count; i++)
+            {
+                double de = curve[i].Easting - position.Easting, dn = curve[i].Northing - position.Northing;
+                double d = de * de + dn * dn;
+                if (d < best) { best = d; near = i; }
+            }
+            int i1 = Math.Min(near + 1, curve.Count - 1), i0 = Math.Max(near - 1, 0);
+            double tdx = curve[i1].Easting - curve[i0].Easting, tdy = curve[i1].Northing - curve[i0].Northing;
+            double travel = headingSameWay ? abHeading : abHeading + Math.PI;
+            int fwd = tdx * Math.Sin(travel) + tdy * Math.Cos(travel) >= 0 ? 1 : -1;
+            bool InsideAt(int i) => IsPointInsideCultivatedArea(curve[i].Easting, curve[i].Northing, boundary, headlandLine);
+            bool InRange(int i) => i >= 0 && i < curve.Count;
+            double Dist(int a, int b)
+            {
+                double de = curve[a].Easting - curve[b].Easting, dn = curve[a].Northing - curve[b].Northing;
+                return Math.Sqrt(de * de + dn * dn);
+            }
+            int at = near;
+            for (double walked = 0; InRange(at + fwd) && walked < ahead; at += fwd)
+                walked += Dist(at, at + fwd);
+            if (InsideAt(at))
+            {
+                for (double walked = 0; InRange(at + fwd) && walked < Search && InsideAt(at + fwd); at += fwd)
+                    walked += Dist(at, at + fwd);
+            }
+            else
+            {
+                bool found = false;
+                for (double walked = 0; InRange(at - fwd) && walked <= Search; at -= fwd)
+                {
+                    walked += Dist(at, at - fwd);
+                    if (InsideAt(at - fwd)) { at -= fwd; found = true; break; }
+                }
+                if (!found) return points;
+            }
+            double sinceLast = Step;
+            for (double length = 0; InRange(at) && length <= OpenEndStretch && InsideAt(at); at -= fwd)
+            {
+                if (sinceLast >= Step) { points.Add(new Vec2(curve[at].Easting, curve[at].Northing)); sinceLast = 0; }
+                if (!InRange(at - fwd)) break;
+                double d = Dist(at, at - fwd);
+                length += d;
+                sinceLast += d;
+            }
+            return points;
+        }
+
+        var pointA = track.Points[0];
+        var pointB = track.Points[track.Points.Count - 1];
+        double abDx = pointB.Easting - pointA.Easting, abDy = pointB.Northing - pointA.Northing;
+        double abLen = Math.Sqrt(abDx * abDx + abDy * abDy);
+        if (abLen < 0.01) return points;
+        double abNx = abDx / abLen, abNy = abDy / abLen;
+        double perpAngle = abHeading + Math.PI / 2;
+        double midE = (pointA.Easting + pointB.Easting) / 2 + Math.Sin(perpAngle) * distAway;
+        double midN = (pointA.Northing + pointB.Northing) / 2 + Math.Cos(perpAngle) * distAway;
+        double s = headingSameWay ? 1 : -1;
+        double t0 = (position.Easting - midE) * abNx + (position.Northing - midN) * abNy;
+        bool InsideAtT(double t) => IsPointInsideCultivatedArea(midE + abNx * t, midN + abNy * t, boundary, headlandLine);
+
+        double tAt = t0 + s * ahead;
+        if (InsideAtT(tAt))
+        {
+            for (double d = Step; d <= Search && InsideAtT(tAt + s * Step); d += Step) tAt += s * Step;
+        }
+        else
+        {
+            bool found = false;
+            for (double d = Step; d <= Search; d += Step)
+                if (InsideAtT(tAt - s * d)) { tAt -= s * d; found = true; break; }
+            if (!found) return points;
+        }
+        for (double d = Step / 2; d <= OpenEndStretch; d += Step)
+        {
+            double t = tAt - s * d;
+            if (!InsideAtT(t)) break;
+            points.Add(new Vec2(midE + abNx * t, midN + abNy * t));
+        }
+        return points;
+    }
+
     /// <summary>The cultivated area's edge: the headland line, else the outer boundary; null when there is neither.</summary>
     private static List<Vec2>? CultivatedPolygon(Boundary? boundary, IReadOnlyList<Vec3>? headlandLine)
     {

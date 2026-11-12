@@ -1,0 +1,164 @@
+// AgOpenWeb
+// Copyright (C) 2026 AgOpenWeb Contributors
+// SPDX-License-Identifier: Apache-2.0
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using AgOpenWeb.Models;
+using AgOpenWeb.Models.Base;
+using AgOpenWeb.Models.Configuration;
+using AgOpenWeb.Models.Pipeline;
+using AgOpenWeb.Services.Geometry;
+using AgOpenWeb.Services.YouTurn;
+using Microsoft.Extensions.Logging.Abstractions;
+using NUnit.Framework;
+
+namespace AgOpenWeb.Services.Tests.YouTurn;
+
+/// <summary>
+/// The snake order (skip worked passes) counts a pass worked when at least half of it is covered
+/// on the job's map. A pass left short of the end ahead is still to do there: the turn goes onto
+/// it. On Tapada da Casa 27R was 71 % covered with its last 100 m at the north-east end left, and
+/// the turn from 29R at that end found no pass to go to. Fork only.
+/// </summary>
+[TestFixture]
+[NonParallelizable] // ConfigurationStore is a singleton.
+public class SnakeOpenEndTests
+{
+    private const double ToolWidth = 4.0;
+
+    // Pass k is x = 4k + 2; the cultivated square -40..40 holds passes -10..9.
+    private static double PassX(int k) => 4 * k + 2;
+
+    private YouTurnStateMachine _sm = null!;
+    private YouTurnPathingService _pathing = null!;
+    private Boundary _boundary = null!;
+    private Models.Track.Track _track = null!;
+    private List<Vec3> _square = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        ConfigurationStore.SetInstance(new ConfigurationStore());
+        var c = ConfigurationStore.Instance;
+        c.Vehicle.Wheelbase = 2.5;
+        c.Vehicle.MaxSteerAngle = 35;
+        c.Tool.Overlap = 0;
+        c.NumSections = 1;
+        c.Tool.SetSectionWidth(0, (int)(ToolWidth * 100));
+        c.Guidance.UTurnRadius = 4.0;
+        c.Guidance.UTurnExtension = 16.0;
+        c.Guidance.UTurnDistanceFromBoundary = 2.0;
+        c.Guidance.UTurnStyle = 0;
+
+        var offset = new PolygonOffsetService();
+        _pathing = new YouTurnPathingService(NullLogger<YouTurnPathingService>.Instance, c);
+        _sm = new YouTurnStateMachine(
+            new YouTurnCreationService(NullLogger<YouTurnCreationService>.Instance, offset, c),
+            _pathing, NullLogger<YouTurnStateMachine>.Instance, c);
+
+        var outer = new List<Vec2> { new(-50, -50), new(50, -50), new(50, 50), new(-50, 50) };
+        _boundary = new Boundary
+        {
+            OuterBoundary = new BoundaryPolygon
+            {
+                Points = outer.Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(),
+            },
+        };
+        _track = Models.Track.Track.FromABLine("AB", new Vec3(0, -100, 0), new Vec3(0, 100, 0));
+        _square = offset.CalculatePointHeadings(new List<Vec2> { new(-40, -40), new(40, -40), new(40, 40), new(-40, 40) });
+    }
+
+    /// <summary>Every pass covered but pass 4 where <paramref name="left"/> says (north, metres).</summary>
+    private static Func<double, double, bool> AllCoveredBut(Func<double, bool> left) =>
+        (e, n) => !(Math.Abs(e - PassX(4)) < ToolWidth / 2 && left(n));
+
+    private YouTurnStateMachine.TickContext Ctx(double e, double n, double headingDeg, Func<double, double, bool> covered) => new(
+        new Position { Easting = e, Northing = n, Heading = headingDeg, Speed = 2.78 },
+        _track, _boundary, _square,
+        UTurnSkipRows: 1, IsSkipWorkedMode: true,
+        HeadlandCalculatedWidth: 10.0, HeadlandDistance: 10.0,
+        IsPointCovered: covered);
+
+    private (YouTurnEffects Effects, YouTurnWorkingState Turn) DriveSouthOnPass6(Func<double, double, bool> covered)
+    {
+        var guidance = new GuidanceWorkingState { HowManyPathsAway = 6, IsHeadingSameWay = false };
+        var turn = new YouTurnWorkingState { IsEnabled = true };
+        var effects = _sm.Tick(Ctx(PassX(6), -25, 180, covered), guidance, turn);
+        return (effects, turn);
+    }
+
+    [Test]
+    public void A_pass_worked_on_the_whole_but_left_short_of_this_end_gets_the_turn()
+    {
+        // Pass 4: covered from 10 m south of the middle to the north edge (62 %), its south 30 m left.
+        var covered = AllCoveredBut(n => n < -10);
+        Assert.That(_pathing.IsPassWorked(_track, 4, 0, _boundary, _square, covered), Is.True,
+            "the scenario: pass 4 counts as worked on the whole");
+
+        var (effects, turn) = DriveSouthOnPass6(covered);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Not.Null, $"a turn, not \"{effects.StatusMessage}\"");
+            Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4));
+            Assert.That(effects.TurnCreationFailedSound, Is.False);
+        });
+    }
+
+    [Test]
+    public void Sections_off_a_little_early_at_the_headland_leave_the_pass_worked()
+    {
+        // Pass 4 covered but its last 2 m at the south edge.
+        var covered = AllCoveredBut(n => n < -38);
+
+        var (effects, turn) = DriveSouthOnPass6(covered);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null);
+            Assert.That(effects.StatusMessage, Is.EqualTo("Field complete — all tracks worked"));
+        });
+    }
+
+    [Test]
+    public void A_pass_left_short_of_the_other_end_is_not_turned_onto_at_this_one()
+    {
+        // Pass 4's north 30 m left: still worked at the south end, where the tractor turns.
+        var covered = AllCoveredBut(n => n > 10);
+
+        var (effects, turn) = DriveSouthOnPass6(covered);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null);
+            Assert.That(effects.StatusMessage, Is.EqualTo("Field complete — all tracks worked"));
+        });
+    }
+
+    [Test]
+    public void The_stretch_at_this_end_is_measured_from_where_the_pass_leaves_the_field()
+    {
+        var position = new Position { Easting = PassX(6), Northing = -25, Heading = 180 };
+        var leftSouth = AllCoveredBut(n => n < -10);
+        var leftNorth = AllCoveredBut(n => n > 10);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_pathing.IsPassOpenAtThisEnd(_track, 0, 4, 0, _boundary, _square, position,
+                headingSameWay: false, headlandAhead: 15, leftSouth), Is.True, "south end, left there");
+            Assert.That(_pathing.IsPassOpenAtThisEnd(_track, 0, 4, 0, _boundary, _square, position,
+                headingSameWay: false, headlandAhead: 15, leftNorth), Is.False, "south end, left at the north");
+            // Heading north, the end ahead is the north one.
+            var north = new Position { Easting = PassX(6), Northing = 25, Heading = 0 };
+            Assert.That(_pathing.IsPassOpenAtThisEnd(_track, 0, 4, 0, _boundary, _square, north,
+                headingSameWay: true, headlandAhead: 15, leftNorth), Is.True, "north end, left there");
+            // The point abreast of the end is inside (the headland is still 40 m ahead): the edge is found.
+            Assert.That(_pathing.IsPassOpenAtThisEnd(_track, 0, 4, 0, _boundary, _square, north,
+                headingSameWay: true, headlandAhead: 0, leftNorth), Is.True, "found forward from inside");
+            Assert.That(_pathing.IsPassOpenAtThisEnd(_track, 0, 4, 0, _boundary, _square, position,
+                headingSameWay: false, headlandAhead: 15, null), Is.False, "no map");
+        });
+    }
+}

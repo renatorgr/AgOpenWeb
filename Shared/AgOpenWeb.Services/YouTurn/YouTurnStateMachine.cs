@@ -78,6 +78,12 @@ public sealed class YouTurnStateMachine
     private readonly Dictionary<int, bool> _coveredPasses = new();
     private (List<int>? Plan, Models.Track.Track? Track, double Nudge, Boundary? Boundary, IReadOnlyList<Vec3>? Headland) _coveredPassesKey;
 
+    // Of the passes worked on the whole, the ones still to do at the end ahead
+    // (YouTurnPathingService.IsPassOpenAtThisEnd), decided once per end: for the pass the tractor
+    // is on and its direction, cleared with _coveredPasses. Fork only.
+    private readonly Dictionary<int, bool> _openAtEnd = new();
+    private (int Pass, bool SameWay) _openAtEndKey;
+
     // Which way the last turn stepped across the field (+1 to a higher pass, -1 lower) and on
     // which track (by name: a nudge or edit makes a new Track). A normal turn keeps stepping that
     // way, as AgOpenGPS does by flipping isTurnLeft after each turn, so the work goes on across
@@ -247,7 +253,7 @@ public sealed class YouTurnStateMachine
             // field with the headland line just ahead. Taken as the end of that pass, every pass
             // had no room "at this end" and the end of the field was said, with its sound, as
             // the turn finished (Tapada da Casa, 09:24); the turn for the far end came a cycle later.
-            canCreateTurn = _pathing.GetNextSnakePath(turn, WorkedPasses(in ctx, track, guidance, turn)).HasValue;
+            canCreateTurn = _pathing.GetNextSnakePath(turn, WorkedPasses(in ctx, track, guidance, turn, atEndOf: abHeading)).HasValue;
         }
 
         // Default: no armable trigger point — widget shows nothing meaningful.
@@ -913,6 +919,7 @@ public sealed class YouTurnStateMachine
         turn.SnakeIndex = -1;
         turn.AltSign = 0;
         _coveredPasses.Clear();
+        _openAtEnd.Clear();
         _failedEnd = null;
     }
 
@@ -1060,7 +1067,7 @@ public sealed class YouTurnStateMachine
         _failedEnd = null;
 
         // Never onto a worked pass: the next pass of the order that is still to do.
-        var isWorked = WorkedPasses(in ctx, track, guidance, turn);
+        var isWorked = WorkedPasses(in ctx, track, guidance, turn, atEndOf: abHeading);
         int? nextPath = _pathing.GetNextSnakePath(turn, isWorked);
         // An order planned before the headland or boundary changed can go on to a pass that is
         // no longer in the field: plan it again for the field as it is.
@@ -1068,7 +1075,7 @@ public sealed class YouTurnStateMachine
         {
             _logger.LogDebug("[YouTurn] Snake pass {Pass} is outside the field - planning the snake again", stale);
             PlanSnake(in ctx, track, abHeading, guidance, turn, fieldStamp);
-            isWorked = WorkedPasses(in ctx, track, guidance, turn);
+            isWorked = WorkedPasses(in ctx, track, guidance, turn, atEndOf: abHeading);
             nextPath = _pathing.GetNextSnakePath(turn, isWorked);
         }
         if (nextPath == null)
@@ -1270,10 +1277,13 @@ public sealed class YouTurnStateMachine
     /// The worked-pass test for the snake: marked worked, or covered on the job's map
     /// (<see cref="YouTurnPathingService.IsPassWorked"/>). The map test is remembered for the
     /// plan in hand (see <see cref="_coveredPasses"/>); the tractor's own pass, the only one
-    /// being covered as it drives, is never the next pass of the plan.
+    /// being covered as it drives, is never the next pass of the plan. With
+    /// <paramref name="atEndOf"/> (the track's heading, radians) for a turn at the end ahead, a
+    /// pass worked on the whole but still to do at that end is not worked
+    /// (<see cref="YouTurnPathingService.IsPassOpenAtThisEnd"/>; fork only).
     /// </summary>
-    private Func<int, bool> WorkedPasses(in TickContext ctx, Models.Track.Track track, GuidanceWorkingState guidance,
-        YouTurnWorkingState turn)
+    private Func<int, bool> WorkedPasses(in TickContext ctx, Models.Track.Track track,
+        GuidanceWorkingState guidance, YouTurnWorkingState turn, double? atEndOf)
     {
         var boundary = ctx.Boundary;
         var headlandLine = ctx.HeadlandLine;
@@ -1285,14 +1295,30 @@ public sealed class YouTurnStateMachine
             || !ReferenceEquals(headlandLine, _coveredPassesKey.Headland))
         {
             _coveredPasses.Clear();
+            _openAtEnd.Clear();
             _coveredPassesKey = (plan, track, nudge, boundary, headlandLine);
         }
+        int current = guidance.HowManyPathsAway;
+        bool sameWay = guidance.IsHeadingSameWay;
+        if (_openAtEndKey != (current, sameWay))
+        {
+            _openAtEnd.Clear();
+            _openAtEndKey = (current, sameWay);
+        }
+        var position = ctx.CurrentPosition;
+        double headlandAhead = turn.DistanceToHeadland;
         return pass =>
         {
-            if (track.IsPathWorked(pass)) return true;
-            if (!_coveredPasses.TryGetValue(pass, out bool covered))
-                _coveredPasses[pass] = covered = _pathing.IsPassWorked(track, pass, nudge, boundary, headlandLine, isPointCovered);
-            return covered;
+            bool worked = track.IsPathWorked(pass);
+            if (!worked && !_coveredPasses.TryGetValue(pass, out worked))
+                _coveredPasses[pass] = worked = _pathing.IsPassWorked(track, pass, nudge, boundary, headlandLine, isPointCovered);
+            if (!worked || atEndOf is not { } abHeading || pass == current || isPointCovered == null) return worked;
+            // Worked on the whole but left to do at this end: open here, so a turn can be made
+            // onto it (Tapada da Casa: 27R, its last 100 m at the end ahead, was turned past).
+            if (!_openAtEnd.TryGetValue(pass, out bool open))
+                _openAtEnd[pass] = open = _pathing.IsPassOpenAtThisEnd(track, abHeading, pass, nudge, boundary, headlandLine,
+                    position, sameWay, headlandAhead, isPointCovered);
+            return !open;
         };
     }
 
@@ -1734,8 +1760,9 @@ public sealed class YouTurnStateMachine
                 // planned order: the next turn plans the snake again from this pass, as a skip
                 // change does (#410).
                 _pathing.AdvanceSnakeSequence(turn, guidance.HowManyPathsAway,
-                    WorkedPasses(in ctx, ctx.SelectedTrack, guidance, turn));
+                    WorkedPasses(in ctx, ctx.SelectedTrack, guidance, turn, atEndOf: null));
                 _coveredPasses.Clear(); // decided again for the next turn
+                _openAtEnd.Clear();
             }
         }
         else if (turn.PlannedNextPath is { } planned)
