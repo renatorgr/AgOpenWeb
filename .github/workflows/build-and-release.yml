@@ -33,11 +33,11 @@ jobs:
   # can't tell (a manual run, a push with no "before", a failed diff) counts as touching
   # everything, so a check is never skipped by mistake.
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       ui: ${{ steps.diff.outputs.ui }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -61,14 +61,14 @@ jobs:
           echo "web client touched: $ui"
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/sharpisoterm-cache
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -175,14 +175,14 @@ jobs:
   # Then the host loop and the 10 Hz broadcast with a field open (the Vehicle & Tool
   # harness's HostLoopBudgetTests: the whole backend, about 16 s; also files read).
   hot-path-budgets:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/sharpisoterm-cache
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -202,15 +202,15 @@ jobs:
   translations-fit:
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.ui == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     container: mcr.microsoft.com/playwright/python:v1.64.0-noble
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/sharpisoterm-cache
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -245,14 +245,14 @@ jobs:
   # The Desktop and Android heads compile on every PR so a broken head is caught before
   # merge; iOS needs a macOS runner and compiles after merge.
   build-desktop:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/sharpisoterm-cache
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -262,19 +262,19 @@ jobs:
         run: dotnet build Platforms/AgOpenWeb.Desktop/AgOpenWeb.Desktop.csproj -c Release -p:DesktopOnly=true
 
   build-android:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/sharpisoterm-cache
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'microsoft'
           java-version: '17'
@@ -305,7 +305,7 @@ jobs:
     if: github.repository == 'AgOpenGPS-Official/AgOpenWeb'
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/sharpisoterm-cache
 
@@ -315,7 +315,7 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode_26.4.1.app
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 

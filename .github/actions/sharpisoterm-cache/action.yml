@@ -7,7 +7,7 @@ description: >
 runs:
   using: composite
   steps:
-    - uses: actions/cache@v4
+    - uses: actions/cache@v6
       with:
         path: nuget-local
         key: sharpisoterm-${{ hashFiles('Shared/AgOpenWeb.VirtualTerminal/AgOpenWeb.VirtualTerminal.csproj') }}
