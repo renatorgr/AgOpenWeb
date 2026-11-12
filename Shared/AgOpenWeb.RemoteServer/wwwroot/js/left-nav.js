@@ -20,8 +20,18 @@ const LN_NAV_PANELS = ['screenalerts', 'tools', 'rollcorr', 'fieldtools', 'field
 // boundarymenu: the map stays live beside it, to pick an obstacle's row by tapping it.
 const NO_SCRIM = new Set(['smartwas', 'linetune', 'recpath', 'boundaryplayer', 'boundarymenu', 'fieldbuilder', 'bugreport', 'ntripsettings', 'ntripprofiles', 'ntripeditor']);
 const lnScrim = document.getElementById('ln-scrim');
+// The panels whose settings belong to the vehicle and implement profiles.
+const PROFILE_PANELS = ['vehiclecfg', 'toolcfg', 'autosteercfg'];
 function lnCloseAll() {
   if (mapTap && mapTap.bmTool) endMapTap(); // the boundary menu's circle taps end with it
+  if (PROFILE_PANELS.some(id => document.getElementById(id).classList.contains('open'))) {
+    // A box still being typed in sends its value when it loses focus, after this tap: blur it
+    // first so the value is in before the save (as Save Profile does).
+    const a = document.activeElement;
+    if (a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement) a.blur();
+    if (cfgEditedSinceOpen) saveProfile();
+  }
+  cfgEditedSinceOpen = false;
   for (const id of LN_NAV_PANELS) document.getElementById(id).classList.remove('open');
   lnScrim.classList.remove('open');
   document.getElementById('ln-screenalerts').classList.remove('active');
