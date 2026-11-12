@@ -80,9 +80,11 @@ body.fs-on #sb-role { margin-left: 75px; }
 #sb-gpscard .gc-row { display: flex; justify-content: space-between; gap: 16px; padding: 1px 0; }
 #sb-gpscard .gc-k { color: var(--text-muted); font-size: 12px; }
 #sb-gpscard .gc-v { color: var(--text-2); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
-/* Field data card (#321): same look, toggled by the rotating field line under the fix. */
+/* Field data card (#321): same look, toggled by the rotating field line under the fix. It opens
+   beside the right nav (73 px wide), level with its top: under the fix readout it covered the
+   map ahead of the tractor (fork only). */
 #sb-rot { cursor: pointer; }
-#sb-fieldcard { display: none; position: absolute; top: calc(100% + 8px); left: 0; min-width: 230px;
+#sb-fieldcard { display: none; position: fixed; top: calc(var(--bar-bottom) + 10px); right: calc(var(--sar) + 81px); min-width: 230px;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
   box-shadow: 0 6px 20px rgba(0,0,0,0.5); z-index: 10; font-weight: 500; }
 #sb-fieldcard .gc-ll { color: #3498DB; font-size: 13px; font-weight: 700; white-space: nowrap;
@@ -276,6 +278,9 @@ body.maptap #ck { cursor: crosshair; }
   display: flex; align-items: center; gap: 14px; z-index: 20; pointer-events: none;
   filter: drop-shadow(0 1px 3px rgba(0,0,0,0.85)); }
 #uturn-indicator[hidden] { display: none; }
+/* The field data card opens over this corner: while it is open the indicator sits to its left,
+   so the distance to the turn stays in sight (--fc-w: the card's width, set in js/overlays.js). */
+body.fc-open #uturn-indicator { right: calc(var(--sar) + 81px + var(--fc-w, 260px) + 14px); }
 /* Padding widens the tap target towards AgOpenGPS's 160x60 zone; the negative margin
    keeps the layout as it was. */
 .uti-distbox { display: flex; flex-direction: column; align-items: center; gap: 3px;

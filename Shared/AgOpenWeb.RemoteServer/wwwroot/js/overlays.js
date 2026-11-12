@@ -441,6 +441,13 @@ SB.rot.addEventListener('pointerdown', e => {
   if (show) { SB.gpsCard.style.display = 'none'; renderFieldCard(); }
 });
 FC.card.addEventListener('pointerdown', e => e.stopPropagation());
+// The card opens beside the right nav, over the U-turn approach indicator: while it is open
+// (it is shown and hidden from several places) the indicator moves to its left (css/map-hud.css).
+if (window.ResizeObserver) new ResizeObserver(() => {
+  const w = FC.card.offsetWidth;
+  document.body.classList.toggle('fc-open', w > 0);
+  if (w > 0) document.documentElement.style.setProperty('--fc-w', w + 'px');
+}).observe(FC.card);
 FC.reset.addEventListener('pointerdown', e => { e.preventDefault(); transport.send('fielddata.resetTrip'); });
 function renderFieldCard() {
   if (FC.card.style.display !== 'block') return;
