@@ -42,6 +42,12 @@ public partial class YouTurnCreationService
         /// </summary>
         public bool ClearanceBlocked { get; init; }
 
+        /// <summary>
+        /// True when the turn built would hand over past the end of the next pass's line
+        /// (<see cref="TurnLanding.PastLineEnd"/>), so it was not taken: <see cref="Path"/> is null.
+        /// </summary>
+        public bool LandsPastLineEnd { get; init; }
+
         /// <summary>Where the path leaves the current pass (see <see cref="YouTurnCreationOutput.ArcStart"/>);
         /// null for a fallback path, which has no entry leg.</summary>
         public Vec3? ArcStart { get; init; }
@@ -60,6 +66,9 @@ public partial class YouTurnCreationService
         _ => YouTurnType.SagittaStyle,
     };
 
+    /// <summary>How many times <see cref="CreateTurnPath"/> was called: the tests that hold how often a turn is built.</summary>
+    internal int TurnPathBuilds { get; private set; }
+
     /// <summary>
     /// Build a complete U-turn path for the current vehicle state.
     /// The returned path is smoothed per <see cref="GuidanceConfig.UTurnSmoothing"/>.
@@ -77,6 +86,7 @@ public partial class YouTurnCreationService
         double headlandCalculatedWidth,
         double headlandDistance)
     {
+        TurnPathBuilds++;
         if (headlandLine == null)
             return new TurnPathResult(null, false);
 
