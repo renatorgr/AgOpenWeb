@@ -2012,6 +2012,32 @@ public sealed class GpsPipelineService : IGpsPipelineService
         return _turnField;
     }
 
+    // The line a front-mounted implement's pivot steers (FrontToolLine), for the pass, bend and
+    // implement it was made for. Cycle-owned. Fork only.
+    private (Models.Track.Track? Track, List<Vec3>? TrackPoints, double DistAway, List<Vec3>? Bent, int Count,
+        bool Closed, double Reach, double MinRadius, double PassRadius) _frontLineKey;
+    private List<Vec3>? _frontLine;
+
+    private List<Vec3>? FrontToolSteered(Models.Track.Track track, double distAway, List<Vec3>? bent,
+        Models.Track.Track steered)
+    {
+        var config = _configStore;
+        double reach = Math.Abs(config.Tool.HitchLength);
+        double minRadius = config.Vehicle.MinTurningRadius;
+        double passRadius = config.Guidance.UTurnRadius; // the passes' bends are opened to it
+        var key = (track, track.Points, distAway, bent, steered.Points.Count, steered.IsClosed, reach, minRadius, passRadius);
+        if (!ReferenceEquals(key.track, _frontLineKey.Track) || !ReferenceEquals(key.Points, _frontLineKey.TrackPoints)
+            || key.distAway != _frontLineKey.DistAway || !ReferenceEquals(bent, _frontLineKey.Bent)
+            || key.Count != _frontLineKey.Count || key.IsClosed != _frontLineKey.Closed
+            || reach != _frontLineKey.Reach || minRadius != _frontLineKey.MinRadius
+            || passRadius != _frontLineKey.PassRadius)
+        {
+            _frontLineKey = key;
+            _frontLine = Track.FrontToolLine.Steered(steered.Points, steered.IsClosed, reach, minRadius);
+        }
+        return _frontLine;
+    }
+
     /// <summary>Why AutoSteer went off at the end of an open curve (AgOpenGPS gsGuidanceStopped, gsPastEndOfCurve).</summary>
     public const string PastEndOfCurveReason = "AutoSteer disengaged - past end of curve";
     public const string RecordedPathEndReason = "AutoSteer disengaged - end of the recorded path";
@@ -2120,6 +2146,17 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // A line bent or straightened has other points: find the nearest one afresh.
         bool lineChanged = !ReferenceEquals(bent, _lastSteerBend);
         _lastSteerBend = bent;
+
+        // A front-mounted implement runs outside the pivot's line round a bend: the pivot steers
+        // inside it, so the implement runs on the pass (FrontToolLine). The same points, moved.
+        // Fork only.
+        if (config.Tool.IsToolFrontFixed && currentTrack.Points.Count > 2
+            && FrontToolSteered(track, distAway, bent, currentTrack) is { } frontLine)
+            currentTrack = new Models.Track.Track
+            {
+                Name = currentTrack.Name, Points = frontLine, Type = currentTrack.Type,
+                IsVisible = true, IsActive = true, IsClosed = currentTrack.IsClosed
+            };
 
         if (_cycleCounter % 50 == 0 && currentTrack.Points.Count >= 2)
         {
