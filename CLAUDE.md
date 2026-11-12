@@ -569,6 +569,16 @@ Key parameters:
 
 The arc must fit between the headland boundary (green line) and outer boundary (yellow line). If the headland is too narrow for the turn radius, the arc will extend past the outer boundary.
 
+## A front implement round a bend
+AutoSteer steers the pivot on the line; an implement fixed `h` ahead of it (`Tool.IsToolFrontFixed`,
+`Tool.HitchLength`) runs outside a bend of radius R by √(R² + h²) − R. `FrontToolLine.Steered` moves each point of
+the line steered (after the Go around bend, the same points one for one, so `PassUnfit` still lines up) towards the
+bend's centre by R − √(R² − h²), the pivot's bend never tighter than `Vehicle.MinTurningRadius`; R is measured over
+`max(h, 3 m)` either side of the point half way to the implement, headings over 2 m chords (a loop's ends overlap a
+little where it starts). Cached per pass in `GpsPipelineService.FrontToolSteered`; straight lines and AB lines are
+steered as they are. The pass shown, the implement's band and U-turn, line-entry and S paths are not moved. Rear
+and trailed implements are not changed. Tests: `FrontToolLineTests`, `FrontToolCurveTests`. Fork only.
+
 ## Going around obstacles
 Inner boundaries chosen as *Go around* (`ObstacleAction.GoRound`) bend the pass round them
 (`ObstacleDetour` in `Services/Track`). Each is grown by half the implement (and its offset, or half
@@ -598,16 +608,6 @@ the guidelines leave that stretch out (the stretch nearest the tractor: `FitPiec
 and with AutoSteer on, such a stretch within 10 m plus 2 s of travel ahead on the pass steered
 (`CurveProcessing.UnfitAhead`, from `CalculateTrackGuidance`) takes AutoSteer off with the alarm
 (`GpsPipelineService.PassDoesNotFitReason`). Tests: `ClosedPassFitTests` (Models), `ClosedPassNeckTests`. Fork only.
-
-## A front implement round a bend
-AutoSteer steers the pivot on the line; an implement fixed `h` ahead of it (`Tool.IsToolFrontFixed`,
-`Tool.HitchLength`) runs outside a bend of radius R by √(R² + h²) − R. `FrontToolLine.Steered` moves each point of
-the line steered (after the Go around bend, the same points one for one, so `PassUnfit` still lines up) towards the
-bend's centre by R − √(R² − h²), the pivot's bend never tighter than `Vehicle.MinTurningRadius`; R is measured over
-`max(h, 3 m)` either side of the point half way to the implement, headings over 2 m chords (a loop's ends overlap a
-little where it starts). Cached per pass in `GpsPipelineService.FrontToolSteered`; straight lines and AB lines are
-steered as they are. The pass shown, the implement's band and U-turn, line-entry and S paths are not moved. Rear
-and trailed implements are not changed. Tests: `FrontToolLineTests`, `FrontToolCurveTests`. Fork only.
 
 ## Steer wizard: tuning the wheels
 The Steer Wizard's *Tune steering* step (`TuneSteeringStepViewModel`, after the Ackermann circle and before the
