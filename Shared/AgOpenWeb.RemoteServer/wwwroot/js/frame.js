@@ -31,6 +31,8 @@ function renderSkia(canvas, rp) {
     drawContourRefSk(canvas);
     if (scene.nextTrack) strokePtsSk(canvas, scene.nextTrack, false, SKP.next);
     if (scene.uTurnPath) strokePtsSk(canvas, scene.uTurnPath, false, SKP.uturn);
+    // The way to the start of the pass (fork only): driven, like a turn; offered, dashed.
+    if (scene.entryPath) strokePtsSk(canvas, scene.entryPath, false, scene.entryOffer ? SKP.entryOffer : SKP.uturn);
     // Purple reference (extended across the field). The reference is the edge between passes
     // (PassGeometry), so pass 0 lies half a width from it; only a track driven on the line
     // itself (boundary-follow) puts the magenta guidance on top of it, and then just the one

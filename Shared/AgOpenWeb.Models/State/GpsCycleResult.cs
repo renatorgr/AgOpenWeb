@@ -147,6 +147,23 @@ public record GpsCycleResult
 
     /// <summary>How far the position is held off the receiver's, m (0 when not held; fork only).</summary>
     public double RtkHoldM { get; init; }
+
+    /// <summary>
+    /// The way to the start of the pass through the headland (GuidanceConfig.LineEntryMode; fork
+    /// only): being driven, or offered to the operator when <see cref="LineEntryOfferPass"/> is set.
+    /// Null without one.
+    /// </summary>
+    public IReadOnlyList<Models.Base.Vec3>? LineEntryPath { get; init; }
+
+    /// <summary>While <see cref="LineEntryPath"/> is offered and not driven: the pass it leads to
+    /// ("26R"); null otherwise.</summary>
+    public string? LineEntryOfferPass { get; init; }
+
+    /// <summary>
+    /// Non-null on the cycle where AutoSteer joined a line at the nearest point because no way to
+    /// the start of the pass fits through the headland (fork only): shown to the operator.
+    /// </summary>
+    public string? LineEntryNotice { get; init; }
 }
 
 /// <summary>

@@ -714,6 +714,14 @@ public sealed class YouTurnStateMachine
     }
 
     /// <summary>
+    /// The way from the tractor to the start of a pass through the headland, for AutoSteer joining
+    /// a new line (fork only): <see cref="YouTurnCreationService.PlanLineEntry"/>.
+    /// </summary>
+    public LineEntryPlan PlanLineEntry(Vec3 pivot, Func<bool, IReadOnlyList<Vec3>?> passFor,
+        IReadOnlyList<Vec3> headlandLine, Boundary boundary, double onLineWithin) =>
+        _creation.PlanLineEntry(pivot, passFor, headlandLine, boundary, onLineWithin);
+
+    /// <summary>
     /// The tractor, in the headland, is at the end of its pass heading out of the field (the pass
     /// leaves the outer boundary ahead with no more field on it first: not heading in, not a gap
     /// it drives on across), on the line, and no U-turn is planned or driven: none could be made

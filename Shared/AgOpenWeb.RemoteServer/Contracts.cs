@@ -61,7 +61,9 @@ public record SceneDto(
     IReadOnlyList<Vec2Dto>? ContourRef, // contour mode: the strip being followed (points) (#110)
     bool ContourLocked, // contour lock on
     IReadOnlyList<IReadOnlyList<Vec2Dto>> GuideLines, // a curve's extra guidelines, built by the host (#450)
-    IReadOnlyList<Vec2Dto>? ToolPass); // the centre of the pass shown, where the tool runs: the map draws the tool's width along it
+    IReadOnlyList<Vec2Dto>? ToolPass, // the centre of the pass shown, where the tool runs: the map draws the tool's width along it
+    IReadOnlyList<Vec2Dto>? EntryPath = null, // the way through the headland to the start of the pass, driven or offered (fork only)
+    string? EntryOffer = null); // while EntryPath is offered, not driven: the pass it leads to ("26R"); the operator takes it or not
 
 /// <summary>A field flag marker: field-local position (m) + display colour hex + name.</summary>
 public record FlagDto(double E, double N, string ColorHex, string Name);
@@ -498,8 +500,10 @@ public record ToolConfigDto(
 /// <param name="GoAroundRadius">The tightest a pass bends round a Go around obstacle, m.</param>
 /// <param name="GoAroundMargin">Room kept between the implement and a Go around obstacle, m.</param>
 /// <param name="CrossGap">The longest headland gap a pass is driven across instead of turned at, m; 0 = off.</param>
+/// <param name="EntryMode">How AutoSteer joins a new line in the headland: 0 nearest point, 1 ask, 2 start of the pass (fork only).</param>
+/// <param name="EntryStraight">How far the implement runs straight on the pass before the headland line when it joins at the start, m.</param>
 public record UturnConfigDto(int Style, double Extension, int Smoothing, double Radius, double DistanceFromBoundary,
-    double GoAroundRadius, double GoAroundMargin, double CrossGap);
+    double GoAroundRadius, double GoAroundMargin, double CrossGap, int EntryMode = 0, double EntryStraight = 3.0);
 
 /// <summary>Tram Lines tab (ConfigStore.Guidance tram fields).</summary>
 public record TramConfigDto(int Passes, bool Display, int Line, double Width, bool OuterInverted);

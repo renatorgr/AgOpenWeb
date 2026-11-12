@@ -364,6 +364,13 @@ public partial class MainViewModel
         // RTK lost and the line held, the hold's limit, RTK back (a toast; fork only).
         if (result.RtkHoldNotice != null)
             ReportFailure(result.RtkHoldNotice);
+
+        // The way to the start of the pass through the headland, driven or offered, for the map
+        // and the offer's buttons; no way through the headland (a toast). Fork only.
+        State.Operation.LineEntryPath = result.LineEntryPath;
+        State.Operation.LineEntryOfferPass = result.LineEntryOfferPass;
+        if (result.LineEntryNotice != null)
+            ReportFailure(result.LineEntryNotice);
         State.Vehicle.RtkHoldM = result.RtkHoldM;
 
         // Map vehicle/tool/hitch positions are pushed by OnRenderPullTick at

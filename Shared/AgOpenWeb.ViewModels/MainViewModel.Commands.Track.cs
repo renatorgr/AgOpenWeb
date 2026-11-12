@@ -1075,6 +1075,9 @@ public partial class MainViewModel
 
         ManualYouTurnLeftCommand = new RelayCommand(TriggerManualYouTurnLeft);
         ManualYouTurnRightCommand = new RelayCommand(TriggerManualYouTurnRight);
+        // The operator's answer to the offered way to the start of the pass (fork only).
+        TakeLineEntryCommand = new RelayCommand(() => _intents.RequestLineEntryAnswer(take: true));
+        KeepNearestEntryCommand = new RelayCommand(() => _intents.RequestLineEntryAnswer(take: false));
         ToggleUTurnDirectionCommand = new RelayCommand(ToggleUTurnDirection);
 
         // The parameter says what toggled it, for the log: null is the operator (the screen

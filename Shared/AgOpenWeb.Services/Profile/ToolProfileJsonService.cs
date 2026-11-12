@@ -178,6 +178,8 @@ public static class ToolProfileJsonService
                 ExtensionLength = store.Guidance.UTurnExtension,
                 DistanceFromBoundary = store.Guidance.UTurnDistanceFromBoundary,
                 CrossGap = store.Guidance.UTurnCrossGap,
+                EntryMode = (int)store.Guidance.LineEntryMode,
+                EntryStraight = store.Guidance.LineEntryStraight,
                 Style = store.Guidance.UTurnStyle,
                 Smoothing = store.Guidance.UTurnSmoothing,
                 GoAroundRadius = store.Guidance.GoAroundRadius,
@@ -301,6 +303,9 @@ public static class ToolProfileJsonService
         store.Guidance.UTurnExtension = dto.YouTurn?.ExtensionLength ?? dg.UTurnExtension;
         store.Guidance.UTurnDistanceFromBoundary = dto.YouTurn?.DistanceFromBoundary ?? dg.UTurnDistanceFromBoundary;
         store.Guidance.UTurnCrossGap = dto.YouTurn?.CrossGap ?? dg.UTurnCrossGap;
+        store.Guidance.LineEntryMode = dto.YouTurn?.EntryMode is int em && Enum.IsDefined(typeof(LineEntryMode), em)
+            ? (LineEntryMode)em : dg.LineEntryMode;
+        store.Guidance.LineEntryStraight = dto.YouTurn?.EntryStraight ?? dg.LineEntryStraight;
         store.Guidance.UTurnStyle = dto.YouTurn?.Style ?? dg.UTurnStyle;
         store.Guidance.UTurnSmoothing = dto.YouTurn?.Smoothing ?? dg.UTurnSmoothing;
         store.Guidance.GoAroundRadius = dto.YouTurn?.GoAroundRadius ?? dg.GoAroundRadius;
@@ -381,6 +386,9 @@ public static class ToolProfileJsonService
         public double? GoAroundRadius { get; set; }
         public double? GoAroundMargin { get; set; }
         public double? CrossGap { get; set; }
+        // Joining a new line in the headland (fork only): 0 nearest point, 1 ask, 2 start of the pass.
+        public int? EntryMode { get; set; }
+        public double? EntryStraight { get; set; }
         public int? Style { get; set; }
         public int? Smoothing { get; set; }
     }

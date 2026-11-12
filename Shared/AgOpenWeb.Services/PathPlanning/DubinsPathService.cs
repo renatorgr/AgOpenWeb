@@ -63,34 +63,61 @@ namespace AgOpenWeb.Services.PathPlanning
 
             //int pathsCnt = pathDataList.Count;
             if (pathDataList.Count > 0)
-            {
-                int cnt = pathDataList[0].PathCoordinates.Count;
-                if (cnt > 1)
-                {
-                    //calculate the heading for each point
-                    for (int i = 0; i < cnt - 1; i += 5)
-                    {
-                        Vec3 pt = new Vec3(pathDataList[0].PathCoordinates[i].Easting, pathDataList[0].PathCoordinates[i].Northing, 0)
-                        {
-                            Heading = Math.Atan2(pathDataList[0].PathCoordinates[i + 1].Easting - pathDataList[0].PathCoordinates[i].Easting,
-                            pathDataList[0].PathCoordinates[i + 1].Northing - pathDataList[0].PathCoordinates[i].Northing)
-                        };
-                        dubinsShortestPathList.Add(pt);
-                    }
-
-                    // Terminate the path at the requested goal. GetTotalPath already appends
-                    // goalPos as the final entry of PathCoordinates after each segment is built
-                    // from floor(length/DriveDistance) integer steps; the i+=5 subsample loop
-                    // above otherwise drops that goal point, so the arc can end up to one
-                    // subsample stride (~25 cm) short of the target along its tangent — and the
-                    // accumulated truncation error from the floor() in each segment leaves a
-                    // few-cm perpendicular offset that's visible as the U-turn arc not landing
-                    // on the next-track AB line. (#332)
-                    var goalPt = pathDataList[0].PathCoordinates[cnt - 1];
-                    dubinsShortestPathList.Add(new Vec3(goalPt.Easting, goalPt.Northing, goalHeading));
-                }
-            }
+                AppendPathPoints(pathDataList[0], dubinsShortestPathList);
             return dubinsShortestPathList;
+        }
+
+        /// <summary>
+        /// Every Dubins path from <paramref name="start"/> to <paramref name="goal"/> (headings in
+        /// radians), the shortest first, each a new list of points about 0.25 m apart ending on
+        /// the goal: for a caller that tests the paths and takes the first that fits.
+        /// </summary>
+        public List<List<Vec3>> GeneratePaths(Vec3 start, Vec3 goal)
+        {
+            startPos.Easting = start.Easting;
+            startPos.Northing = start.Northing;
+            startHeading = start.Heading;
+            goalPos.Easting = goal.Easting;
+            goalPos.Northing = goal.Northing;
+            goalHeading = goal.Heading;
+
+            var paths = new List<List<Vec3>>();
+            foreach (var data in GetAllDubinsPaths())
+            {
+                var points = new List<Vec3>();
+                AppendPathPoints(data, points);
+                if (points.Count >= 2) paths.Add(points);
+            }
+            return paths;
+        }
+
+        // One path's coordinates (every DriveDistance) as points with headings, every fifth kept.
+        private void AppendPathPoints(DubinsPathData data, List<Vec3> points)
+        {
+            int cnt = data.PathCoordinates.Count;
+            if (cnt <= 1) return;
+
+            //calculate the heading for each point
+            for (int i = 0; i < cnt - 1; i += 5)
+            {
+                Vec3 pt = new Vec3(data.PathCoordinates[i].Easting, data.PathCoordinates[i].Northing, 0)
+                {
+                    Heading = Math.Atan2(data.PathCoordinates[i + 1].Easting - data.PathCoordinates[i].Easting,
+                    data.PathCoordinates[i + 1].Northing - data.PathCoordinates[i].Northing)
+                };
+                points.Add(pt);
+            }
+
+            // Terminate the path at the requested goal. GetTotalPath already appends
+            // goalPos as the final entry of PathCoordinates after each segment is built
+            // from floor(length/DriveDistance) integer steps; the i+=5 subsample loop
+            // above otherwise drops that goal point, so the arc can end up to one
+            // subsample stride (~25 cm) short of the target along its tangent — and the
+            // accumulated truncation error from the floor() in each segment leaves a
+            // few-cm perpendicular offset that's visible as the U-turn arc not landing
+            // on the next-track AB line. (#332)
+            var goalPt = data.PathCoordinates[cnt - 1];
+            points.Add(new Vec3(goalPt.Easting, goalPt.Northing, goalHeading));
         }
 
         //The 4 different circles we have that sits to the left/right of the start/goal

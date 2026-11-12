@@ -41,4 +41,10 @@ public readonly record struct PipelineIntentBatch
     /// — reset wins if both arrive in the same tick.
     /// </summary>
     public bool GuidanceResetNudge { get; init; }
+
+    /// <summary>
+    /// The operator's answer to the offered way to the start of the pass (fork only):
+    /// <c>null</c> = none, <c>true</c> = take it, <c>false</c> = keep the nearest point.
+    /// </summary>
+    public bool? LineEntryAnswer { get; init; }
 }

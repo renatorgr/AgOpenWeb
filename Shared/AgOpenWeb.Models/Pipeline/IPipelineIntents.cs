@@ -58,6 +58,13 @@ public interface IPipelineIntents
     void RequestGuidanceResetNudge();
 
     /// <summary>
+    /// The operator's answer to the offered way to the start of the pass through the headland
+    /// (GuidanceConfig.LineEntryMode Ask; fork only): <c>true</c> drives it, <c>false</c> keeps
+    /// the nearest point. Last-wins between drains.
+    /// </summary>
+    void RequestLineEntryAnswer(bool take);
+
+    /// <summary>
     /// Atomically read and clear all pending intents. Called once per cycle tick.
     /// </summary>
     PipelineIntentBatch Drain();

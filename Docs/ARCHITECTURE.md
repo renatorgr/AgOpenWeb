@@ -303,6 +303,8 @@ public class GuidanceConfig : ReactiveObject
     public double UTurnExtension { get; set; }
     public double UTurnDistanceFromBoundary { get; set; }
     public double UTurnCrossGap { get; set; }   // drive across a headland gap up to this many metres; 0 = turn
+    public LineEntryMode LineEntryMode { get; set; } // joining a new line in the headland: Nearest, Ask, PassStart (fork only)
+    public double LineEntryStraight { get; set; }    // straight on the pass before the headland line, m
     public double UTurnSmoothing { get; set; }
 
     // Tram Lines

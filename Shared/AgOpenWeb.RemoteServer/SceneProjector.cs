@@ -255,7 +255,9 @@ public sealed class SceneProjector : System.IDisposable
             contourRef,
             _state.Operation.IsContourOn && _state.Operation.IsContourLocked,
             guideLines,
-            _state.Guidance.ToolPass?.Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList());
+            _state.Guidance.ToolPass?.Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList(),
+            _state.Operation.LineEntryPath?.ToArray().Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList(),
+            _state.Operation.LineEntryPath != null ? _state.Operation.LineEntryOfferPass : null);
     }
 
     // Tracks-manager display label — mirrors native TracksDialog (Contour → Path →
@@ -845,7 +847,7 @@ public sealed class SceneProjector : System.IDisposable
                 t.CoverageMargin, t.IsWorkSwitchEnabled, t.IsWorkSwitchActiveLow, t.IsWorkSwitchManualSections,
                 t.IsSteerSwitchEnabled, t.IsSteerSwitchManualSections, _config.ActualToolWidth),
             new UturnConfigDto(g.UTurnStyle, g.UTurnExtension, g.UTurnSmoothing, g.UTurnRadius, g.UTurnDistanceFromBoundary,
-                g.GoAroundRadius, g.GoAroundMargin, g.UTurnCrossGap),
+                g.GoAroundRadius, g.GoAroundMargin, g.UTurnCrossGap, (int)g.LineEntryMode, g.LineEntryStraight),
             // Line = the field's actual start pass (tram settings live with the field), 1-based.
             new TramConfigDto(g.TramPasses, g.TramDisplay, _config.Tram.StartPass + 1, _config.Tram.TramWidth,
                 _config.Tram.IsOuterInverted),
@@ -948,12 +950,13 @@ public sealed class SceneProjector : System.IDisposable
                                   t.LookAheadOnSetting, t.LookAheadOffSetting, t.TurnOffDelay, t.Offset, t.Overlap,
                                   t.TrailingToolToPivotLength, t.DefaultSectionWidth, t.SlowSpeedCutoff, t.CoverageMargin,
                                   g.UTurnExtension, g.UTurnRadius, g.UTurnDistanceFromBoundary, g.GoAroundRadius, g.GoAroundMargin,
-                                  g.UTurnCrossGap, mc.LookAhead })
+                                  g.UTurnCrossGap, g.LineEntryStraight, mc.LookAhead })
             h = h * 31 + d.GetHashCode();
         for (int i = 0; i < 16; i++) h = h * 31 + t.GetSectionWidth(i).GetHashCode() + (int)t.GetSectionColor(i);
         for (int i = 0; i < 9; i++) h = h * 31 + t.GetZoneEndSection(i);
         h = h * 31 + (int)t.SingleCoverageColor;
         h = h * 31 + g.UTurnStyle * 7 + g.UTurnSmoothing * 11 + g.TramPasses * 13 + (g.TramDisplay ? 1 : 0) + g.TramLine * 17;
+        h = h * 31 + (int)g.LineEntryMode;
         h = h * 31 + _config.Tram.StartPass * 19 + _config.Tram.TramWidth.GetHashCode(); // #110
         h = h * 31 + (_config.Tram.IsOuterInverted ? 1 : 0); // #451
         h = h * 31 + (mc.HydraulicLiftEnabled ? 1 : 0) + mc.RaiseTime * 7 + mc.LowerTime * 11 + (mc.InvertRelay ? 64 : 0)
@@ -1096,6 +1099,11 @@ public sealed class SceneProjector : System.IDisposable
         var states = _sections.SectionStates;
         for (int i = 0; i < nSec && i < states.Count; i++)
             h = h * 31 + (long)System.Math.Round((states[i].PositionLeft + states[i].PositionRight) * 100);
+
+        // The way to the start of the pass (fork only): a new list per plan; offered or driven.
+        var lep = _state.Operation.LineEntryPath;
+        h = h * 31 + (lep is null ? -1 : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(lep));
+        h = h * 31 + (_state.Operation.LineEntryOfferPass?.GetHashCode() ?? 0);
 
         // U-turn path: appears/changes per turn (replaced, not mutated).
         var tp = _state.YouTurn.TurnPath;

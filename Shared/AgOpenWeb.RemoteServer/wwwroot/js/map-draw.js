@@ -471,6 +471,7 @@ function updateLineWidths() {
   SKP.reference.setStrokeWidth(w(0.9));  // trackBaseDash 0.3 × 3
   SKP.next.setStrokeWidth(w(1.2));       // trackNext 0.4 × 3
   SKP.uturn.setStrokeWidth(w(3.0));      // youTurn 1 × 3
+  SKP.entryOffer.setStrokeWidth(w(2.0)); // the way to the start of the pass, offered (fork only)
   SKP.track.setStrokeWidth(w(1.5));      // saved tracks ~ active weight
   SKP.extraGuide.setStrokeWidth(w(0.9)); // extra guide 0.3 × 3
   SKP.extraGuideShadow.setStrokeWidth(w(1.2));

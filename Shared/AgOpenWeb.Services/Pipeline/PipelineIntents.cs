@@ -36,6 +36,9 @@ public sealed class PipelineIntents : IPipelineIntents
     // nudge in the same tick (see Drain).
     private int _resetNudge;
 
+    // Sentinel-encoded last-wins slot: 0 = no answer, 1 = take the way to the pass start, 2 = keep the nearest point.
+    private int _lineEntryAnswer;
+
     public void RequestManualYouTurn(bool turnLeft)
     {
         Interlocked.Exchange(ref _manualYouTurn, turnLeft ? 1 : 2);
@@ -69,6 +72,11 @@ public sealed class PipelineIntents : IPipelineIntents
         Interlocked.Exchange(ref _resetNudge, 1);
     }
 
+    public void RequestLineEntryAnswer(bool take)
+    {
+        Interlocked.Exchange(ref _lineEntryAnswer, take ? 1 : 2);
+    }
+
     public PipelineIntentBatch Drain()
     {
         int manual = Interlocked.Exchange(ref _manualYouTurn, 0);
@@ -76,6 +84,7 @@ public sealed class PipelineIntents : IPipelineIntents
         int snap = Interlocked.Exchange(ref _snap, 0);
         long nudgeBits = Interlocked.Exchange(ref _nudgeAccumulatorBits, 0);
         int resetNudge = Interlocked.Exchange(ref _resetNudge, 0);
+        int lineEntry = Interlocked.Exchange(ref _lineEntryAnswer, 0);
 
         bool? manualYouTurn = manual switch
         {
@@ -98,6 +107,7 @@ public sealed class PipelineIntents : IPipelineIntents
             GuidanceSnap = guidanceSnap,
             GuidanceNudgeMeters = BitConverter.Int64BitsToDouble(nudgeBits),
             GuidanceResetNudge = resetNudge == 1,
+            LineEntryAnswer = lineEntry switch { 1 => true, 2 => false, _ => null },
         };
     }
 }
