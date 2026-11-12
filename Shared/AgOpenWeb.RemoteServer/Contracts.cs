@@ -332,7 +332,15 @@ public record StatusDto(
     // module is never asked to steer on the simulator.
     bool SimDrivesSteering = false,
     // Sprayer readout from the machine module (PGN 160); null until it is heard.
-    SprayerDto? Sprayer = null);
+    SprayerDto? Sprayer = null,
+    // Tuning on the line (AutoSteer page); null until the panel is first used. Fork only.
+    LineTuneDto? LineTune = null);
+
+/// <summary>Tuning on the line: <c>LineTuneStage</c> (0 Idle, 1 Waiting, 2 Measuring, 3 Result,
+/// 4 Accepted, 5 Stopped, 6 Failed), whether it tunes the Stanley gains (else Steer Response),
+/// how many values were tried, what is happening now, the outcome and every value tried (one
+/// per line).</summary>
+public record LineTuneDto(int Stage, bool Stanley, int Tried, string Description, string Result, string Measurements);
 
 /// <summary>What the field data card shows beyond the worked area the status frame already
 /// carries: the boundary area less inner boundaries (0 = no boundary), the ground covered

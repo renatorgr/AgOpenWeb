@@ -99,6 +99,7 @@ public partial class MainViewModel
     /// </summary>
     public void OnBrowserControlEnded(string offReason)
     {
+        _lineTuneViewModel?.OnControlEnded();
         if (IsAutoSteerEngaged && ToggleAutoSteerCommand?.CanExecute(offReason) == true)
             ToggleAutoSteerCommand.Execute(offReason);
         if (IsManualSectionMode && ToggleManualModeCommand?.CanExecute(null) == true)
