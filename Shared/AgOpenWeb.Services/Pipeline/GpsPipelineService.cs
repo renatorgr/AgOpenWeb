@@ -237,6 +237,18 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// <summary>How long the way to the start of the pass stays offered (Ask), ms.</summary>
     internal const long LineEntryOfferMs = 30_000;
 
+    // ── Stepping onto a line beside a hard fence (fork only) ────────────
+    // The S that keeps the implement inside the fence (SideStep), for the pass, nudge and track it
+    // was planned on. Cycle-owned.
+    private List<Vec3>? _sideStepPath;
+    private int _sideStepPass;
+    private double _sideStepNudge;
+    private Models.Track.Track? _sideStepTrack;
+
+    /// <summary>AutoSteer off when it joins a line beside a hard fence and no S onto it keeps the implement inside.</summary>
+    public const string SideStepNoRoomReason =
+        "AutoSteer off: no room to move onto this line here without the implement crossing the fence. Move over by hand.";
+
     // ── Headland proximity ──────────────────────────────────────────────
     private readonly HeadlandDetectionService _headlandDetector = new();
     private readonly PolygonIndexCache _headlandIndex = new(); // the hydraulic lift's and out-of-bounds tests
@@ -1021,6 +1033,13 @@ public sealed class GpsPipelineService : IGpsPipelineService
             headlandLine, boundary, contourOn || recordedPath != null,
             driftedEasting, driftedNorthing, headingRad);
 
+        // ── (2d) Stepping onto a line beside a hard fence (fork only) ──
+        // AutoSteer joining a line sideways with the implement near a hard fence: the way onto it
+        // is an S that keeps the implement inside (SideStep). No S fits: AutoSteer off below (5b'''').
+        bool sideStepNoRoom = UpdateSideStep(in intents, config, autoSteerEngaged, joinedNewLine, track, passNumber,
+            nudgeOffset, boundary, headlandLine, youTurnEnabled, contourOn || recordedPath != null,
+            driftedEasting, driftedNorthing, headingRad, pos.Speed);
+
         // ── Phase C C4/C6: YouTurn state machine on the cycle worker ───
         // Two entry points, both running here on the background thread
         // against the cycle-owned _youTurn / _guidanceWorking POCOs:
@@ -1068,7 +1087,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // Not while the way to the start of the pass is driven: the tractor crosses the headland
         // along it, and a turn would be planned for where it heads now.
         if (autoSteerEngaged && hasTickableTrack
-            && youTurnEnabled && hasValidHeadlandLine && _lineEntryPath == null)
+            && youTurnEnabled && hasValidHeadlandLine && _lineEntryPath == null && _sideStepPath == null)
         {
             _youTurn.YouTurnCounter++;
 
@@ -1283,6 +1302,18 @@ public sealed class GpsPipelineService : IGpsPipelineService
             _audioService.Play(SoundEffect.UTurnTooClose);
         }
 
+        // (5b'''') AutoSteer joining a line sideways beside a hard fence, with no S onto it that keeps
+        // the implement inside (SideStep): off with the alarm, the operator moves over by hand.
+        // Fork only.
+        if (sideStepNoRoom && autoSteerEngaged)
+        {
+            autoSteerEngaged = false;
+            autoSteerDisengaged = true;
+            disengageReason = SideStepNoRoomReason;
+            lock (_stateLock) _autoSteerEngaged = false;
+            _audioService.Play(SoundEffect.UTurnTooClose);
+        }
+
         // (5b'''') A hard outer boundary and no U-turn planned or driven (a turn keeps the implement
         // off the fence itself): an end of the implement heading out across the fence within 2 s of
         // travel takes AutoSteer off with the alarm (HardFenceGuard). Only with the tractor inside
@@ -1336,6 +1367,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         {
             _lineEntryPath = null;
             _lineEntryOffer = null;
+            _sideStepPath = null;
         }
 
         // ── (5d) Contour (#110, AgOpenGPS AddContourPoints + DistanceFromContourLine) ─
@@ -1516,6 +1548,16 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 crossTrackError = entrySteer.xte;
                 goalE = entrySteer.goalE;
                 goalN = entrySteer.goalN;
+                hasGuidance = true;
+            }
+            else if (_sideStepPath != null && FollowSideStep(pos with { Easting = driftedEasting, Northing = driftedNorthing },
+                    out var stepSteer))
+            {
+                // On the S onto a line beside a hard fence (fork only); the line takes over at its end.
+                steerAngle = stepSteer.steerAngle;
+                crossTrackError = stepSteer.xte;
+                goalE = stepSteer.goalE;
+                goalN = stepSteer.goalN;
                 hasGuidance = true;
             }
             else if (isYouTurnTriggered && youTurnPath != null && youTurnPath.Count > 0)
@@ -1856,7 +1898,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             RtkHoldNotice = rtkHoldNotice,
             RtkHoldM = _rtkHold.OffsetM,
             YouTurnNotice = youTurnTickEffects is { TellOperator: true } ? youTurnTickEffects.StatusMessage : null,
-            LineEntryPath = _lineEntryPath ?? _lineEntryOffer,
+            LineEntryPath = _lineEntryPath ?? _lineEntryOffer ?? _sideStepPath,
             LineEntryOfferPass = _lineEntryPath == null && _lineEntryOffer != null ? PassName(_lineEntryOfferPass) : null,
             LineEntryNotice = TakeLineEntryNotice(),
         };
@@ -2827,6 +2869,101 @@ public sealed class GpsPipelineService : IGpsPipelineService
             return true;
         }
         _lineEntryPath = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Plans the S onto the line when AutoSteer joins one sideways beside a hard fence (fork only:
+    /// <see cref="SideStep"/>) and drops an S the line no longer matches. Not while the way to the
+    /// start of the pass is driven or offered, in a U-turn, reversing or on contour. True when the
+    /// tractor joined a line beside the fence and no S keeps the implement inside.
+    /// </summary>
+    private bool UpdateSideStep(in PipelineIntentBatch intents, ConfigurationStore config, bool autoSteerEngaged,
+        bool joined, Models.Track.Track? track, int passNumber, double nudgeOffset, Boundary? boundary,
+        List<Vec3>? headlandLine, bool youTurnEnabled, bool otherGuidance, double e, double n, double headingRad,
+        double speed)
+    {
+        bool possible = autoSteerEngaged && !otherGuidance && track != null && track.Points.Count >= 2
+            && !_isReverse && !_youTurn.IsExecuting && _lineEntryPath == null && _lineEntryOffer == null
+            && boundary?.OuterBoundary is { IsHard: true, IsValid: true };
+
+        // An S belongs to its line: dropped when the line changes or a manual U-turn is asked for.
+        if (_sideStepPath != null && (!possible || !ReferenceEquals(track, _sideStepTrack)
+                || passNumber != _sideStepPass || Math.Abs(nudgeOffset - _sideStepNudge) > 1e-6
+                || intents.ManualYouTurn.HasValue))
+            _sideStepPath = null;
+        if (!possible || !joined) return false;
+
+        _sideStepPath = null;
+        var plan = PlanSideStep(config, track!, passNumber, nudgeOffset, boundary!, headlandLine, youTurnEnabled,
+            e, n, headingRad, speed);
+        if (plan.Outcome == SideStepOutcome.Planned)
+        {
+            _sideStepPath = plan.Path;
+            _sideStepPass = passNumber;
+            _sideStepNudge = nudgeOffset;
+            _sideStepTrack = track;
+            _trackGuidanceState = null;
+            YouTurnStateMachine.DiscardPlannedTurn(_youTurn);
+        }
+        return plan.Outcome == SideStepOutcome.NoRoom;
+    }
+
+    private SideStepPlan PlanSideStep(ConfigurationStore config, Models.Track.Track track, int passNumber,
+        double nudgeOffset, Boundary boundary, List<Vec3>? headlandLine, bool youTurnEnabled,
+        double e, double n, double headingRad, double speed)
+    {
+        bool sameWay = IsHeadingSameWayOn(track, e, n, headingRad);
+        IReadOnlyList<Vec3>? pass;
+        if (track.IsClosed)
+        {
+            double width = config.ActualToolWidth - config.Tool.Overlap;
+            double distAway = Models.Track.PassGeometry.Offset(track, passNumber, width, nudgeOffset,
+                Models.Track.PassGeometry.ToolShift(config.Tool.Offset, sameWay));
+            pass = Math.Abs(distAway) < 0.01
+                ? CurveProcessing.ReferencePass(track.Points, closed: true).Points
+                : _offsetPasses.Get(track, distAway, config.Guidance.UTurnRadius).Points;
+        }
+        else
+        {
+            pass = EntryPassLine(config, track, passNumber, nudgeOffset, sameWay);
+        }
+        if (pass == null || pass.Count < 2) return SideStepPlan.NotNeeded;
+        IReadOnlyList<Vec3> line = sameWay ? pass : Reversed(pass);
+
+        var tool = config.Tool;
+        double along = tool.IsToolFrontFixed ? Math.Abs(tool.HitchLength)
+            : tool.IsToolRearFixed ? -Math.Abs(tool.HitchLength)
+            : -Math.Abs(config.Vehicle.HitchLength); // a trailed implement at the hitch
+        double reach = config.ActualToolWidth / 2 + Math.Abs(tool.Offset); // as the fence guard
+        var obstacles = boundary.InnerBoundaries.Where(o => o is { IsValid: true, IsDriveThrough: false }).ToList();
+        // On an open pass with U-turns the turn is planned only after the S: it must end in the
+        // cultivated area with room before the headland.
+        var cultivated = !track.IsClosed && youTurnEnabled && headlandLine is { Count: >= 3 } ? headlandLine : null;
+        double minRadius = Math.Max(config.Guidance.UTurnRadius, config.Vehicle.MinTurningRadius);
+
+        return SideStep.Plan(new Vec3(e, n, headingRad), speed, line, track.IsClosed, boundary.OuterBoundary!,
+            obstacles, new SideStepTool(along, reach), minRadius, cultivated);
+
+        static List<Vec3> Reversed(IReadOnlyList<Vec3> pts)
+        {
+            var r = new List<Vec3>(pts.Count);
+            for (int i = pts.Count - 1; i >= 0; i--) r.Add(pts[i]);
+            return r;
+        }
+    }
+
+    /// <summary>The steer along the S onto the line; false (and the S dropped) at its end, where the
+    /// line takes over in the same cycle.</summary>
+    private bool FollowSideStep(Position pivot, out (double steerAngle, double xte, double goalE, double goalN) steer)
+    {
+        steer = default;
+        if (_sideStepPath is { } path && CalculateYouTurnGuidance(pivot, path) is { turnComplete: false } g)
+        {
+            steer = (g.steerAngle, g.xte, g.goalE, g.goalN);
+            return true;
+        }
+        _sideStepPath = null;
         return false;
     }
 

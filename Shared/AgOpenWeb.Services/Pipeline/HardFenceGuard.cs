@@ -11,10 +11,11 @@ namespace AgOpenWeb.Services.Pipeline;
 /// <summary>
 /// The net under a hard outer boundary when no U-turn is planned or driven: an end of the
 /// implement heading out across the fence within the look-ahead takes AutoSteer off with the
-/// alarm, while the operator can still stop or steer away. Only a U-turn keeps the implement
-/// off a hard fence; AutoSteer joining a line steers the shortest way onto it. Switched on in a
-/// corner of the field with the line moved five passes over, it swung an 8 m front boom 0.9 m
-/// over the fence (Tapada da Casa, simulator). Fork only.
+/// alarm, while the operator can still stop or steer away. A U-turn keeps the implement off a
+/// hard fence, and so does the S AutoSteer drives onto a line beside it (<see cref="SideStep"/>);
+/// otherwise AutoSteer steers the shortest way onto a line. Switched on in a corner of the field
+/// with the line moved five passes over, it swung an 8 m front boom 0.9 m over the fence
+/// (Tapada da Casa, simulator). Fork only.
 /// </summary>
 public static class HardFenceGuard
 {
