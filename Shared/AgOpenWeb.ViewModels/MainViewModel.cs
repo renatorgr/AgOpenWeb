@@ -4652,6 +4652,8 @@ public partial class MainViewModel : ObservableObject
     public ICommand? ToggleYouTurnCommand { get; private set; }
     public ICommand? ManualYouTurnLeftCommand { get; private set; }
     public ICommand? ManualYouTurnRightCommand { get; private set; }
+    public ICommand? TakeLineEntryCommand { get; private set; }
+    public ICommand? KeepNearestEntryCommand { get; private set; }
     public ICommand? ToggleUTurnDirectionCommand { get; private set; }
     public ICommand? ToggleAutoSteerCommand { get; private set; }
 

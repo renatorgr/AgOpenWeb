@@ -169,6 +169,28 @@ public class GuidanceConfig : ObservableObject
         set => SetProperty(ref _uTurnCrossGap, value);
     }
 
+    // How AutoSteer joins a new line (engaged, the line moved a pass or another track chosen)
+    // with the tractor in the headland: at the nearest point, as AgOpenGPS (the default), by
+    // asking the operator, or through the headland to the start of the pass. Fork only.
+    private LineEntryMode _lineEntryMode = LineEntryMode.Nearest;
+    public LineEntryMode LineEntryMode
+    {
+        get => _lineEntryMode;
+        set => SetProperty(ref _lineEntryMode, value);
+    }
+
+    // How far the implement runs straight on the new pass before it reaches the headland line
+    // when the line is joined at the start of the pass (m). A front implement's reach ahead of
+    // the tractor is added to it.
+    private double _lineEntryStraight = DefaultLineEntryStraight;
+    public double LineEntryStraight
+    {
+        get => _lineEntryStraight;
+        set => SetProperty(ref _lineEntryStraight, Math.Max(0.0, value));
+    }
+
+    public const double DefaultLineEntryStraight = 3.0;
+
     // Sagitta (offset-semicircle) by default — matches Twol, which dropped Dubins
     // for U-turns because the shortest-path solution loops ("np" shape) whenever the
     // next row is closer than 2× the turn radius. SagittaStyle == 0, so profiles

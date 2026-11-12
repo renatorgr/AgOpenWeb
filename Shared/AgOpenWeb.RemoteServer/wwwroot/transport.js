@@ -97,11 +97,14 @@ window.RemoteTransport = {
           const glc = i32(); const guideLines = new Array(glc); // #450
           for (let k = 0; k < glc; k++) guideLines[k] = pts();
           const toolPass = optPts();
+          // The way through the headland to the start of the pass (fork only): offered (entryOffer
+          // names the pass it leads to) or driven (entryOffer '').
+          const entryPath = optPts(), entryOffer = str();
           handlers.onScene && handlers.onScene({
             version, originLat, originLon, fieldName, hasField, boundaries, boundaryInner, boundaryKind, tracks,
             headland, guidanceLine, toolSections, uTurnPath, nextTrack, flags, imagery, trackList,
             headlandSegs, tramSystems, tramLines, recordedPaths, contourStrips, contourRef, contourLocked,
-            guideLines, toolPass,
+            guideLines, toolPass, entryPath, entryOffer,
           });
           break;
         }
@@ -393,7 +396,7 @@ window.RemoteTransport = {
             isSteerSwitchEnabled: !!u8(), isSteerSwitchManualSections: !!u8(), totalWidth: f64(),
           };
           const uturn = { style: i32(), extension: f64(), smoothing: i32(), radius: f64(), distanceFromBoundary: f64(),
-            goAroundRadius: f64(), goAroundMargin: f64(), crossGap: f64() };
+            goAroundRadius: f64(), goAroundMargin: f64(), crossGap: f64(), entryMode: i32(), entryStraight: f64() };
           const tram = { passes: i32(), display: !!u8(), line: i32(), width: f64(), outerInverted: !!u8() };
           const machine = {
             hydraulicLiftEnabled: !!u8(), raiseTime: i32(), lookAhead: f64(), lowerTime: i32(), invertRelay: !!u8(),

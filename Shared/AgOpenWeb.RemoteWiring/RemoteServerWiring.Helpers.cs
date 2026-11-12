@@ -201,6 +201,9 @@ public static partial class RemoteServerWiring
             case "uturn.goAroundRadius": if (D(out var u6)) gd.GoAroundRadius = Math.Clamp(u6, 1.0, 50.0); return;
             case "uturn.goAroundMargin": if (D(out var u7)) gd.GoAroundMargin = Math.Clamp(u7, 0.3, 10.0); return;
             case "uturn.crossGap": if (D(out var u8)) gd.UTurnCrossGap = Math.Max(0, u8); return;
+            // Joining a new line in the headland (fork only): 0 nearest point, 1 ask, 2 start of the pass.
+            case "uturn.entryMode": if (I(out var u9) && u9 >= 0 && u9 <= 2) gd.LineEntryMode = (AgOpenWeb.Models.Configuration.LineEntryMode)u9; return;
+            case "uturn.entryStraight": if (D(out var u10)) gd.LineEntryStraight = Math.Clamp(u10, 0.0, 50.0); return;
             // --- Tram (ConfigStore.Guidance + Tram.TramWidth; saved with the tool profile, #330) ---
             case "tram.passes": if (I(out var tp)) gd.TramPasses = tp; return;
             case "tram.display": gd.TramDisplay = B(); return;

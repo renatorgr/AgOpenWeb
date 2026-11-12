@@ -714,6 +714,14 @@ public sealed class YouTurnStateMachine
     }
 
     /// <summary>
+    /// The way from the tractor to the start of a pass through the headland, for AutoSteer joining
+    /// a new line (fork only): <see cref="YouTurnCreationService.PlanLineEntry"/>.
+    /// </summary>
+    public LineEntryPlan PlanLineEntry(Vec3 pivot, Func<bool, IReadOnlyList<Vec3>?> passFor,
+        IReadOnlyList<Vec3> headlandLine, Boundary boundary, double onLineWithin) =>
+        _creation.PlanLineEntry(pivot, passFor, headlandLine, boundary, onLineWithin);
+
+    /// <summary>
     /// Manually trigger a U-turn in the specified direction. Used for tracks along boundaries
     /// where automatic headland detection doesn't fire.
     /// </summary>

@@ -219,6 +219,24 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private Models.Track.Track? _youTurnTrack; // the track _youTurn was planned on
     private readonly GuidanceWorkingState _guidanceWorking = new();
 
+    // ── Joining a new line at the start of the pass (fork only) ─────────
+    // GuidanceConfig.LineEntryMode: the way through the headland to the start of the pass, driven
+    // (_lineEntryPath, for the pass and nudge it was planned on) or offered to the operator
+    // (_lineEntryOffer, until its time runs out). Cycle-owned.
+    private List<Vec3>? _lineEntryPath;
+    private int _lineEntryPass;
+    private double _lineEntryNudge;
+    private List<Vec3>? _lineEntryOffer;
+    private int _lineEntryOfferPass;
+    private double _lineEntryOfferNudge;
+    private long _lineEntryOfferUntilMs;
+    private string? _lineEntryNotice;
+    private bool _lineEntryWasEngaged;
+    private Models.Track.Track? _lineEntryTrack;
+
+    /// <summary>How long the way to the start of the pass stays offered (Ask), ms.</summary>
+    internal const long LineEntryOfferMs = 30_000;
+
     // ── Headland proximity ──────────────────────────────────────────────
     private readonly HeadlandDetectionService _headlandDetector = new();
     private readonly PolygonIndexCache _headlandIndex = new(); // the hydraulic lift's and out-of-bounds tests
@@ -984,6 +1002,14 @@ public sealed class GpsPipelineService : IGpsPipelineService
             PoseEstimatorUpdated?.Invoke(ts);
         }
 
+        // ── (2c) Joining a new line at the start of the pass (fork only) ──
+        // AutoSteer engaged, the line moved a pass, or another track chosen, with the tractor in the
+        // headland: by GuidanceConfig.LineEntryMode the way through the headland to the start of
+        // the pass is driven, or offered with a sound (the nearest point is steered meanwhile).
+        UpdateLineEntry(in intents, config, autoSteerEngaged, track, passNumber, nudgeOffset,
+            headlandLine, boundary, contourOn || recordedPath != null,
+            driftedEasting, driftedNorthing, headingRad);
+
         // ── Phase C C4/C6: YouTurn state machine on the cycle worker ───
         // Two entry points, both running here on the background thread
         // against the cycle-owned _youTurn / _guidanceWorking POCOs:
@@ -1028,8 +1054,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 in tickCtx, _guidanceWorking, _youTurn);
         }
 
+        // Not while the way to the start of the pass is driven: the tractor crosses the headland
+        // along it, and a turn would be planned for where it heads now.
         if (autoSteerEngaged && hasTickableTrack
-            && youTurnEnabled && hasValidHeadlandLine)
+            && youTurnEnabled && hasValidHeadlandLine && _lineEntryPath == null)
         {
             _youTurn.YouTurnCounter++;
 
@@ -1235,6 +1263,12 @@ public sealed class GpsPipelineService : IGpsPipelineService
             isInYouTurn = false;
             youTurnPath = null;
         }
+        // The way to the start of the pass, driven or offered, is AutoSteer's too.
+        if (!autoSteerEngaged)
+        {
+            _lineEntryPath = null;
+            _lineEntryOffer = null;
+        }
 
         // ── (5d) Contour (#110, AgOpenGPS AddContourPoints + DistanceFromContourLine) ─
         ContourSteer? contourSteer = null;
@@ -1267,7 +1301,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
             // steers with a tool offset (#446), so it is known before any line is placed. Held
             // through a U-turn: the turn was planned for the old direction, and the next cycle
             // after it completes takes the new one.
-            if (!isInYouTurn)
+            // Held on the way to the start of the pass too: it was planned for the way the pass is
+            // driven from there, and the tractor crosses the headland on it.
+            if (!isInYouTurn && _lineEntryPath == null)
                 _guidanceWorking.IsHeadingSameWay = IsHeadingSameWayOn(track!, driftedEasting, driftedNorthing, headingRad);
             double toolShift = Models.Track.PassGeometry.ToolShift(config2.Tool.Offset, _guidanceWorking.IsHeadingSameWay);
             double widthMinusOverlap = config2.ActualToolWidth - config2.Tool.Overlap;
@@ -1401,7 +1437,17 @@ public sealed class GpsPipelineService : IGpsPipelineService
         }
         else if (autoSteerEngaged && hasTrack)
         {
-            if (isYouTurnTriggered && youTurnPath != null && youTurnPath.Count > 0)
+            if (_lineEntryPath != null && FollowLineEntry(pos with { Easting = driftedEasting, Northing = driftedNorthing },
+                    out var entrySteer))
+            {
+                // On the way to the start of the pass (fork only); the line takes over at its end.
+                steerAngle = entrySteer.steerAngle;
+                crossTrackError = entrySteer.xte;
+                goalE = entrySteer.goalE;
+                goalN = entrySteer.goalN;
+                hasGuidance = true;
+            }
+            else if (isYouTurnTriggered && youTurnPath != null && youTurnPath.Count > 0)
             {
                 // YouTurn guidance — steer along turn path
                 // Use drifted local coordinates (not pos which has raw E=0,N=0)
@@ -1728,6 +1774,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
             RtkHoldNotice = rtkHoldNotice,
             RtkHoldM = _rtkHold.OffsetM,
             YouTurnNotice = youTurnTickEffects is { TellOperator: true } ? youTurnTickEffects.StatusMessage : null,
+            LineEntryPath = _lineEntryPath ?? _lineEntryOffer,
+            LineEntryOfferPass = _lineEntryPath == null && _lineEntryOffer != null ? PassName(_lineEntryOfferPass) : null,
+            LineEntryNotice = TakeLineEntryNotice(),
         };
 
         CycleCompleted?.Invoke(result);
@@ -2458,6 +2507,173 @@ public sealed class GpsPipelineService : IGpsPipelineService
         return (output.SteerAngle, output.DistanceFromCurrentLine,
             output.GoalPoint.Easting, output.GoalPoint.Northing, false,
             output.PointA, output.PointB, turnPath.Count, output.AntiTangentGuardFired);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Joining a new line at the start of the pass (fork only)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /// <summary>Nearer the line than this (or half a pass, if more), heading along it, the tractor
+    /// is on it already: nothing is planned, m.</summary>
+    private const double LineEntryOnLineMin = 1.0;
+
+    /// <summary>The pass is run on past both its ends this far to find where it meets the headland
+    /// line, m.</summary>
+    private const double LineEntryExtension = 500.0;
+
+    /// <summary>
+    /// Plans the way to the start of the pass when AutoSteer joins a new line (engaged, the line
+    /// moved a pass, another track chosen) and drops a way or an offer the line no longer matches.
+    /// GuidanceConfig.LineEntryMode: <see cref="LineEntryMode.PassStart"/> drives the way when it
+    /// fits; <see cref="LineEntryMode.Ask"/> offers it with the approach sound and keeps steering to
+    /// the nearest point until the operator takes it (planned again from where the tractor is
+    /// then); no way through the headland says so once and joins at the nearest point. Only with
+    /// the tractor in the headland, going forward, on an open track with a headland line.
+    /// </summary>
+    private void UpdateLineEntry(in PipelineIntentBatch intents, ConfigurationStore config, bool autoSteerEngaged,
+        Models.Track.Track? track, int passNumber, double nudgeOffset, List<Vec3>? headlandLine, Boundary? boundary,
+        bool otherGuidance, double e, double n, double headingRad)
+    {
+        var mode = config.Guidance.LineEntryMode;
+        bool trackSwitched = !ReferenceEquals(track, _lineEntryTrack);
+        _lineEntryTrack = track;
+        bool engagedNow = autoSteerEngaged && !_lineEntryWasEngaged;
+        _lineEntryWasEngaged = autoSteerEngaged;
+
+        bool possible = mode != LineEntryMode.Nearest && autoSteerEngaged && !otherGuidance
+            && track != null && track.Points.Count >= 2 && !track.IsClosed
+            && headlandLine is { Count: >= 3 } && boundary?.OuterBoundary is { IsValid: true }
+            && !_isReverse && !_youTurn.IsExecuting;
+
+        // A way being driven belongs to its pass: dropped when the line or the mode changes or a
+        // manual U-turn is asked for (AutoSteer then steers to the nearest point).
+        if (_lineEntryPath != null && (!possible || trackSwitched || passNumber != _lineEntryPass
+                || Math.Abs(nudgeOffset - _lineEntryNudge) > 1e-6 || intents.ManualYouTurn.HasValue))
+            _lineEntryPath = null;
+
+        // An offer runs out with its time, when the line or the mode changes, and when the tractor
+        // has left the headland (it is on its way to the nearest point).
+        if (_lineEntryOffer != null && (!possible || mode != LineEntryMode.Ask || trackSwitched
+                || passNumber != _lineEntryOfferPass || Math.Abs(nudgeOffset - _lineEntryOfferNudge) > 1e-6
+                || NowMs() > _lineEntryOfferUntilMs || !InHeadland(boundary!, headlandLine!, e, n)))
+            _lineEntryOffer = null;
+
+        // A new line: AutoSteer engaged, the line moved a pass (the snap applied above), another track.
+        bool snapped = intents.GuidanceSnap.HasValue && !_youTurn.IsExecuting;
+        if (possible && (engagedNow || snapped || trackSwitched))
+        {
+            _lineEntryOffer = null;
+            var plan = PlanLineEntry(config, track!, passNumber, nudgeOffset, headlandLine!, boundary!, e, n, headingRad);
+            if (plan.Outcome == LineEntryOutcome.Planned)
+            {
+                if (mode == LineEntryMode.PassStart)
+                {
+                    StartLineEntry(plan, passNumber, nudgeOffset);
+                }
+                else
+                {
+                    _lineEntryOffer = plan.Path;
+                    _lineEntryOfferPass = passNumber;
+                    _lineEntryOfferNudge = nudgeOffset;
+                    _lineEntryOfferUntilMs = NowMs() + LineEntryOfferMs;
+                    _audioService.Play(SoundEffect.YouTurnApproach);
+                }
+            }
+            else if (plan.Outcome == LineEntryOutcome.NoRoom)
+            {
+                _lineEntryNotice = $"No way through the headland to the start of pass {PassName(passNumber)} - joining it at the nearest point";
+            }
+        }
+
+        // The operator's answer to the offer. The tractor has moved on towards the nearest point
+        // since: the way is planned again from where it is now.
+        if (intents.LineEntryAnswer is { } take)
+        {
+            if (take && _lineEntryOffer != null && possible)
+            {
+                var plan = PlanLineEntry(config, track!, passNumber, nudgeOffset, headlandLine!, boundary!, e, n, headingRad);
+                if (plan.Outcome == LineEntryOutcome.Planned)
+                    StartLineEntry(plan, passNumber, nudgeOffset);
+                else
+                    _lineEntryNotice = $"No way through the headland to the start of pass {PassName(passNumber)} from here any more - staying on the nearest point";
+            }
+            _lineEntryOffer = null;
+        }
+    }
+
+    private LineEntryPlan PlanLineEntry(ConfigurationStore config, Models.Track.Track track, int passNumber, double nudgeOffset,
+        List<Vec3> headlandLine, Boundary boundary, double e, double n, double headingRad)
+    {
+        double width = config.ActualToolWidth - config.Tool.Overlap;
+        return _youTurnStateMachine.PlanLineEntry(new Vec3(e, n, headingRad),
+            sameWay => EntryPassLine(config, track, passNumber, nudgeOffset, sameWay),
+            headlandLine, boundary, Math.Max(LineEntryOnLineMin, width / 2));
+    }
+
+    /// <summary>The pass steered for driving along the track's direction (or against it), run on
+    /// past both ends along their end directions.</summary>
+    private IReadOnlyList<Vec3>? EntryPassLine(ConfigurationStore config, Models.Track.Track track, int passNumber,
+        double nudgeOffset, bool sameWay)
+    {
+        double width = config.ActualToolWidth - config.Tool.Overlap;
+        double distAway = Models.Track.PassGeometry.Offset(track, passNumber, width, nudgeOffset,
+            Models.Track.PassGeometry.ToolShift(config.Tool.Offset, sameWay));
+        IReadOnlyList<Vec3> pts = Math.Abs(distAway) < 0.01
+            ? track.Points
+            : _offsetPasses.Get(track, distAway, config.Guidance.UTurnRadius).Points;
+        if (pts.Count < 2) return null;
+        var line = new List<Vec3>(pts.Count + 2) { RunOn(pts[0], pts[1]) };
+        line.AddRange(pts);
+        line.Add(RunOn(pts[^1], pts[^2]));
+        return line;
+
+        static Vec3 RunOn(Vec3 end, Vec3 inside)
+        {
+            double dE = end.Easting - inside.Easting, dN = end.Northing - inside.Northing;
+            double len = Math.Sqrt(dE * dE + dN * dN);
+            return len < 1e-9 ? end
+                : new Vec3(end.Easting + dE / len * LineEntryExtension, end.Northing + dN / len * LineEntryExtension, end.Heading);
+        }
+    }
+
+    private void StartLineEntry(LineEntryPlan plan, int passNumber, double nudgeOffset)
+    {
+        _lineEntryPath = plan.Path;
+        _lineEntryPass = passNumber;
+        _lineEntryNudge = nudgeOffset;
+        _lineEntryOffer = null;
+        // The pass is driven the way the path joins it: its side of the tool offset, its label.
+        _guidanceWorking.IsHeadingSameWay = plan.HeadingSameWay;
+        _trackGuidanceState = null;
+        YouTurnStateMachine.DiscardPlannedTurn(_youTurn);
+    }
+
+    /// <summary>The steer along the way to the start of the pass; false (and the way dropped) at
+    /// its end, where the line takes over in the same cycle.</summary>
+    private bool FollowLineEntry(Position pivot, out (double steerAngle, double xte, double goalE, double goalN) steer)
+    {
+        steer = default;
+        if (_lineEntryPath is { } path && CalculateYouTurnGuidance(pivot, path) is { turnComplete: false } g)
+        {
+            steer = (g.steerAngle, g.xte, g.goalE, g.goalN);
+            return true;
+        }
+        _lineEntryPath = null;
+        return false;
+    }
+
+    private static bool InHeadland(Boundary boundary, List<Vec3> headlandLine, double e, double n) =>
+        boundary.OuterBoundary is { IsValid: true } outer && outer.IsPointInside(e, n)
+        && !GeometryMath.IsPointInPolygon(headlandLine, e, n);
+
+    /// <summary>A pass as the pass label names it, without the arrow: pass 0 is 1R, pass −1 is 1L.</summary>
+    private static string PassName(int pass) => pass >= 0 ? $"{pass + 1}R" : $"{-pass}L";
+
+    private string? TakeLineEntryNotice()
+    {
+        var notice = _lineEntryNotice;
+        _lineEntryNotice = null;
+        return notice;
     }
 
     // ══════════════════════════════════════════════════════════════════════

@@ -437,6 +437,8 @@ public class DebugDumpService
                 store.Guidance.UTurnExtension,
                 store.Guidance.UTurnDistanceFromBoundary,
                 store.Guidance.UTurnCrossGap,
+                store.Guidance.LineEntryMode,
+                store.Guidance.LineEntryStraight,
                 store.Guidance.UTurnStyle,
                 store.Guidance.UTurnSmoothing,
                 store.Guidance.UTurnCompensation,

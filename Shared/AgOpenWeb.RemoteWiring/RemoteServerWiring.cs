@@ -817,6 +817,8 @@ public static partial class RemoteServerWiring
                                 "youturn.direction" => vm.ToggleUTurnDirectionCommand,
                                 "youturn.manualLeft" => vm.ManualYouTurnLeftCommand,
                                 "youturn.manualRight" => vm.ManualYouTurnRightCommand,
+                                "youturn.entryTake" => vm.TakeLineEntryCommand,      // the way to the pass start (fork only)
+                                "youturn.entryKeep" => vm.KeepNearestEntryCommand,
                                 "autosteer.toggle" => vm.ToggleAutoSteerCommand,
                                 // Screen & Alerts (Phase 9): theme + display-quality cycle.
                                 "display.toggleTheme" => vm.ToggleDayNightCommand,

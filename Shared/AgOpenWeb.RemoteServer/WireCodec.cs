@@ -431,6 +431,8 @@ public static class WireCodec
         w.Write(u.GoAroundRadius);     // f64
         w.Write(u.GoAroundMargin);     // f64
         w.Write(u.CrossGap);           // f64
+        w.Write(u.EntryMode);          // i32 — fork only
+        w.Write(u.EntryStraight);      // f64
         // Tram tab.
         var tr = c.Tram;
         w.Write(tr.Passes);            // i32
@@ -630,6 +632,8 @@ public static class WireCodec
         w.Write(s.GuideLines.Count);                              // #450
         foreach (var line in s.GuideLines) WritePts(w, line);
         WriteOptPts(w, s.ToolPass);
+        WriteOptPts(w, s.EntryPath);                             // fork only
+        WriteStr(w, s.EntryOffer);                               // "" = driven (or none)
 
         return ms.ToArray();
     }

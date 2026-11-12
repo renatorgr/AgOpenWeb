@@ -180,6 +180,7 @@ function buildSkPaints() {
     boundaryOut: mk('rgb(242,64,64)', 6), outFrame: mk('rgb(255,168,84)', 8),
     track: mk('#ffd24a', 4), reference: mk('rgb(180,100,255)', 5, [9, 7]),
     guidance: mk('rgb(252,86,186)', 5), guidanceOutline: mk('rgb(0,0,0)', 15), uturn: mk('rgb(77,242,77)', 5), next: mk('rgb(0,200,200)', 4),
+    entryOffer: mk('rgb(77,242,77)', 5, [10, 8]), // the way to the start of the pass, offered (fork only)
     // Extra guidelines (adjacent passes) — green(51,153,50,153)
     // over a black shadow, both 0.3 m. Widths set per frame in updateLineWidths.
     extraGuide: mk('rgba(51,153,50,0.6)', 1), extraGuideShadow: mk('rgba(0,0,0,0.5)', 1),

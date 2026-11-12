@@ -183,6 +183,8 @@ public static class ProfileJsonServiceV1
                 ExtensionLength = store.Guidance.UTurnExtension,
                 DistanceFromBoundary = store.Guidance.UTurnDistanceFromBoundary,
                 CrossGap = store.Guidance.UTurnCrossGap,
+                EntryMode = (int)store.Guidance.LineEntryMode,
+                EntryStraight = store.Guidance.LineEntryStraight,
                 Style = store.Guidance.UTurnStyle,
                 Smoothing = store.Guidance.UTurnSmoothing,
                 GoAroundRadius = store.Guidance.GoAroundRadius,
@@ -243,6 +245,9 @@ public static class ProfileJsonServiceV1
         store.Guidance.UTurnExtension = dto.YouTurn?.ExtensionLength ?? 20.0;
         store.Guidance.UTurnDistanceFromBoundary = dto.YouTurn?.DistanceFromBoundary ?? 2.0;
         store.Guidance.UTurnCrossGap = dto.YouTurn?.CrossGap ?? 0.0;
+        store.Guidance.LineEntryMode = dto.YouTurn?.EntryMode is int em && Enum.IsDefined(typeof(LineEntryMode), em)
+            ? (LineEntryMode)em : LineEntryMode.Nearest;
+        store.Guidance.LineEntryStraight = dto.YouTurn?.EntryStraight ?? GuidanceConfig.DefaultLineEntryStraight;
         store.Guidance.UTurnStyle = dto.YouTurn?.Style ?? (int)Models.YouTurn.YouTurnType.SagittaStyle;
         store.Guidance.UTurnSmoothing = dto.YouTurn?.Smoothing ?? 14;
         var dgo = new GuidanceConfig();
@@ -449,6 +454,9 @@ public static class ProfileJsonServiceV1
         public double? GoAroundRadius { get; set; }
         public double? GoAroundMargin { get; set; }
         public double? CrossGap { get; set; }
+        // Joining a new line in the headland (fork only): 0 nearest point, 1 ask, 2 start of the pass.
+        public int? EntryMode { get; set; }
+        public double? EntryStraight { get; set; }
         public int Style { get; set; }
         public int Smoothing { get; set; }
     }

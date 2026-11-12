@@ -85,7 +85,32 @@ function applyOnScreenButtons() {
   const asActive = !!(tick && tick.op && tick.op.autoSteer && !tick.op.contour);
   document.getElementById('osb-uturn').hidden = !(hasField && asActive && d && d.uTurnButtonVisible);
   document.getElementById('osb-lateral').hidden = !(hasField && asActive && d && d.lateralButtonVisible);
+  renderEntryOffer();
 }
+// ---- The way to the start of the pass, offered (fork only) ----
+// U-turn settings › Joining a new line: Ask. The host offers the way through the headland
+// (drawn dashed on the map, scene.entryPath) for the pass in scene.entryOffer; AutoSteer
+// steers to the nearest point until the operator answers or the offer runs out.
+let _eoShown = '';
+function renderEntryOffer() {
+  const pass = (scene && scene.entryOffer && scene.entryPath) ? scene.entryOffer : '';
+  const key = pass + '|' + (iHoldControl ? 1 : 0);
+  if (key === _eoShown) return;
+  _eoShown = key;
+  const box = document.getElementById('entryoffer');
+  box.hidden = !pass;
+  if (!pass) return;
+  document.getElementById('eo-msg').textContent = tr('Pass {n}: enter at its start through the headland?', { n: pass });
+  document.getElementById('eo-take').disabled = !iHoldControl;
+  document.getElementById('eo-keep').disabled = !iHoldControl;
+}
+function answerEntryOffer(take) {
+  if (!iHoldControl) return;
+  transport.send(take ? 'youturn.entryTake' : 'youturn.entryKeep');
+  document.getElementById('entryoffer').hidden = true; // the host's scene follows
+}
+document.getElementById('eo-take').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); answerEntryOffer(true); });
+document.getElementById('eo-keep').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); answerEntryOffer(false); });
 function bnToggleFly(fly, btn) {
   const open = !fly.classList.contains('open');
   bnFlags.classList.remove('open'); bnAb.classList.remove('open');

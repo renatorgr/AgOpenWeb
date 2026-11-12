@@ -34,6 +34,7 @@ function updateControlUi() {
   wasObserver = !iHoldControl && lastControl.held;
   if (iHoldControl) { applyMobileQualityCap(); reportMaxTexture(); } // host-wide: sent once we may (#397)
   if (typeof renderHostPrompt === 'function') renderHostPrompt(); // who may answer
+  if (typeof renderEntryOffer === 'function') renderEntryOffer(); // who may answer
   if (typeof updateAsGated === 'function') updateAsGated(); // re-gate AutoSteer actions
   if (document.getElementById('recpath').classList.contains('open')) renderRecPath(); // re-gate Play
   renderRole();

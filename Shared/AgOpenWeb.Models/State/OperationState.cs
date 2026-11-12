@@ -26,6 +26,14 @@ public sealed class OperationState
     /// <summary>The contour strip being followed (drawn as points), or null (#110).</summary>
     public System.Collections.Generic.IReadOnlyList<AgOpenWeb.Models.Base.Vec3>? ContourRef { get; set; }
 
+    /// <summary>The way to the start of the pass through the headland (U-turn settings ›
+    /// Joining a new line; fork only): driven, or offered when <see cref="LineEntryOfferPass"/>
+    /// is set. Drawn on the map like a turn; null when there is none.</summary>
+    public System.Collections.Generic.IReadOnlyList<AgOpenWeb.Models.Base.Vec3>? LineEntryPath { get; set; }
+
+    /// <summary>The pass the offered way leads to ("3R"), while the operator may take it; else null.</summary>
+    public string? LineEntryOfferPass { get; set; }
+
     /// <summary>Auto U-turn (YouTurn) arming is enabled.</summary>
     public bool IsYouTurnEnabled { get; set; }
 
