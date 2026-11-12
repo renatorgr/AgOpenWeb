@@ -23,7 +23,8 @@ namespace AgOpenWeb.Services.Tests.YouTurn;
 /// (U-turn settings › Joining a new line in the headland; fork only). A 200 × 300 m field with a
 /// 20 m headland, the passes running north at the U-turn radius of 6 m: the way stays in the
 /// headland, puts the tractor straight on the pass before the headland line, and is not planned
-/// in the crop, on the line already, or facing out of the field.
+/// in the crop or on the line already; facing out of the field, it turns round through the
+/// headland when the way fits.
 /// </summary>
 [TestFixture]
 [NonParallelizable] // ConfigurationStore is a singleton.
@@ -167,9 +168,29 @@ public class LineEntryPlannerTests
     }
 
     [Test]
-    public void Facing_out_of_the_field_is_left_to_the_U_turn()
+    public void Facing_out_of_the_field_the_way_turns_round_through_the_headland()
     {
-        Assert.That(Plan(-40, -140, 180).Outcome, Is.EqualTo(LineEntryOutcome.NoStart));
+        // In the south headland, 16 m from a hard fence, facing it: the pass driven south has no
+        // start ahead, so the way turns round onto it driven north, inside the headland. (10 m
+        // from the fence there is no room: the loop at radius 6 starts 3 m ahead.)
+        var plan = Plan(-40, -134, 180, Field(hard: true));
+
+        Assert.That(plan.Outcome, Is.EqualTo(LineEntryOutcome.Planned));
+        var path = plan.Path!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(plan.HeadingSameWay, Is.True, "into the field, driven north");
+            Assert.That(path[^1].Easting, Is.EqualTo(0).Within(0.05), "ends on the pass");
+            Assert.That(path.All(p => !InCrop(p) || Math.Abs(p.Easting) < 0.05), Is.True, "not across the crop");
+            Assert.That(path.All(p => p.Northing > -HalfN + 1), Is.True, "off the fence");
+        });
+    }
+
+    [Test]
+    public void Facing_out_of_the_field_with_no_room_to_turn_round_there_is_none()
+    {
+        // 3 m from a hard fence, facing it.
+        Assert.That(Plan(-40, -147, 180, Field(hard: true)).Outcome, Is.EqualTo(LineEntryOutcome.NoRoom));
     }
 
     [Test]

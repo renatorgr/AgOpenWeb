@@ -781,6 +781,26 @@ public sealed class YouTurnStateMachine
     }
 
     /// <summary>
+    /// The line AutoSteer has just joined, driven the way the tractor faces (AutoSteer takes the
+    /// way within 90 degrees of the heading), leaves the outer boundary before it reaches the
+    /// cultivated area: the tractor, in the headland, faces out of the field, and AutoSteer would
+    /// steer it to the fence. Unlike <see cref="EndOfPassWithoutTurn"/> the tractor need not be on
+    /// the line or along it. Fork only.
+    /// </summary>
+    public bool LineAheadLeavesField(in TickContext ctx, GuidanceWorkingState guidance)
+    {
+        var track = ctx.SelectedTrack;
+        if (track == null || track.Points.Count < 2) return false;
+        var p = ctx.CurrentPosition;
+        double heading = p.Heading * Math.PI / 180.0;
+        double abHeading = track.Points.Count > 2
+            ? LocalCurveHeading(track, p)
+            : Math.Atan2(track.Points[1].Easting - track.Points[0].Easting, track.Points[1].Northing - track.Points[0].Northing);
+        bool sameWay = Math.Abs(Math.IEEERemainder(heading - abHeading, 2 * Math.PI)) < Math.PI / 2;
+        return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.HeadlandLine, p, sameWay);
+    }
+
+    /// <summary>
     /// Manually trigger a U-turn in the specified direction. Used for tracks along boundaries
     /// where automatic headland detection doesn't fire.
     /// </summary>
