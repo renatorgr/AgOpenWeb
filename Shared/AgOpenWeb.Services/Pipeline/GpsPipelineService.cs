@@ -1187,6 +1187,28 @@ public sealed class GpsPipelineService : IGpsPipelineService
             }
         }
 
+        // (5b'''') A hard outer boundary and no U-turn planned or driven (a turn keeps the implement
+        // off the fence itself): an end of the implement heading out across the fence within 2 s of
+        // travel takes AutoSteer off with the alarm (HardFenceGuard). Only with the tractor inside
+        // the fence, going forward. Fork only.
+        if (autoSteerEngaged && !_isReverse && _youTurn.TurnPath == null && !_youTurn.IsExecuting
+            && boundary?.OuterBoundary is { IsHard: true, IsValid: true } hardOuter
+            && _toolPositionService.HasPosition
+            && hardOuter.IsPointInside(driftedEasting, driftedNorthing))
+        {
+            double lookAhead = HardFenceGuard.LookAheadSeconds * Math.Abs(pos.Speed);
+            double reach = toolWidth / 2 + Math.Abs(config.Tool.Offset);
+            double outBy = HardFenceGuard.HeadingOut(hardOuter, toolPos, toolHeading, reach, lookAhead);
+            if (outBy > 0)
+            {
+                autoSteerEngaged = false;
+                autoSteerDisengaged = true;
+                disengageReason = "AutoSteer off: the implement is heading across the hard boundary. Steer by hand.";
+                lock (_stateLock) _autoSteerEngaged = false;
+                _audioService.Play(SoundEffect.UTurnTooClose);
+            }
+        }
+
         // (5c) Reverse (#125), like AgOpenGPS: with Steer in reverse off, steering
         // stops while reversing but AutoSteer stays engaged; it also stops while a
         // single antenna with no IMU can't yet tell a direction change. PGN 254
