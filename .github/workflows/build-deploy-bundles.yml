@@ -225,6 +225,10 @@ jobs:
 
       - name: Install Android workload
         run: |
+          # renatorgr fork: build with the SDK pinned above. Runner images from 11 Nov 2026 also carry
+          # .NET SDK 11.0.100, which dotnet picks when no global.json says otherwise, and its workload
+          # manifests conflict with 10.0.401's, so the android workload did not install.
+          printf '{ "sdk": { "version": "%s" } }\n' "$DOTNET_VERSION" > global.json
           for i in 1 2 3; do
             dotnet workload install android --version "$ANDROID_WORKLOAD_VERSION" && break
             echo "Attempt $i failed, retrying in 10s..."
