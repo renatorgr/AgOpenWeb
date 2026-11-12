@@ -64,7 +64,7 @@ public partial class YouTurnCreationService
     private const double LineEntryAlignedRad = 20.0 * Math.PI / 180.0;
 
     /// <summary>The start of the pass is driven in no further than this from the way the tractor
-    /// faces: a tractor facing out of the field is left to the U-turn.</summary>
+    /// faces, when there is one.</summary>
     private const double LineEntryMaxTurnRad = 100.0 * Math.PI / 180.0;
 
     private const double LineEntrySpacing = 0.25;
@@ -74,7 +74,11 @@ public partial class YouTurnCreationService
     /// joining a new line (GuidanceConfig.LineEntryMode; fork only). The tractor must be in the
     /// headland: inside the field and outside <paramref name="headlandLine"/>, the edge of the
     /// cultivated area. The start of the pass is where it enters the cultivated area nearest the
-    /// tractor, not behind it, driven in no more than 100 degrees from the way the tractor faces. The tractor is put straight on the pass
+    /// tractor, not behind it, driven in no more than 100 degrees from the way the tractor faces;
+    /// with none there (the tractor faces out of the field: the pass ahead runs to the fence), the
+    /// way the tractor would have to turn round for, which the checks below let through only when
+    /// it fits in the headland (Tapada da Casa: AutoSteer engaged facing the fence took the
+    /// line out to it). The tractor is put straight on the pass
     /// <c>LineEntryStraight</c> (plus a front implement's reach ahead of the pivot) before that,
     /// by a Dubins path at the U-turn radius from 3 m ahead of it, the shortest of the six that
     /// passes every check: the pivot stays in the headland until it is on the pass, and in the
@@ -105,7 +109,7 @@ public partial class YouTurnCreationService
 
         // The pass the way it would be driven, and where it enters the cultivated area nearest
         // the tractor, for either way along the track.
-        EntryLine? best = null;
+        EntryLine? best = null, turnRound = null;
         foreach (bool sameWay in new[] { true, false })
         {
             var pass = passFor(sameWay);
@@ -113,12 +117,17 @@ public partial class YouTurnCreationService
             var line = EntryLine.Build(pass, reverse: !sameWay);
             if (line == null) continue;
             if (!line.FindStart(headlandLine, pivot)) continue;
-            // Only into a pass the tractor faces: one facing out of the field turns round by a
-            // U-turn, not by this way.
-            if (Math.Abs(AngleDiff(pivot.Heading, line.HeadingAt(line.StartS))) > LineEntryMaxTurnRad) continue;
             line.SameWay = sameWay;
+            // Into a pass the tractor faces; a tractor facing out of the field turns round onto
+            // the other way only when the way it faces has no start.
+            if (Math.Abs(AngleDiff(pivot.Heading, line.HeadingAt(line.StartS))) > LineEntryMaxTurnRad)
+            {
+                if (turnRound == null || line.StartDistance < turnRound.StartDistance) turnRound = line;
+                continue;
+            }
             if (best == null || line.StartDistance < best.StartDistance) best = line;
         }
+        best ??= turnRound;
         if (best == null || best.StartDistance > LineEntryMaxReach) return LineEntryPlan.NoStart;
 
         // On the line and heading along it: AutoSteer just follows it.

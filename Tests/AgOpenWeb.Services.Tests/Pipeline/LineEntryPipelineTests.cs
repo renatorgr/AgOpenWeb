@@ -119,12 +119,13 @@ public class LineEntryPipelineTests
 
     /// <summary>The field, the headland line <paramref name="headland"/> m in, and the track at
     /// <see cref="PassE"/> running north; AutoSteer engaged.</summary>
-    private void OpenField(LineEntryMode mode, double headland = 20)
+    private void OpenField(LineEntryMode mode, double headland = 20, bool hard = false)
     {
         _config.Guidance.LineEntryMode = mode;
         var outer = new BoundaryPolygon
         {
             Points = new List<BoundaryPoint> { new(-100, -10, 0), new(100, -10, 0), new(100, 290, 0), new(-100, 290, 0) },
+            IsHard = hard,
         };
         _pipeline.SetBoundary(new Boundary { OuterBoundary = outer });
         _pipeline.SetHeadlandLine(new List<Vec3>
@@ -291,5 +292,99 @@ public class LineEntryPipelineTests
         Assert.That(Cycle(0, 0, Math.PI / 2).LineEntryPath, Is.Not.Null);
         _pipeline.SetAutoSteerEngaged(false);
         Assert.That(Cycle(0.2, 0, Math.PI / 2).LineEntryPath, Is.Null);
+    }
+
+    // ── Facing out of the field (Tapada da Casa: AutoSteer engaged in the headland facing the
+    // fence took the line out to it) ──
+
+    private const string FaceTheField = "AutoSteer off: the line ahead runs out of the field. Turn the tractor to face the field.";
+
+    [Test]
+    public void Engaged_facing_a_hard_fence_AutoSteer_goes_off_and_says_to_face_the_field()
+    {
+        OpenField(LineEntryMode.Nearest, hard: true);
+        var first = Cycle(PassE - 6, 0, Math.PI); // in the south headland, facing south
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.AutoSteerDisengagedThisCycle, Is.True);
+            Assert.That(first.DisengageReason, Is.EqualTo(FaceTheField));
+        });
+        _audio.Received(1).Play(SoundEffect.UTurnTooClose);
+    }
+
+    [Test]
+    public void Engaged_facing_the_field_AutoSteer_stays_on()
+    {
+        OpenField(LineEntryMode.Nearest, hard: true);
+        var first = Cycle(PassE - 6, 0, 30 * Math.PI / 180);
+
+        Assert.That(first.AutoSteerDisengagedThisCycle, Is.False);
+        _audio.DidNotReceive().Play(SoundEffect.UTurnTooClose);
+    }
+
+    [Test]
+    public void Facing_a_soft_boundary_AutoSteer_stays_on()
+    {
+        OpenField(LineEntryMode.Nearest, hard: false);
+        var first = Cycle(PassE - 6, 0, Math.PI);
+
+        Assert.That(first.AutoSteerDisengagedThisCycle, Is.False);
+    }
+
+    [Test]
+    public void Start_of_the_pass_facing_out_turns_round_through_the_headland_when_it_fits()
+    {
+        // 15 m from the fence, facing it: room for a loop at radius 6 in the 20 m headland.
+        OpenField(LineEntryMode.PassStart, hard: true);
+        var first = Cycle(0, 5, Math.PI);
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.AutoSteerDisengagedThisCycle, Is.False, first.DisengageReason);
+            Assert.That(first.LineEntryPath, Is.Not.Null, "the way round to the start of the pass");
+            Assert.That(first.LineEntryPath![^1].Easting, Is.EqualTo(_passLineE).Within(0.05));
+        });
+
+        var track = DriveFrom(0, 5, 180, untilN: 40);
+
+        var inCrop = track.Where(InCrop).ToList();
+        Assert.Multiple(() =>
+        {
+            Assert.That(inCrop, Is.Not.Empty, "into the field");
+            Assert.That(inCrop.Max(p => Math.Abs(p.Easting - _passLineE)), Is.LessThan(0.5), "in the crop only on the pass");
+            Assert.That(track.Min(p => p.Northing), Is.GreaterThan(-9), "the fence not reached");
+        });
+    }
+
+    [Test]
+    public void Start_of_the_pass_facing_out_with_no_room_to_turn_goes_off_and_says_to_face_the_field()
+    {
+        // 3 m from a hard fence, facing it: no way round.
+        OpenField(LineEntryMode.PassStart, hard: true);
+        var first = Cycle(0, -7, Math.PI);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.LineEntryPath, Is.Null);
+            Assert.That(first.DisengageReason, Is.EqualTo(FaceTheField));
+            Assert.That(first.LineEntryNotice, Is.Null, "not \"joining it at the nearest point\"");
+        });
+    }
+
+    /// <summary><see cref="Drive"/> from (<paramref name="e0"/>, <paramref name="n0"/>).</summary>
+    private List<Vec3> DriveFrom(double e0, double n0, double headingDeg, double untilN)
+    {
+        double e = e0, n = n0, h = headingDeg * Math.PI / 180.0, step = SpeedKmh / 3.6 * 0.1;
+        var track = new List<Vec3>();
+        for (int i = 0; i < 2000 && n < untilN && n > -15; i++)
+        {
+            var r = Cycle(e, n, h);
+            track.Add(new Vec3(e, n, h));
+            double steer = r.Guidance!.SteerAngle * Math.PI / 180.0;
+            h += step / Wheelbase * Math.Tan(steer);
+            e += Math.Sin(h) * step;
+            n += Math.Cos(h) * step;
+        }
+        return track;
     }
 }

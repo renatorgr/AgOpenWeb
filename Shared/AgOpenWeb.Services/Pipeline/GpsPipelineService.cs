@@ -1017,7 +1017,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // AutoSteer engaged, the line moved a pass, or another track chosen, with the tractor in the
         // headland: by GuidanceConfig.LineEntryMode the way through the headland to the start of
         // the pass is driven, or offered with a sound (the nearest point is steered meanwhile).
-        UpdateLineEntry(in intents, config, autoSteerEngaged, track, passNumber, nudgeOffset,
+        bool joinedNewLine = UpdateLineEntry(in intents, config, autoSteerEngaged, track, passNumber, nudgeOffset,
             headlandLine, boundary, contourOn || recordedPath != null,
             driftedEasting, driftedNorthing, headingRad);
 
@@ -1261,6 +1261,26 @@ public sealed class GpsPipelineService : IGpsPipelineService
         {
             _headlandEntryArmed = false;
             _headlandEntryAt = null;
+        }
+
+        // (5b'''') AutoSteer joining a line (engaged, the line moved a pass, another track) with the
+        // tractor in the headland facing out of the field: the line, driven the way it faces, runs
+        // to a hard fence before any crop, so AutoSteer would steer it there. AutoSteer off with
+        // the alarm, and the operator is told to turn the tractor to the field. Not when a way to
+        // the start of the pass is driven or offered (Joining a new line in the headland), which
+        // turns round through the headland when it fits. Fork only.
+        if (joinedNewLine && autoSteerEngaged && !_isReverse && !_youTurn.IsExecuting
+            && _lineEntryPath == null && _lineEntryOffer == null
+            && boundary?.OuterBoundary is { IsHard: true, IsValid: true } && hasValidHeadlandLine && hasTickableTrack
+            && InHeadland(boundary, headlandLine!, driftedEasting, driftedNorthing)
+            && _youTurnStateMachine.LineAheadLeavesField(in tickCtx, _guidanceWorking))
+        {
+            autoSteerEngaged = false;
+            autoSteerDisengaged = true;
+            disengageReason = "AutoSteer off: the line ahead runs out of the field. Turn the tractor to face the field.";
+            lock (_stateLock) _autoSteerEngaged = false;
+            _lineEntryNotice = null; // "joining it at the nearest point" is not what happens
+            _audioService.Play(SoundEffect.UTurnTooClose);
         }
 
         // (5b'''') A hard outer boundary and no U-turn planned or driven (a turn keeps the implement
@@ -2576,9 +2596,11 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// fits; <see cref="LineEntryMode.Ask"/> offers it with the approach sound and keeps steering to
     /// the nearest point until the operator takes it (planned again from where the tractor is
     /// then); no way through the headland says so once and joins at the nearest point. Only with
-    /// the tractor in the headland, going forward, on an open track with a headland line.
+    /// the tractor in the headland, going forward, on an open track with a headland line. True on
+    /// the cycle AutoSteer joins a new line, whatever the mode (<see cref="_lineEntryPath"/> is the
+    /// way, if one is driven).
     /// </summary>
-    private void UpdateLineEntry(in PipelineIntentBatch intents, ConfigurationStore config, bool autoSteerEngaged,
+    private bool UpdateLineEntry(in PipelineIntentBatch intents, ConfigurationStore config, bool autoSteerEngaged,
         Models.Track.Track? track, int passNumber, double nudgeOffset, List<Vec3>? headlandLine, Boundary? boundary,
         bool otherGuidance, double e, double n, double headingRad)
     {
@@ -2608,7 +2630,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
 
         // A new line: AutoSteer engaged, the line moved a pass (the snap applied above), another track.
         bool snapped = intents.GuidanceSnap.HasValue && !_youTurn.IsExecuting;
-        if (possible && (engagedNow || snapped || trackSwitched))
+        bool joined = autoSteerEngaged && (engagedNow || snapped || trackSwitched);
+        if (possible && joined)
         {
             _lineEntryOffer = null;
             var plan = PlanLineEntry(config, track!, passNumber, nudgeOffset, headlandLine!, boundary!, e, n, headingRad);
@@ -2647,6 +2670,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             }
             _lineEntryOffer = null;
         }
+        return joined;
     }
 
     private LineEntryPlan PlanLineEntry(ConfigurationStore config, Models.Track.Track track, int passNumber, double nudgeOffset,

@@ -201,10 +201,17 @@ public class EndOfPassWithoutTurnTests
         Assert.That(WentOff(), Is.Not.Null);
         _cycles.Clear();
 
-        // Engaged again in the headland, heading out: no second alarm on every fix (the fence guard is the net).
+        // Engaged again in the headland, heading out: the end of the pass is not said again on
+        // every fix. Joining a line that runs out to the fence goes off once, at once, and says
+        // to face the field.
         _pipeline.SetAutoSteerEngaged(true);
         Drive(41.7, 43);
-        Assert.That(WentOff(), Is.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(_cycles.Count(c => c.Result.AutoSteerDisengagedThisCycle), Is.EqualTo(1));
+            Assert.That(WentOff()?.Northing, Is.EqualTo(41.7).Within(0.01), "at the press");
+            Assert.That(WentOff()?.Result.DisengageReason, Does.Contain("Turn the tractor to face the field"));
+        });
     }
 
     [Test]
