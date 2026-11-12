@@ -146,56 +146,53 @@ public class SteerWizardSafetyTests
     }
 
     [Test]
+    public void Browser_lost_switches_a_section_switched_On_by_hand_off()
+    {
+        // Web client scenarios, FORCED-SECTION-STAYS-ON: master off, manual off, section 2
+        // On by hand: the module went on getting it with nobody at the screen.
+        var b = new MainViewModelBuilder();
+        var states = new[]
+        {
+            new SectionControlState { Index = 0, ButtonState = SectionButtonState.Auto },
+            new SectionControlState { Index = 1, ButtonState = SectionButtonState.On },
+            new SectionControlState { Index = 2, ButtonState = SectionButtonState.Off },
+        };
+        b.SectionControlService.NumSections.Returns(3);
+        b.SectionControlService.SectionStates.Returns(states);
+        var vm = b.Build();
+
+        vm.OnBrowserControlEnded("browser control ended: presence lost (deadman)", involuntary: true);
+
+        b.SectionControlService.Received().SetSectionState(1, SectionButtonState.Off);
+        b.SectionControlService.DidNotReceive().SetSectionState(0, Arg.Any<SectionButtonState>());
+        Assert.That(vm.ControlLostNotice, Does.Contain("the sections").And.Contain("stopped answering"));
+    }
+
+    [Test]
     public void Browser_lost_ends_Free_Drive_outside_the_wizard()
     {
-        // AutoSteer settings > Free Drive, steered 10° right, then the tablet's tab closed: the
-        // module went on getting status 1 at 10° with a made-up 8 km/h (web client harness, C9).
+        // FREE-DRIVE-KEEPS-STEERING: Free Drive from the AutoSteer panel (no wizard) kept the
+        // wheels at 10° with a made-up 8 km/h after the screen went.
         var b = new MainViewModelBuilder();
-        var vm = b.Build();
         b.AutoSteerService.IsInFreeDriveMode.Returns(true);
-        Assume.That(vm.IsSteerWizardOpen, Is.False);
+        var vm = b.Build();
 
-        vm.OnBrowserControlEnded("browser control ended: client disconnected");
+        vm.OnBrowserControlEnded("browser control ended: client disconnected", involuntary: true);
 
         b.AutoSteerService.Received().DisableFreeDrive();
+        Assert.That(vm.TakeControlLostNotice(), Does.Contain("Free Drive").And.Contain("lost its connection"));
+        Assert.That(vm.TakeControlLostNotice(), Is.Null, "told once");
     }
 
     [Test]
-    public void Browser_lost_closes_a_section_switched_on_by_hand()
-    {
-        // Section 1 tapped to On with the master off, then the tab closed: the module went on
-        // getting section 1 open (web client harness, C10). The master toggle never ran, as
-        // the master was off.
-        var b = new MainViewModelBuilder();
-        b.SectionControlService.NumSections.Returns(2);
-        b.SectionControlService.SectionStates.Returns(new List<SectionControlState>
-        {
-            new() { Index = 0, ButtonState = SectionButtonState.On },
-            new() { Index = 1, ButtonState = SectionButtonState.Off },
-        });
-        var vm = b.Build();
-        Assume.That(vm.IsSectionMasterOn, Is.False);
-
-        vm.OnBrowserControlEnded("browser control ended: client disconnected");
-
-        b.SectionControlService.Received().SetAllSections(SectionButtonState.Off);
-    }
-
-    [Test]
-    public void Browser_lost_leaves_sections_alone_when_all_are_off()
+    public void A_release_with_nothing_on_leaves_no_notice()
     {
         var b = new MainViewModelBuilder();
-        b.SectionControlService.NumSections.Returns(2);
-        b.SectionControlService.SectionStates.Returns(new List<SectionControlState>
-        {
-            new() { Index = 0, ButtonState = SectionButtonState.Off },
-            new() { Index = 1, ButtonState = SectionButtonState.Off },
-        });
         var vm = b.Build();
 
         vm.OnBrowserControlEnded("browser control ended: released");
 
-        b.SectionControlService.DidNotReceive().SetAllSections(Arg.Any<SectionButtonState>());
+        Assert.That(vm.ControlLostNotice, Is.Null);
     }
 
     private static void SwitchCycle(MainViewModelBuilder b, MainViewModel vm, bool steering)
