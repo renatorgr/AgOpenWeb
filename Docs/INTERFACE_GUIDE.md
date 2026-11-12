@@ -249,7 +249,10 @@ Opened from **Field Tools** on the left bar.
   left/right side, and record at the antenna or the tool.
 - **Recorded Path** — record a path by driving it, then play it back (including reverse).
 - **GPS Offset Fix** — a compass D-pad (N/E/S/W with a center zero) to nudge your position a
-  centimeter at a time to correct GPS drift.
+  centimeter at a time to correct GPS drift. The offset is not saved: it is gone when the app
+  restarts. For a field drawn on a photo that is off the ground, line the tractor up with the
+  drawing, then press **Move the field instead**: the field's drawing moves by the opposite of the
+  offset and is saved, and the offset goes back to 0 (fork only).
 - **Delete Applied Area** / **Import Tracks** — clear worked-area paint, or import tracks from
   another field.
 

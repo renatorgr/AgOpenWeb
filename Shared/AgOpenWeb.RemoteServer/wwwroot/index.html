@@ -1428,6 +1428,13 @@
       <div class="of-fld"><label>E / W (<span class="u" data-unit="m"></span>)</label><input id="of-ew-in" class="of-input" data-unit="m" type="number" step="0.001"></div>
     </div>
     <div class="of-hint">1 cm per click</div>
+    <!-- Keep the offset in the field: its drawing moves by the opposite and the offset goes back
+         to 0 (fork only). For a field drawn on a photo that is off the ground the GPS sees. -->
+    <div class="of-move">
+      <div class="rc-row"><span>Move the tracks too</span><button class="rc-tgl on" id="of-mv-tracks">On</button></div>
+      <button class="fo-btn of-mvbtn" id="of-mv">Move the field instead</button>
+      <div class="of-hint">For a field drawn on a photo: keeps this offset in the field and puts the offset back to 0</div>
+    </div>
   </div>
   <!-- Import Tracks: pick another field on disk to copy its tracks into the open field. -->
   <div id="importtracks" class="ln-panel fo-panel">

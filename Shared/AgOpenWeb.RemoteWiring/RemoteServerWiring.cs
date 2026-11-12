@@ -604,6 +604,15 @@ public static partial class RemoteServerWiring
                                         vm.OffsetFixSet(oe, on);
                                     return;
                                 }
+                                case "field.move": // Offset Fix › Move the field. arg = "dEasting,dNorthing,tracks 1|0" (m)
+                                {
+                                    var mv = arg.Split(',');
+                                    if (mv.Length == 3
+                                        && double.TryParse(mv[0], num, inv, out var me)
+                                        && double.TryParse(mv[1], num, inv, out var mn))
+                                        _ = vm.RemoteMoveFieldAsync(me, mn, mv[2] == "1");
+                                    return;
+                                }
                                 case "profile.save": // persist active vehicle+tool profiles (Phase 9b)
                                     var cs = services.GetRequiredService<AgOpenWeb.Models.Configuration.ConfigurationStore>();
                                     configService.SaveProfiles(cs.ActiveVehicleProfileName, cs.ActiveToolProfileName);
