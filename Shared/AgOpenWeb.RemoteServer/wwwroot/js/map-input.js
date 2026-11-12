@@ -97,7 +97,7 @@ function vehicleTap(px, py) {
   if (gps && gps.isDualGps && !gps.autoDualFix && statusBar && !statusBar.dualHeadingMissing) return;
   if (!iHoldControl) { showToast(tr('Take control to reset the direction')); return; }
   transport.send('heading.resetDirection');
-  showToast(tr('Direction reset. Drive forward above 1.5 kph.'));
+  showToast(tr('Direction reset. Drive forward above 1.5 km/h.'));
 }
 
 // Pan + tap. A gesture that moves past TAP_SLOP px pans (and drops to Free mode); one

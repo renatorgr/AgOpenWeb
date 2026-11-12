@@ -31,7 +31,9 @@ const I18n = (() => {
   const PRODUCED_MAX = 2000;
 
   const norm = s => s.replace(/\s+/g, ' ').trim();
-  const lookup = key => (dict && dict[key]) || key;
+  // Fork: speeds read "km/h" in the English source, while the translations from Weblate
+  // keep the official "kph" keys; a key with "km/h" not found is asked for as "kph".
+  const lookup = key => (dict && (dict[key] || (key.includes('km/h') && dict[key.replace(/km\/h/g, 'kph')]))) || key;
   const fill = (s, params) => s.replace(/\{(\w+)\}/g, (m, name) => (name in params ? String(params[name]) : m));
 
   function t(key, params) {
