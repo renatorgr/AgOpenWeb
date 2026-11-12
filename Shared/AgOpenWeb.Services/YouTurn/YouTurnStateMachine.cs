@@ -1682,6 +1682,12 @@ public sealed class YouTurnStateMachine
             guidance, turn,
             ctx.UTurnSkipRows, ctx.HeadlandCalculatedWidth, ctx.HeadlandDistance);
         if (result.Path == null) return result;
+        if (TurnLanding.PastLineEnd(result.Path, turn.NextTrack))
+        {
+            // The turn would hand over past the end of the line it is for: no turn (#694).
+            _logger.LogDebug("[YouTurn] The turn would land past the end of pass {Next}'s line - no turn", turn.ReturnPassTargetPath);
+            return result with { Path = null, LandsPastLineEnd = true };
+        }
         _creationFailSounded = false;
         _approachAlarmed = false;
         _plannedSameWay = guidance.IsHeadingSameWay;
@@ -1704,6 +1710,9 @@ public sealed class YouTurnStateMachine
     /// <summary>No turn built: say why, and sound once (<see cref="SoundCreationFailed"/>).</summary>
     private void ReportNoTurn(YouTurnCreationService.TurnPathResult result, YouTurnEffects effects)
     {
+        // A turn built (the fallback too) that would hand over past the end of the next pass's line.
+        if (result.LandsPastLineEnd && effects.StatusMessage == null)
+            effects.StatusMessage = "No U-turn: the next pass ends before this end - take over manually";
         // A turn refused at an obstacle names the obstacle, also when the implement's clearance
         // refused it: "a hard boundary" sent the operator looking at the field's edge.
         if (result.Path == null && result.AtObstacle && effects.StatusMessage == null)
