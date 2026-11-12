@@ -245,6 +245,17 @@ public sealed class GpsPipelineService : IGpsPipelineService
     // outside the turn area it holds its last value, as AgOpenGPS's mc.isOutOfBounds does.
     private bool _isOutOfBounds;
 
+    // End of a pass with no U-turn at a hard boundary (fork only): armed while the pivot is in the
+    // cultivated area, looked at once as it gets HeadlandEntryCheckAfter metres into the headland.
+    private bool _headlandEntryArmed;
+    private Vec2? _headlandEntryAt;
+
+    /// <summary>
+    /// How far into the headland the tractor is when the end of its pass is looked at: the turn
+    /// the snake order makes in the headland is planned on the first cycle there.
+    /// </summary>
+    internal const double HeadlandEntryCheckAfter = 1.0;
+
     // ── RTK quality tracking ────────────────────────────────────────────
     private int _previousFixQuality;
 
@@ -1213,6 +1224,43 @@ public sealed class GpsPipelineService : IGpsPipelineService
                     _audioService.Play(SoundEffect.UTurnTooClose);
                 }
             }
+        }
+
+        // (5b'''') The end of the pass at a hard outer boundary with no U-turn planned or driven
+        // there ("End of field reached", no turn that fits, U-turn off): AutoSteer off with the
+        // alarm as the tractor enters the headland heading out, so the operator has the headland
+        // to turn by hand. Left on, it steers on along the line and through the fence (as
+        // AgOpenGPS, which only sends geoStop). Once per entry, a metre in. Fork only.
+        if (boundary?.OuterBoundary is { IsHard: true, IsValid: true } fence && hasValidHeadlandLine && hasTickableTrack)
+        {
+            if (_headlandIndex.Contains(headlandLine!, driftedEasting, driftedNorthing))
+            {
+                _headlandEntryArmed = true;
+                _headlandEntryAt = null;
+            }
+            else if (_headlandEntryArmed)
+            {
+                var at = _headlandEntryAt ??= new Vec2(driftedEasting, driftedNorthing);
+                double de = driftedEasting - at.Easting, dn = driftedNorthing - at.Northing;
+                if (de * de + dn * dn >= HeadlandEntryCheckAfter * HeadlandEntryCheckAfter)
+                {
+                    _headlandEntryArmed = false;
+                    if (autoSteerEngaged && !_isReverse && fence.IsPointInside(driftedEasting, driftedNorthing)
+                        && _youTurnStateMachine.EndOfPassWithoutTurn(in tickCtx, _guidanceWorking, _youTurn))
+                    {
+                        autoSteerEngaged = false;
+                        autoSteerDisengaged = true;
+                        disengageReason = "AutoSteer off: end of the pass and no U-turn here. Turn by hand.";
+                        lock (_stateLock) _autoSteerEngaged = false;
+                        _audioService.Play(SoundEffect.UTurnTooClose);
+                    }
+                }
+            }
+        }
+        else
+        {
+            _headlandEntryArmed = false;
+            _headlandEntryAt = null;
         }
 
         // (5b'''') A hard outer boundary and no U-turn planned or driven (a turn keeps the implement
