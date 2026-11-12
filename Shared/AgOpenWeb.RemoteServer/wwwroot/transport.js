@@ -232,6 +232,12 @@ window.RemoteTransport = {
                         moduleChecks: !!u8(), rateLha: f32(), targetLha: f32(), pressureNeededBar: f32(),
                         minPressureBar: f32(), maxPressureBar: f32() };
           }
+          // Tuning on the line (append-only, fork): null until the panel is first used.
+          // stage: 0 idle, 1 waiting, 2 measuring, 3 result, 4 accepted, 5 stopped, 6 failed.
+          let lineTune = null;
+          if (o < dv.byteLength && u8()) {
+            lineTune = { stage: u8(), stanley: !!u8(), tried: u8(), description: str(), result: str(), measurements: str() };
+          }
           handlers.onStatusBar && handlers.onStatusBar({
             fixQuality, fixText, age, sats, isMetric,
             gpsOk, imuOk, autoSteerOk, machineOk, imuIp, autoSteerIp, machineIp,
@@ -244,6 +250,7 @@ window.RemoteTransport = {
             simPanelVisible, driftEasting, driftNorthing, unsavedCoveragePrompt,
             devOverlay, gpsToPgnLatencyMs, gpsSentence, dualHeadingMissing, ntripRtcm, systemData,
             gpsLost, isobus, fieldData, sendCorrectedPosition, scanReplySubnet, ntripSession, simDrivesSteering, sprayer,
+            lineTune,
           });
           break;
         }

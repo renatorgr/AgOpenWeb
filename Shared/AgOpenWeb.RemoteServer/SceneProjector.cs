@@ -51,6 +51,8 @@ public sealed class SceneProjector : System.IDisposable
     // ISOBUS task controller heartbeat (#312). Host-supplied; null while none is heard.
     public System.Func<IsobusDto?>? IsobusProvider { get; set; }
     public System.Func<SprayerDto?>? SprayerProvider { get; set; }
+    // Tuning on the line (AutoSteer page). Host-supplied; null until the panel is first used.
+    public System.Func<LineTuneDto?>? LineTuneProvider { get; set; }
     // Field data card (#321). Host-supplied; null with no field open.
     public System.Func<FieldDataDto?>? FieldDataProvider { get; set; }
     // System Data card (Network IO → GPS): attitude, heading sources, sentence rate and the
@@ -482,7 +484,8 @@ public sealed class SceneProjector : System.IDisposable
             c.ScanReplySubnet ?? "",
             BuildNtripSession(cfg.NtripProfilePerField, c),
             _state.Simulator.DrivesSteering,
-            SprayerProvider?.Invoke());
+            SprayerProvider?.Invoke(),
+            LineTuneProvider?.Invoke());
     }
 
     // The NTRIP session for the Network IO card, read live for every status frame.
