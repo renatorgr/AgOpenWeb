@@ -613,8 +613,11 @@ and with AutoSteer on, such a stretch within 10 m plus 2 s of travel ahead on th
 point twice (along the last stretch's normal and the first's); on the inside of the bend there the second copy
 lay behind the first, the pass ran 0.2 m on past the seam and back (a 26 m lap), and a tractor engaged 0.4 m off
 the line at the seam was steered to a goal behind it and turned round. On the inside the repeat is left out (on
-the outside it starts the seam's arc, as before). Tests: `ClosedPassSeamTests` (Models), `ClosedPassSeamPipelineTests`.
-Fork only (the official code has it too).
+the outside it starts the seam's arc, as before). The arc round the seam goes through the collision test like any
+other: untested, a seam at the tip of a narrow slot into the field (a tester's field, its slot reaching the far fence)
+put the whole arc round the tip into the lap, out across the fence beyond it (8.7 m on a 12 m lap), and the lap
+crossed itself coming back, so AutoSteer engaged near the crossing could take the other leg. Tests:
+`ClosedPassSeamTests` (Models), `ClosedPassSeamPipelineTests`. Fork only (the official code has both).
 
 ## Stepping onto a line beside a hard fence
 AutoSteer joining a line sideways (engaged off it, moved a pass, another track; `UpdateSideStep` in
