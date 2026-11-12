@@ -402,12 +402,26 @@ public sealed class YouTurnPathingService
             // then the headland until the pass is inside again, or out of the field.
             bool left = false;
             double gap = 0;
+            // Inside again from point j on for at least MinRunAfterGap: the pass goes on in the field there.
+            bool RunsOnInsideFrom(int j)
+            {
+                double run = 0;
+                for (int k = j; run < MinRunAfterGap; k += fwd)
+                {
+                    if (k + fwd < 0 || k + fwd >= curve.Count) return false;
+                    var q = curve[k + fwd];
+                    if (!outer.IsPointInside(q.Easting, q.Northing) || !IsPointInsideCultivatedArea(q.Easting, q.Northing, boundary, headlandLine))
+                        return false;
+                    run += Dist(k, k + fwd);
+                }
+                return true;
+            }
             for (int i = at; i + fwd >= 0 && i + fwd < curve.Count && gap <= MaxGapAhead; i += fwd)
             {
                 var p = curve[i + fwd];
                 if (!outer.IsPointInside(p.Easting, p.Northing)) return null;
                 bool inside = IsPointInsideCultivatedArea(p.Easting, p.Northing, boundary, headlandLine);
-                if (left && inside) return gap;
+                if (left && inside && RunsOnInsideFrom(i + fwd)) return gap;
                 if (!left && !inside) { left = true; gap = 0; }
                 gap += Dist(i, i + fwd);
                 if (!left && gap > RunOnLimit) return null;
@@ -431,6 +445,16 @@ public sealed class YouTurnPathingService
         // The rest of the run the ray measured short of (it runs along the tractor's heading, the
         // line can be inside a little further), then the headland until the pass is inside again.
         double crossedAt = double.NaN;
+        // Inside again for at least MinRunAfterGap: the pass goes on in the field there.
+        bool RunsOnInside(double t)
+        {
+            for (double k = Step; k <= MinRunAfterGap; k += Step)
+            {
+                double e = midE + abNx * (t + s * k), n = midN + abNy * (t + s * k);
+                if (!outer.IsPointInside(e, n) || !IsPointInsideCultivatedArea(e, n, boundary, headlandLine)) return false;
+            }
+            return true;
+        }
         for (double d = Step; d <= RunOnLimit + MaxGapAhead; d += Step)
         {
             double t = tAt + s * d;
@@ -442,7 +466,7 @@ public sealed class YouTurnPathingService
                 if (!inside) crossedAt = d - Step;
                 else if (d > RunOnLimit) return null;
             }
-            else if (inside) return d - crossedAt;
+            else if (inside && RunsOnInside(t)) return d - crossedAt;
             else if (d - crossedAt > MaxGapAhead) return null;
         }
         return null;
@@ -450,6 +474,13 @@ public sealed class YouTurnPathingService
 
     /// <summary>The longest headland a pass is taken to go on past; further in is its end.</summary>
     public const double MaxGapAhead = 2000.0;
+    /// <summary>
+    /// How far a pass must run on inside the cultivated area past a gap for the gap to be one it
+    /// crosses (as <c>MinPassAfterGap</c> for the headland gap setting). Less is a sliver of the
+    /// headland line, not more field: on Tapada da Casa a spike of the line put half a metre of
+    /// "field" on the pass 109 m on, and AutoSteer drove on 73 m into the headland with no turn.
+    /// </summary>
+    public const double MinRunAfterGap = 10.0;
     /// <summary>How far past the ray's headland distance the pass may still be inside before it is not the pass end at all.</summary>
     private const double RunOnLimit = 50.0;
 

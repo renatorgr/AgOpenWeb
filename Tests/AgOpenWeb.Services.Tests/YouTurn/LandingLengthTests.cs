@@ -130,6 +130,22 @@ public class LandingLengthTests
     }
 
     [Test]
+    public void A_sliver_of_the_headland_line_past_the_end_is_not_more_field()
+    {
+        // The square's south edge with a thin slanted sliver hanging into the headland, from
+        // (10,-40) down to (30,-46) and back to (20,-40): pass 5 (x = 22) leaves the field at
+        // y = -40 and crosses the sliver for 2.4 m (y -41.2 to -43.6), then the headland to the
+        // fence. A headland line's spike, not field the pass goes on in: it ends here. With the
+        // sliver counted, AutoSteer drove on into the headland with no turn (Tapada da Casa).
+        var sliver = new List<Vec3>
+        {
+            new(-40, -40, 0), new(10, -40, 0), new(30, -46, 0), new(20, -40, 0), new(40, -40, 0),
+            new(40, 40, 0), new(-40, 40, 0),
+        };
+        Assert.That(_pathing.GapAhead(_track, 0, 5, _boundary, sliver, At(22, -30), false, 10), Is.Null);
+    }
+
+    [Test]
     public void A_pass_that_leaves_the_field_past_the_headland_ends_there()
     {
         // Pass -2 (x = -6) heading north at y = 30: the headland 10 m ahead, the fence 10 m on.
