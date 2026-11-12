@@ -609,6 +609,13 @@ and with AutoSteer on, such a stretch within 10 m plus 2 s of travel ahead on th
 (`CurveProcessing.UnfitAhead`, from `CalculateTrackGuidance`) takes AutoSteer off with the alarm
 (`GpsPipelineService.PassDoesNotFitReason`). Tests: `ClosedPassFitTests` (Models), `ClosedPassNeckTests`. Fork only.
 
+**The seam.** A closed track's last point repeats its first, so `CreateOffsetCurveWithInfo` offset the seam's
+point twice (along the last stretch's normal and the first's); on the inside of the bend there the second copy
+lay behind the first, the pass ran 0.2 m on past the seam and back (a 26 m lap), and a tractor engaged 0.4 m off
+the line at the seam was steered to a goal behind it and turned round. On the inside the repeat is left out (on
+the outside it starts the seam's arc, as before). Tests: `ClosedPassSeamTests` (Models), `ClosedPassSeamPipelineTests`.
+Fork only (the official code has it too).
+
 ## Stepping onto a line beside a hard fence
 AutoSteer joining a line sideways (engaged off it, moved a pass, another track; `UpdateSideStep` in
 `GpsPipelineService`, after the line entry) with a hard outer boundary: a front implement swings out ahead of the
