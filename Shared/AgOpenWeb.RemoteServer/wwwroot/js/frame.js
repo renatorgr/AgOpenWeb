@@ -19,20 +19,20 @@ function renderSkia(canvas, rp) {
   if (scene) {
     const selRing = boundaryMenuSelectedRing();
     for (let bi = 0; bi < scene.boundaries.length; bi++) {
-      if (bi === selRing) strokePtsSk(canvas, scene.boundaries[bi], true, SKP.boundarySel);
-      strokePtsSk(canvas, scene.boundaries[bi], true, outOfBounds ? SKP.boundaryOut : boundaryRingPaint(bi));
+      if (bi === selRing) strokeFixedPtsSk(canvas, scene.boundaries[bi], true, SKP.boundarySel);
+      strokeFixedPtsSk(canvas, scene.boundaries[bi], true, outOfBounds ? SKP.boundaryOut : boundaryRingPaint(bi));
     }
     // Headland line shows only when the headland is ON (the bottom-nav headland button).
     if (scene.headland && tick && tick.tools && tick.tools.headlandOn)
-      strokePtsSk(canvas, scene.headland, true, SKP.headland);
+      strokeFixedPtsSk(canvas, scene.headland, true, SKP.headland);
     drawExtraGuidelinesSk(canvas); // faint adjacent passes (under the bold lines)
-    for (const l of scene.recordedPaths || []) strokePtsSk(canvas, l, false, SKP.recPath);   // #110
-    for (const l of scene.contourStrips || []) strokePtsSk(canvas, l, false, SKP.contourStrip);
+    for (const l of scene.recordedPaths || []) strokeFixedPtsSk(canvas, l, false, SKP.recPath);   // #110
+    for (const l of scene.contourStrips || []) strokeFixedPtsSk(canvas, l, false, SKP.contourStrip);
     drawContourRefSk(canvas);
-    if (scene.nextTrack) strokePtsSk(canvas, scene.nextTrack, false, SKP.next);
-    if (scene.uTurnPath) strokePtsSk(canvas, scene.uTurnPath, false, SKP.uturn);
+    if (scene.nextTrack) strokeFixedPtsSk(canvas, scene.nextTrack, false, SKP.next);
+    if (scene.uTurnPath) strokeFixedPtsSk(canvas, scene.uTurnPath, false, SKP.uturn);
     // The way to the start of the pass (fork only): driven, like a turn; offered, dashed.
-    if (scene.entryPath) strokePtsSk(canvas, scene.entryPath, false, scene.entryOffer ? SKP.entryOffer : SKP.uturn);
+    if (scene.entryPath) strokeFixedPtsSk(canvas, scene.entryPath, false, scene.entryOffer ? SKP.entryOffer : SKP.uturn);
     // Purple reference (extended across the field). The reference is the edge between passes
     // (PassGeometry), so pass 0 lies half a width from it; only a track driven on the line
     // itself (boundary-follow) puts the magenta guidance on top of it, and then just the one
@@ -40,15 +40,12 @@ function renderSkia(canvas, rp) {
     drawToolBandSk(canvas); // where the tool will land, under the lines
     const _onRef = scene.guidanceLine && scene.tracks.some(t => onPolyline(scene.guidanceLine, t.points));
     if (!_onRef) for (const tr of scene.tracks)
-      strokePtsSk(canvas, extendAbLine(tr.points), false, SKP.reference);
+      strokeFixedPtsSk(canvas, extendAbLine(tr.points), false, SKP.reference);
     // Magenta current pass, extended across the field. The host's DisplayLine is only ~track
     // length (a 2-point offset AB); extendAbLine spans it full-field, so an offset pass isn't a
     // short stub. Curves are >2 points and already host-extended, so they pass through unchanged.
-    if (scene.guidanceLine) {
-      const gl = extendAbLine(scene.guidanceLine);
-      strokePtsSk(canvas, gl, false, SKP.guidanceOutline);
-      strokePtsSk(canvas, gl, false, SKP.guidance);
-    }
+    if (scene.guidanceLine)
+      strokeFixedPtsSk(canvas, extendAbLine(scene.guidanceLine), false, [SKP.guidanceOutline, SKP.guidance]);
     drawActiveAbPointsSk(canvas);
     drawFlagsSk(canvas, scene.flags);
   }
@@ -80,6 +77,14 @@ function renderSkia(canvas, rp) {
 // shortly after, every frame is drawn, so panning and zooming stay smooth.
 const FRAME_CAP_FPS = 30, FULL_RATE_AFTER_INPUT_MS = 300;
 let _frameLast = 0, _fullRateUntil = 0;
+// A slow map must not take the page from the host. A frame holds the page's one thread: while it
+// draws, nothing else runs, not the host's frames (the tractor, the guidance) nor the presence
+// heartbeat that keeps control (control.js: 1.5 s without one and the host turns AutoSteer off).
+// On an older PC a boundary curve's map took 110 ms a frame; the page's messages waited behind
+// the drawing, the screen froze, and once AutoSteer went off ("presence lost (deadman)"). So a
+// frame that took longer than half a 30 fps frame is followed by as long again without drawing:
+// at least half the time is left for the rest, at any rate (also while the map is handled).
+let _frameEnd = 0, _frameCost = 0;
 function noteInput(e) {
   if (e.type === 'pointermove' && !e.buttons) return; // a hover is not handling the map
   _fullRateUntil = performance.now() + FULL_RATE_AFTER_INPUT_MS;
@@ -92,6 +97,7 @@ function skFrame(ts) {
   // overlays). _frameLast advances by the interval, so the average holds on any refresh rate
   // (30 on a 144 Hz screen); the 2 ms tolerance absorbs rAF jitter.
   if (typeof ts === 'number') {
+    if (_frameCost > 500 / FRAME_CAP_FPS && ts - _frameEnd < _frameCost) { requestAnimationFrame(skFrame); return; }
     if (ts < _fullRateUntil) _frameLast = ts;
     else {
       const interval = 1000 / FRAME_CAP_FPS, since = ts - _frameLast;
@@ -140,6 +146,7 @@ function skFrame(ts) {
     const msg = String(e && e.message || e);
     if (msg !== _overlayError) { _overlayError = msg; console.error('[frame] overlay error', e); }
   }
+  _frameEnd = performance.now(); _frameCost = _frameEnd - _now;
   requestAnimationFrame(skFrame);
 }
 // Start the connection and CanvasKit only now, with every script loaded: their callbacks reach into all of them.
