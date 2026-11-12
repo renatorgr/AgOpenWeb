@@ -20,9 +20,77 @@ function onPolyline(a, b) {
   }
   return false;
 }
+// `paint` may be a list of paints, drawn in order on the one path (a shadow, then the line).
 function strokePtsSk(canvas, pts, close, paint) {
   if (!pts || pts.length < 2) return;
   strokePtsSk3D(canvas, pts, close, paint);
+}
+// strokePtsSk for a line that is never changed in place: the Scene's (the host replaces its
+// arrays, the page never edits them) or one made from it once. A long one is drawn from its copy
+// without the points that add nothing to the picture (drawnPts). Not for a line being drawn or
+// edited on the page (its points move or grow in place, and the copy would not follow).
+function strokeFixedPtsSk(canvas, pts, close, paint) {
+  if (!pts || pts.length < 2) return;
+  strokePtsSk3D(canvas, drawnPts(pts), close, paint);
+}
+// A long line is drawn from a copy without the points that add nothing to the picture. A curve
+// from the host carries a point about every metre: a boundary curve round a 2 km fence has 2,249,
+// and its 20 extra guidelines up to 2,200 each, most of them on the straight stretches between
+// the fence's corners. Projecting and stroking all of them on every frame took ~110 ms a frame on
+// an older PC (Intel HD 4000): the map fell to 7 frames a second, the host's frames waited behind
+// the drawing (the screen froze) and the page missed its presence heartbeat (AutoSteer off,
+// "presence lost (deadman)"). The copy keeps every point more than 2 mm off the line between its
+// neighbours (Douglas-Peucker; 0.4 px at the closest zoom, 200 px/m), so the line looks the same;
+// it is made once per array (a WeakMap on the array itself).
+const SIMPLIFY_MIN_PTS = 64, SIMPLIFY_TOL_M = 0.002;
+const _drawnPts = new WeakMap();
+function drawnPts(pts) {
+  if (pts.length < SIMPLIFY_MIN_PTS) return pts;
+  let s = _drawnPts.get(pts);
+  if (!s) { s = simplifyPolyline(pts, SIMPLIFY_TOL_M); _drawnPts.set(pts, s); }
+  return s;
+}
+// Douglas-Peucker: which of the points (xs[i], ys[i]) to keep so that none of the others lies more
+// than `tol` from the chord of the stretch it is in; the first and last are always kept.
+// Iterative, so a long line can't overflow the stack.
+function dpKeep(xs, ys, tol) {
+  const n = xs.length, keep = new Uint8Array(n);
+  keep[0] = 1; keep[n - 1] = 1;
+  const stack = [0, n - 1];
+  while (stack.length) {
+    const b = stack.pop(), a = stack.pop();
+    if (b - a < 2) continue;
+    const ax = xs[a], ay = ys[a], dx = xs[b] - ax, dy = ys[b] - ay, len = Math.hypot(dx, dy);
+    let worst = -1, wi = -1;
+    for (let i = a + 1; i < b; i++) {
+      const d = len > 1e-9 ? Math.abs(dx * (ys[i] - ay) - dy * (xs[i] - ax)) / len
+        : Math.hypot(xs[i] - ax, ys[i] - ay); // a closed stretch: its end is its start
+      if (d > worst) { worst = d; wi = i; }
+    }
+    if (worst > tol) { keep[wi] = 1; stack.push(a, wi, wi, b); }
+  }
+  return keep;
+}
+// {e, n} points without those within `tol` metres of the line through their neighbours.
+function simplifyPolyline(pts, tol) {
+  const n = pts.length, xs = new Float64Array(n), ys = new Float64Array(n);
+  for (let i = 0; i < n; i++) { xs[i] = pts[i].e; ys[i] = pts[i].n; }
+  const keep = dpKeep(xs, ys, tol), out = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(pts[i]);
+  return out;
+}
+// The same on a screen polyline ([x, y] px), on every frame: a curve's points a metre apart are
+// a pixel or less apart when the map is zoomed out, and Skia strokes every one of them (the
+// most of a frame's time with a long curve's extra guidelines). A quarter of a pixel is not seen.
+const SCREEN_SIMPLIFY_MIN_PTS = 32, SCREEN_SIMPLIFY_TOL_PX = 0.25;
+function simplifyScreen(sub) {
+  const n = sub.length;
+  if (n < SCREEN_SIMPLIFY_MIN_PTS) return sub;
+  const xs = new Float64Array(n), ys = new Float64Array(n);
+  for (let i = 0; i < n; i++) { xs[i] = sub[i][0]; ys[i] = sub[i][1]; }
+  const keep = dpKeep(xs, ys, SCREEN_SIMPLIFY_TOL_PX), out = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(sub[i]);
+  return out;
 }
 // Extend a 2-point AB line far past both ends so the reference line spans the field instead of
 // being a short stub (issue #37). Curves (>2 points) pass through unchanged. The viewport clip
@@ -77,6 +145,22 @@ function clipScreenPolyline(pts, margin) {
   return out;
 }
 function strokePtsSk3D(canvas, pts, close, paint) {
+  const cmds = [];
+  lineCmds(pts, close, cmds);
+  strokeCmdsSk(canvas, cmds, paint);
+}
+// One path from path commands, stroked with each paint in turn.
+function strokeCmdsSk(canvas, cmds, paint) {
+  if (!cmds.length) return;
+  const path = CK.Path.MakeFromCmds(cmds);
+  if (!path) return;
+  if (Array.isArray(paint)) for (const p of paint) canvas.drawPath(path, p);
+  else canvas.drawPath(path, paint);
+  path.delete();
+}
+// The path commands of a line's parts in front of the camera and on the screen, added to `cmds`
+// (a contour each), so several lines can go in one path.
+function lineCmds(pts, close, cmds) {
   const EPS = 1.0;
   const n = pts.length;
   const wOf = (p) => pw(p.e, p.n);
@@ -90,13 +174,11 @@ function strokePtsSk3D(canvas, pts, close, paint) {
     // Clip the front-facing screen run to the viewport before stroking — bounds a dashed
     // line's dash flattening (and stroke fill) to on-screen length, the tilt FPS fix.
     if (run.length >= 2) {
-      for (const sub of clipScreenPolyline(run, 48)) {
-        if (sub.length < 2) continue;
-        const cmds = [];
+      for (const clipped of clipScreenPolyline(run, 48)) {
+        if (clipped.length < 2) continue;
+        const sub = simplifyScreen(clipped);
         for (let i = 0; i < sub.length; i++)
           cmds.push(i === 0 ? CK.MOVE_VERB : CK.LINE_VERB, sub[i][0], sub[i][1]);
-        const path = CK.Path.MakeFromCmds(cmds);
-        if (path) { canvas.drawPath(path, paint); path.delete(); }
       }
     }
     run = [];
@@ -179,6 +261,8 @@ function drawBoundaryRecordingSk(canvas) {
 // don't collapse into a band. The host builds them from the reference like the pass itself
 // (#450): a curve keeps its shape at corners, and the spacing is width − overlap with the tool
 // offset on alternate sides. An AB line's come as two points each and are drawn across the field.
+// A guideline that doesn't enter the field is not drawn (fork): round a boundary curve the passes
+// on the fence's outer side are rings outside the field, eight of the twenty on Tapada da Casa's.
 function drawExtraGuidelinesSk(canvas) {
   const d = config && config.display;
   if (!d || !d.extraGuidelines) return;
@@ -186,11 +270,61 @@ function drawExtraGuidelinesSk(canvas) {
   if (!line || line.length < 2) return;
   const toolW = toolWidthM();
   if (toolW < 0.1 || toolW * pxPerM < 3) return; // zoom gate: skip when passes < ~3 px apart
+  // All the lines in one path, drawn once with the shadow and once with the green: Skia strokes a
+  // path that bends through a mask the size of the path on the screen, and a boundary curve's
+  // guidelines each go round the field, a screen-sized mask each, forty a frame with ten each side.
+  const cmds = [], outer = outerBoundary();
   for (const gl of scene.guideLines || []) {
-    const pts = extendAbLine(gl);
-    strokePtsSk(canvas, pts, false, SKP.extraGuideShadow);
-    strokePtsSk(canvas, pts, false, SKP.extraGuide);
+    if (!gl || gl.length < 2 || (outer && !entersField(gl, outer))) continue;
+    lineCmds(drawnPts(extendAbLine(gl)), false, cmds);
   }
+  strokeCmdsSk(canvas, cmds, [SKP.extraGuideShadow, SKP.extraGuide]);
+}
+// The field's outer boundary ring from the Scene, or null with none (the inner rings follow it).
+function outerBoundary() {
+  const b = scene && scene.boundaries;
+  if (!b || !b.length || b[0].length < 3) return null;
+  const k = scene.boundaryKind ? scene.boundaryKind[0] : (scene.boundaryInner && scene.boundaryInner[0] ? 1 : 0);
+  return k === 0 ? b[0] : null;
+}
+// Whether a guideline enters the field. An AB line's (two points, drawn across the field): the
+// boundary has corners on both sides of it. A curve's: one of its points is inside the boundary,
+// up to 256 of them looked at (one every few metres round a field, enough for a pass that would
+// be driven). Kept per line (the Scene's arrays are replaced, not changed, with the boundary).
+const _entersField = new WeakMap();
+function entersField(gl, outer) {
+  let r = _entersField.get(gl);
+  if (r !== undefined) return r;
+  if (gl.length === 2) {
+    const a = gl[0], b = gl[1], de = b.e - a.e, dn = b.n - a.n;
+    let left = false, right = false;
+    for (const p of outer) {
+      const s = de * (p.n - a.n) - dn * (p.e - a.e);
+      if (s > 0) left = true; else if (s < 0) right = true;
+      if (left && right) break;
+    }
+    r = left && right;
+  } else {
+    let e0 = Infinity, e1 = -Infinity, n0 = Infinity, n1 = -Infinity;
+    for (const p of outer) { e0 = Math.min(e0, p.e); e1 = Math.max(e1, p.e); n0 = Math.min(n0, p.n); n1 = Math.max(n1, p.n); }
+    const step = Math.max(1, Math.ceil(gl.length / 256));
+    r = false;
+    for (let i = 0; i < gl.length && !r; i += step) {
+      const p = gl[i];
+      r = p.e >= e0 && p.e <= e1 && p.n >= n0 && p.n <= n1 && insideRing(p.e, p.n, outer);
+    }
+  }
+  _entersField.set(gl, r);
+  return r;
+}
+// Even-odd point-in-polygon on a ring of {e, n} points.
+function insideRing(e, n, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i], b = ring[j];
+    if ((a.n > n) !== (b.n > n) && e < (b.e - a.e) * (n - a.n) / (b.n - a.n) + a.e) inside = !inside;
+  }
+  return inside;
 }
 // Live boundary draw-on-map preview — the polygon vertices tapped on the
 // satellite imagery so far. Closed white outline + outlined dots; client-side only.
@@ -224,12 +358,39 @@ function drawAbDrawPreviewSk(canvas) {
 // AgOpenGPS's shadow on the current line (CABLine.DrawABLines): the tool's width along the pass
 // shown, so you see where the tool will land. The host sends the pass's centre (the tool offset
 // already in it); on a curve it follows the pass, corners rounded as the tractor drives them. One
-// path of quads along it, skipping any behind the camera, so a tilted view draws no ghost.
+// path of quads along it, skipping any behind the camera, so a tilted view draws no ghost. Each
+// edge point is projected once, and quads off the screen are left out.
 function drawToolBandSk(canvas) {
   const c = scene && scene.toolPass;
   const w = toolWidthM();
   if (!c || c.length < 2 || w < 0.1 || !(tick && tick.guidanceActive)) return;
-  let pts = extendAbLine(c);
+  const { L, R } = toolBandEdges(c, w), n = L.length;
+  const ls = new Array(n), rs = new Array(n);
+  for (let i = 0; i < n; i++)                    // left empty: behind the camera
+    if (pw(L[i].e, L[i].n) >= 1.0 && pw(R[i].e, R[i].n) >= 1.0) { ls[i] = w2s(L[i].e, L[i].n); rs[i] = w2s(R[i].e, R[i].n); }
+  const m = 48, x0 = -m, y0 = -m, x1 = vw + m, y1 = vh + m;
+  const cmds = [];
+  for (let i = 0; i + 1 < n; i++) {
+    if (!ls[i] || !ls[i + 1]) continue;
+    const q = [ls[i], ls[i + 1], rs[i + 1], rs[i]];
+    if (q.every(p => p[0] < x0) || q.every(p => p[0] > x1) || q.every(p => p[1] < y0) || q.every(p => p[1] > y1)) continue; // off the screen
+    q.forEach((p, k) => cmds.push(k ? CK.LINE_VERB : CK.MOVE_VERB, p[0], p[1]));
+    cmds.push(CK.CLOSE_VERB);
+  }
+  if (cmds.length) {
+    const path = CK.Path.MakeFromCmds(cmds);
+    if (path) { canvas.drawPath(path, SKP.toolBand); path.delete(); }
+  }
+  strokeFixedPtsSk(canvas, L, false, SKP.toolBandEdge);
+  strokeFixedPtsSk(canvas, R, false, SKP.toolBandEdge);
+}
+// The band's two edges, made once per pass the host sends (and tool width), not on every frame;
+// a curve's from its drawn copy (drawnPts), so a long pass doesn't put thousands of quads on
+// every frame.
+let _bandSrc = null, _bandW = 0, _bandEdges = null;
+function toolBandEdges(c, w) {
+  if (c === _bandSrc && w === _bandW) return _bandEdges;
+  let pts = drawnPts(extendAbLine(c));
   if (pts.length === 2) {                  // a straight line: pieces, so the far ones can be skipped
     const [a, b] = pts, len = Math.hypot(b.e - a.e, b.n - a.n), k = Math.max(1, Math.ceil(len / 20));
     pts = Array.from({ length: k + 1 }, (_, i) => ({ e: a.e + (b.e - a.e) * i / k, n: a.n + (b.n - a.n) * i / k }));
@@ -242,19 +403,8 @@ function drawToolBandSk(canvas) {
     L[i] = { e: pts[i].e - re * half, n: pts[i].n - rn * half };
     R[i] = { e: pts[i].e + re * half, n: pts[i].n + rn * half };
   }
-  const cmds = [];
-  for (let i = 0; i + 1 < n; i++) {
-    const q = [L[i], L[i + 1], R[i + 1], R[i]];
-    if (q.some(p => pw(p.e, p.n) < 1.0)) continue; // behind the camera
-    q.forEach((p, k) => { const xy = w2s(p.e, p.n); cmds.push(k ? CK.LINE_VERB : CK.MOVE_VERB, xy[0], xy[1]); });
-    cmds.push(CK.CLOSE_VERB);
-  }
-  if (cmds.length) {
-    const path = CK.Path.MakeFromCmds(cmds);
-    if (path) { canvas.drawPath(path, SKP.toolBand); path.delete(); }
-  }
-  strokePtsSk(canvas, L, false, SKP.toolBandEdge);
-  strokePtsSk(canvas, R, false, SKP.toolBandEdge);
+  _bandSrc = c; _bandW = w;
+  return _bandEdges = { L, R };
 }
 // The active line's A and B, as AgOpenGPS marks them: a red A and a cyan B at its ends (labels
 // in renderAbDotLabels), so you see which way A→B runs. Not while a line is being made.
@@ -285,7 +435,7 @@ function drawTramLinesSk(canvas) {
   const tramOn = tick && tick.tools && tick.tools.tramMode > 0;
   if (!fbTramOpen && !tramOn) return;
   SKP.tram.setStrokeWidth(Math.max(2, 0.3 * pxPerM));
-  for (const line of scene.tramLines) if (line.length >= 2) strokePtsSk(canvas, line, false, SKP.tram);
+  for (const line of scene.tramLines) if (line.length >= 2) strokeFixedPtsSk(canvas, line, false, SKP.tram);
 }
 // Field Builder Headland editor — draw each segment's offset line + overshoot extensions
 // (yellow = contributes to the closed headland, red = doesn't yet) ONLY while the Headland
