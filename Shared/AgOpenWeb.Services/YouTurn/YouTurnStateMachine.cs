@@ -64,6 +64,8 @@ public sealed class YouTurnStateMachine
     // _missedSounded: a missed turn sounds once (#570). Not re-armed by a new plan, which a
     // missed turn is followed by at once: only when a turn starts or U-turn is switched off.
     private bool _creationFailSounded, _approachAlarmed, _missedSounded;
+    // The way along the pass the planned turn was built for (TURNED ROUND in Tick).
+    private bool? _plannedSameWay;
     private readonly YouTurnPathingService _pathing;
     private readonly PolygonIndexCache _headlandIndex = new(); // the zone test, every GPS cycle
     private readonly ILogger<YouTurnStateMachine> _logger;
@@ -251,6 +253,25 @@ public sealed class YouTurnStateMachine
         // Default: no armable trigger point — widget shows nothing meaningful.
         // Recomputed below when a precomputed turn path exists and execution hasn't started.
         turn.DistanceToTrigger = 0;
+
+        // ── TURNED ROUND ────────────────────────────────────────────────
+        // A turn planned for the end the tractor was heading to, and the tractor now goes the
+        // other way along the pass (turned round by hand, or the simulator's turn-around): that
+        // end is behind it and the turn was built for the old direction, so it is dropped and the
+        // turn at the end ahead is planned. Kept, it read as a turn planned here: at the other end
+        // the headland stop and the fence guard left AutoSteer on, and no missed turn was said, as
+        // the tractor drove into the headland (Tapada da Casa, simulator). AgOpenGPS drops a
+        // created turn once the pivot leaves the turn area without it (ResetCreatedYouTurn in
+        // Position.designer.cs). Fork only.
+        if (turn.TurnPath != null && !turn.IsExecuting && !turn.IsTriggered && isAlignedWithABLine
+            && _plannedSameWay is { } plannedSameWay && plannedSameWay != headingSameWay)
+        {
+            _logger.LogDebug("[YouTurn] Turned round with a turn planned for the end behind - dropping it");
+            DiscardPlannedTurn(turn);
+            _plannedSameWay = null;
+            effects.SyncTurnPathToMap = true;
+            effects.SyncNextTrackToMap = true;
+        }
 
         // ── DIRECTION-OVERRIDE RE-ARM ───────────────────────────────────
         // If the operator pressed the swap-direction button while a turn
@@ -1566,6 +1587,7 @@ public sealed class YouTurnStateMachine
         if (result.Path == null) return result;
         _creationFailSounded = false;
         _approachAlarmed = false;
+        _plannedSameWay = guidance.IsHeadingSameWay;
 
         turn.TurnPath = result.Path;
         turn.ArcStart = result.ArcStart;
