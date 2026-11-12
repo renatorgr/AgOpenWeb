@@ -144,6 +144,7 @@ public static class VehicleProfileJsonService
             ReverseDetection = store.Connections.ReverseDetection,
             RtkLostAlarm = store.Connections.RtkLostAlarm,
             RtkLostAction = store.Connections.RtkLostAction,
+            RtkHold = store.Connections.RtkHold,
         },
         Ahrs = new AhrsDto
         {
@@ -210,6 +211,7 @@ public static class VehicleProfileJsonService
         store.Connections.ReverseDetection = gps?.ReverseDetection ?? dc.ReverseDetection;
         store.Connections.RtkLostAlarm = gps?.RtkLostAlarm ?? dc.RtkLostAlarm;
         store.Connections.RtkLostAction = gps?.RtkLostAction ?? dc.RtkLostAction;
+        store.Connections.RtkHold = gps?.RtkHold ?? dc.RtkHold;
 
         // AHRS / Roll calibration (persisted with vehicle profile)
         var ahrs = dto.Ahrs;
@@ -290,6 +292,7 @@ public static class VehicleProfileJsonService
         public bool? ReverseDetection { get; set; }
         public bool? RtkLostAlarm { get; set; }
         public int? RtkLostAction { get; set; }
+        public bool? RtkHold { get; set; } // fork only
     }
 
     internal class AhrsDto

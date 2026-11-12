@@ -42,6 +42,7 @@ public class VehicleProfileGpsTests
         c.ReverseDetection = false;
         c.RtkLostAlarm = false;
         c.RtkLostAction = 1;
+        c.RtkHold = false;
 
         VehicleProfileJsonService.Save(_dir, "Rig", src);
         var dst = new ConfigurationStore();
@@ -61,6 +62,7 @@ public class VehicleProfileGpsTests
             Assert.That(d.ReverseDetection, Is.False);
             Assert.That(d.RtkLostAlarm, Is.False);
             Assert.That(d.RtkLostAction, Is.EqualTo(1));
+            Assert.That(d.RtkHold, Is.False);
         });
     }
 

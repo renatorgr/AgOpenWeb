@@ -43,7 +43,8 @@ Live readouts across the top of the screen. Most items are also buttons that ope
 5. **Pause info line** — the line beside it cycles through field name, work stats, and AB-line
    info; this freezes it on the current item.
 6. **GPS fix** — colored dot + label showing fix quality (RTK fixed, float, single…). Tap for full
-   GPS detail.
+   GPS detail. While the line is held after RTK was lost, the label also says by how much
+   ("GPS Fix, held 0.9 m"; fork only, see GPS_RECEIVERS.md).
 7. **Fullscreen** — hides the browser bars for a clean, full-screen display. Tap again to restore.
 
 ---

@@ -143,6 +143,7 @@ public static partial class RemoteServerWiring
             case "gps.reverseDetection": con.ReverseDetection = B(); return;
             case "gps.rtkLostAlarm": con.RtkLostAlarm = B(); return;
             case "gps.rtkLostAction": if (I(out var ra)) con.RtkLostAction = ra; return;
+            case "gps.rtkHold": con.RtkHold = B(); return; // fork only
             // --- Roll / AHRS (ConfigStore.Ahrs) ---
             case "roll.rollZero": if (D(out var r1)) ahrs.RollZero = r1; return;
             case "roll.rollFilter": if (D(out var r2)) ahrs.RollFilter = r2; return;

@@ -407,6 +407,16 @@ the receiver's correction age, warnings and a message table; bug report dumps ca
 `ntrip_rtcm.txt`. Design, bench results and open checks: `Plans/RTCM_FORWARDING_PLAN.md`;
 bench scripts: `Tools/rtcm-bench`.
 
+### Holding the line when RTK is lost
+`RtkLossHold` (`Services/Gps`; fork only), run by `GpsPipelineService` on the plane position before the
+heading fusion: when the fix quality leaves 4 (RTK fixed) the step of the receiver's position against
+its own travel (the last fix-to-fix step, counted in the receiver's epochs) is taken out as an offset,
+as is each change of quality while held and the step when RTK fixed is back; held 3 min at most, then
+(and after RTK is back) eased to 0 at 5 cm/s. Setting `Connections.RtkHold` (`gps.rtkHold`, on by default,
+in the vehicle profile and the Config frame after `rtkLostAction`); never with the simulator; reset on a
+new plane. Told by `GpsCycleResult.RtkHoldNotice` (a toast), shown in the fix label from
+`GpsCycleResult.RtkHoldM` (`VehicleState.FixQualityText`: "GPS Fix, held 0.9 m"). Docs/GPS_RECEIVERS.md.
+
 ## ISOBUS virtual terminal (VT card)
 The VT cards show ISOBUS implements' own screens. `Shared/AgOpenWeb.VirtualTerminal`
 (`IVirtualTerminalService`) runs SharpIsoTerm's terminal stack on the implement bus through

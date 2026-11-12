@@ -361,6 +361,11 @@ public partial class MainViewModel
         if (result.YouTurnNotice != null)
             ReportFailure(result.YouTurnNotice);
 
+        // RTK lost and the line held, the hold's limit, RTK back (a toast; fork only).
+        if (result.RtkHoldNotice != null)
+            ReportFailure(result.RtkHoldNotice);
+        State.Vehicle.RtkHoldM = result.RtkHoldM;
+
         // Map vehicle/tool/hitch positions are pushed by OnRenderPullTick at
         // 30 Hz (vehicle dead-reckoned to "now" from the estimator, tool/hitch
         // from the live ToolPositionService snapshot updated at 100 Hz by the

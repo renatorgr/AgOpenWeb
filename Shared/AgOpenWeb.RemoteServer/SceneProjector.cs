@@ -831,7 +831,7 @@ public sealed class SceneProjector : System.IDisposable
                 v.ImuPivot, v.ImuHeight, v.ImuOffset),
             new GpsConfigDto(c.IsDualGps, c.DualHeadingOffset, c.DualReverseDistance, c.AutoDualFix,
                 c.DualSwitchSpeed, c.MinGpsStep, c.FixToFixDistance, c.HeadingFusionWeight,
-                c.ReverseDetection, c.RtkLostAlarm, c.RtkLostAction),
+                c.ReverseDetection, c.RtkLostAlarm, c.RtkLostAction, c.RtkHold),
             new RollConfigDto(a.RollZero, a.RollFilter, a.IsRollInvert),
             new ToolConfigDto(toolType, t.HitchType, t.HitchLength, t.TrailingHitchLength,
                 t.TankTrailingHitchLength, t.Length, t.LookAheadOnSetting, t.LookAheadOffSetting,
@@ -927,7 +927,7 @@ public sealed class SceneProjector : System.IDisposable
         h = h * 31 + (int)v.Type * 31 + v.HitchType;
         h = h * 31 + (c.IsDualGps ? 1 : 0) * 7 + (c.AutoDualFix ? 1 : 0) * 11
                    + (c.ReverseDetection ? 1 : 0) * 13 + (c.RtkLostAlarm ? 1 : 0) * 17
-                   + c.RtkLostAction * 19 + (a.IsRollInvert ? 1 : 0) * 23;
+                   + c.RtkLostAction * 19 + (a.IsRollInvert ? 1 : 0) * 23 + (c.RtkHold ? 1 : 0) * 29;
         foreach (var d in new[] { v.HitchLength, v.Wheelbase, v.TrackWidth, v.AntennaPivot,
                                   v.AntennaHeight, v.AntennaOffset, c.DualHeadingOffset,
                                   c.DualReverseDistance, c.DualSwitchSpeed, c.MinGpsStep,

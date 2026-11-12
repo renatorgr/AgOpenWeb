@@ -234,6 +234,18 @@ public class ConnectionConfig : ObservableObject
         set => SetProperty(ref _rtkLostAction, value);
     }
 
+    private bool _rtkHold = true;
+    /// <summary>
+    /// Hold the line when RTK is lost (fork only): the step the receiver's position makes when it
+    /// leaves RTK fixed is taken out for up to 3 minutes, and goes out gently when RTK fixed is
+    /// back (<c>RtkLossHold</c>). Off: the new position is followed at once, as AgOpenGPS.
+    /// </summary>
+    public bool RtkHold
+    {
+        get => _rtkHold;
+        set => SetProperty(ref _rtkHold, value);
+    }
+
     private double _maxDifferentialAge = 5.0;
     public double MaxDifferentialAge
     {

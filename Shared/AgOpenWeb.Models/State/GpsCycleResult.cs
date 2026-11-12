@@ -137,6 +137,16 @@ public record GpsCycleResult
     /// was missed (once, with its sound): why, shown to the operator.
     /// </summary>
     public string? YouTurnNotice { get; init; }
+
+    /// <summary>
+    /// Non-null on the cycle where RTK fixed was lost and the position's step taken out, the hold
+    /// reached its limit, or RTK fixed came back with an offset to let go (fork only): shown to the
+    /// operator.
+    /// </summary>
+    public string? RtkHoldNotice { get; init; }
+
+    /// <summary>How far the position is held off the receiver's, m (0 when not held; fork only).</summary>
+    public double RtkHoldM { get; init; }
 }
 
 /// <summary>
