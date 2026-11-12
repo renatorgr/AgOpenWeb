@@ -188,6 +188,9 @@ public sealed class JobRun : IAsyncDisposable
     /// <summary>The implement's centre against the pass it should be on (curve, loop and pivot jobs):
     /// the worst distance, where, and the mean.</summary>
     public double PassErrorWorst, PassErrorSum; public int PassErrorSamples; public (double E, double N, int Pass, double V) PassErrorWhere;
+    /// <summary>AgOpenWeb's own cross-track error where <see cref="PassErrorWorst"/> was measured: small, the tractor was on
+    /// the line AgOpenWeb steered, and that line is what lies off the reference.</summary>
+    public double PassErrorWorstXte = double.NaN;
     public readonly List<(double Err, double E, double N, int Pass, double V)> PassErrorBig = new();
     public FieldJobRig Rig { get; private set; } = null!;
     public EmulatedSprayerModule Module { get; private set; } = null!;
@@ -790,7 +793,7 @@ public sealed class JobRun : IAsyncDisposable
                         }
                         PassErrorSum += Math.Abs(err); PassErrorSamples++;
                         if (Math.Abs(err) > 1.5 && PassErrorBig.Count < 5000) PassErrorBig.Add((err, tcc.E, tcc.N, Pass, Vv((tcc.E, tcc.N))));
-                        if (Math.Abs(err) > Math.Abs(PassErrorWorst)) { PassErrorWorst = err; PassErrorWhere = (tcc.E, tcc.N, Pass, Vv((tcc.E, tcc.N))); }
+                        if (Math.Abs(err) > Math.Abs(PassErrorWorst)) { PassErrorWorst = err; PassErrorWhere = (tcc.E, tcc.N, Pass, Vv((tcc.E, tcc.N))); PassErrorWorstXte = c.Guidance?.CrossTrackError ?? double.NaN; }
                     }
                 }
                 // Screen vs valves, and the truth sweep.
@@ -1154,6 +1157,8 @@ public sealed class JobRun : IAsyncDisposable
         {
             var ordered = _passEdges.OrderBy(p => p.Value.Values.Average(x => (x.L + x.R) / 2)).ToList();
             for (int k = 0; k + 1 < ordered.Count; k++)
+            {
+                if (!Neighbours(ordered[k].Key, ordered[k + 1].Key)) continue;
                 foreach (var (bin, x) in ordered[k].Value)
                 {
                     if (!ordered[k + 1].Value.TryGetValue(bin, out var x2)) continue;
@@ -1161,6 +1166,7 @@ public sealed class JobRun : IAsyncDisposable
                     if (!seams.TryGetValue(bin, out var l)) seams[bin] = l = new();
                     l.Add(((x.R + x2.L) / 2, x2.L - x.R));
                 }
+            }
         }
         bool OnSeam((double E, double N) c)
         {
@@ -1242,6 +1248,7 @@ public sealed class JobRun : IAsyncDisposable
         var passes = _passEdges.OrderBy(p => p.Value.Values.Average(x => (x.L + x.R) / 2)).ToList();
         for (int k = 0; k + 1 < passes.Count; k++)
         {
+            if (!Neighbours(passes[k].Key, passes[k + 1].Key)) continue;
             foreach (var (bin, x) in passes[k].Value)
             {
                 if (!passes[k + 1].Value.TryGetValue(bin, out var x2)) continue;
@@ -1255,6 +1262,14 @@ public sealed class JobRun : IAsyncDisposable
         }
         return a;
     }
+
+    /// <summary>Are two passes, next to each other in the order across the field, neighbours? A pass
+    /// with no edges recorded (its only stretch in the cultivated area under a U-turn's start, J6's
+    /// pass 17) leaves its two neighbours side by side in the order, a whole
+    /// pass apart: the ground between them is that pass, not a strip between passes. Pass numbers
+    /// count across the field, so the same holds for a row skipped and not yet driven; ground no
+    /// pass covered is FIELD-LEFT-UNDONE's.</summary>
+    private static bool Neighbours(int a, int b) => Math.Abs(a - b) == 1;
 
     /// <summary>Does the pass this point lies on have the implement's edges recorded somewhere
     /// along it, i.e. was it driven (AgOpenWeb's pass numbering, as <see cref="TruthPass"/>)?</summary>

@@ -19,9 +19,9 @@ namespace AgOpenWeb.Services.Tests.YouTurn;
 /// The snake order (skip worked passes) goes on to its next pass still to do. When that pass has
 /// no room at this end, the turn goes onto the nearest pass still to do that has, instead of
 /// saying the end of the field with passes left beside the tractor; and the order is planned
-/// again when the headland changes, as it was planned for the passes of the old one. On Tapada
-/// da Casa the order went from 31R to 7L across the field (no room at that end: "End of field
-/// reached") with 28R open, and after the headland was built again the turn went right onto a
+/// again when the headland changes, as it was planned for the passes of the old one. On a
+/// tester's field (simulator) the order went from 31R to 7L across the field (no room at that
+/// end: "End of field reached") with 28R open, and after the headland was built again the turn went right onto a
 /// pass by the hard fence the old order had next, where it would not build.
 /// </summary>
 [TestFixture]
