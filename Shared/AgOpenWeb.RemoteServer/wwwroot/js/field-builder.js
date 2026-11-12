@@ -355,6 +355,32 @@ function sendOffsetSet() {
 }
 for (const id of ['of-ns-in', 'of-ew-in'])
   document.getElementById(id).addEventListener('change', e => { e.stopPropagation(); sendOffsetSet(); });
+// Move the field instead (fork only): for a field drawn on a photo that is off the ground the GPS
+// sees. The operator lines the tractor up with the drawing with the offset, then keeps it in the
+// field: the drawing moves by the opposite of the offset and the offset goes back to 0, so the
+// map looks the same and the field is saved where it really is.
+let ofMoveTracks = true; // tracks drawn with the field move with it; ones driven with RTK may not
+document.getElementById('of-mv-tracks').addEventListener('pointerdown', e => {
+  e.stopPropagation(); ofMoveTracks = !ofMoveTracks; renderOffsetFix();
+});
+function moveInWords(de, dn) {
+  const p = [];
+  if (Math.abs(de) >= 0.005) p.push(de > 0 ? tr('{d} east', { d: fmtUnit(Math.abs(de), 'm', 2) }) : tr('{d} west', { d: fmtUnit(Math.abs(de), 'm', 2) }));
+  if (Math.abs(dn) >= 0.005) p.push(dn > 0 ? tr('{d} north', { d: fmtUnit(Math.abs(dn), 'm', 2) }) : tr('{d} south', { d: fmtUnit(Math.abs(dn), 'm', 2) }));
+  return p.join(', ');
+}
+document.getElementById('of-mv').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  if (!requireField()) return;
+  const de = -((statusBar && statusBar.driftEasting) || 0), dn = -((statusBar && statusBar.driftNorthing) || 0);
+  if (Math.hypot(de, dn) < 0.005) { showToast(tr('Line the tractor up with the drawing with the offset first')); return; }
+  const move = moveInWords(de, dn);
+  showConfirm(tr('Move the field'),
+    ofMoveTracks
+      ? tr('Move the boundary, obstacles, headland, tracks and photo of this field {move} and put the offset back to 0? The tractor stays where it is on the map. Flags, recorded paths and the worked area stay where the GPS put them.', { move })
+      : tr('Move the boundary, obstacles, headland and photo of this field {move} and put the offset back to 0? The tracks stay where they are, and so do flags, recorded paths and the worked area.', { move }),
+    () => transport.send('field.move|' + de.toFixed(3) + ',' + dn.toFixed(3) + ',' + (ofMoveTracks ? 1 : 0)));
+});
 for (const b of document.querySelectorAll('.ln-back'))
   b.addEventListener('pointerdown', e => { e.stopPropagation(); lnOpen('vehtoolhub', 'ln-vehicle', refreshHub); });
 // Standard header close (X) → close the chain to the map. Tagged .ln-closex so the

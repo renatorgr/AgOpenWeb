@@ -240,6 +240,17 @@ AgOpenWeb may use different/improved formats from AgOpenGPS when it benefits cod
 - **Formats**: a field is `field.geojson` (origin, boundaries, headland, tracks, flags, headland lines, background image placement) beside `background.png`, `contours.geojson`, `recorded-paths.geojson` and `elevation.csv`; a job's coverage is world-anchored tiles under `jobs/<task>/coverage/`. Profiles are JSON; the spec for other programs is `Docs/FIELD_FILE_FORMATS.md` (keep it in step with the code).
 - **Migration**: AgOpenGPS files found in a field folder are imported once (on open) and **deleted**; AgOpenWeb never writes AgOpenGPS formats. AgOpenGPS 6.8.2+ profiles copied into the data folder (`VehicleProfiles/`, `ToolProfiles/`, `Environment/environment.xml` or, on a fresh 6.8.2+ install, `DefaultEnvironment.xml`, as AgOpenGPS reads them) and AgIO's NTRIP caster (`AgIO/*.xml`) are converted at start the same way (`AgOpenGpsProfileImport`, one mapping in `AgOpenGpsSettings`; `NtripProfileService.ImportAgIoCastersAsync`), a profile of the same name left alone. No compatibility code for files from older AgOpenWeb builds (no installed base yet). See `Plans/Completed/FILE_FORMAT_MODERNIZATION_PLAN.md`.
 
+### Moving a field's drawing
+Offset Fix › *Move the field instead* (`field.move|dE,dN,tracks`, `MainViewModel.RemoteMoveFieldAsync`,
+`GeoJsonFieldService.MoveField`; fork only) keeps the offset in the field, for a field drawn on a photo
+that is off the ground: everything drawn (boundary, obstacles, a tree's circle centre, headland, headland
+lines and segments, the background photo with its Mercator box, the tracks unless left out) moves by the
+opposite of the offset on the field's plane, the origin stays, and the offset goes back to 0, so the map
+looks the same. What the GPS recorded (flags, recorded paths, contours, coverage) stays. The field is
+closed (saved), moved on disk and opened again with its job, the simulator put back where it was; refused
+with AutoSteer on, a boundary being recorded, or more than 50 m. The Offset Fix itself is not saved: a
+restart puts it back to 0.
+
 ## Technology Stack
 
 - **.NET 10.0** - Target framework

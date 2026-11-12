@@ -260,6 +260,10 @@ function renderOffsetFix() {
   const ns = document.getElementById('of-ns-in'), ew = document.getElementById('of-ew-in');
   if (document.activeElement !== ns) writeUnitInput(ns, statusBar.driftNorthing || 0);
   if (document.activeElement !== ew) writeUnitInput(ew, statusBar.driftEasting || 0);
+  const tg = document.getElementById('of-mv-tracks');
+  tg.classList.toggle('on', ofMoveTracks); tg.textContent = ofMoveTracks ? tr('On') : tr('Off');
+  document.getElementById('of-mv').disabled = !(scene && scene.hasField)
+    || Math.hypot(statusBar.driftEasting || 0, statusBar.driftNorthing || 0) < 0.005;
 }
 
 // Import Tracks: list the other fields that have saved tracks; tap one to copy its
