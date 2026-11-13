@@ -49,6 +49,7 @@ Most of these have been offered to the official project too. When one is merged 
 - **Field data card beside the right buttons.** The card that opens from the field line in the top bar (Total, Worked, Remaining... Reset trip) opens next to the buttons on the right, just under the U-turn arrow, not over the map ahead of the tractor. The U-turn arrow and its distance stay where they are and in sight.
 - **Speeds in km/h.** Speeds, and the messages that mention one, read "km/h" as they did before the official project changed them to "kph" (#275). Their translations still apply.
 - **Smaller bug reports.** The Bug Report panel leaves the field's background photo out of the report unless "Include the field's background image" is ticked: it can be 10 MB or more and is rarely what a bug is about. A note in the report says it was left out.
+- **Network links in the log.** The log names the computer's network links and their addresses when AgOpenWeb starts and each time they change ("[Network] links now: Ethernet 192.168.5.10/24 (were: ...)"), so a bug report says which link dropped when the modules' data stopped and came back.
 
 ## Download
 
