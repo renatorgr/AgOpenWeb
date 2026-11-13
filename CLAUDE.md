@@ -648,6 +648,17 @@ the line taking over at its end; dropped when the line or the pass changes, Auto
 asked for, or the tractor reverses. No S fits: AutoSteer off with the alarm (`SideStepNoRoomReason`). The fence
 guard keeps running on the S. Tests: `SideStepTests`, `SideStepPipelineTests`. Fork only.
 
+## Passes outside a hard fence
+A pass lying wholly outside a hard outer boundary is never worked, so it is never shown or moved onto
+(`HardFencePasses`; fork only). With AutoSteer off the pass picked is the nearest one not wholly outside
+(`UpdateDisplayTrack`), and a lateral move onto one is refused with a toast (`GpsCycleResult.PassNotice`). An AB
+line's pass is outside when every corner of the fence is on one side of it; a curve's is looked at as its
+reference moved sideways every 2 m without the offset's clean-up (a corner it crosses into the field counts as
+inside), an open curve's with its 200 m run-on past each end. Worked out once per pass and kept until the track,
+the fence, the width or the nudge change. On a tester's field the simulator drove on out of the field after
+AutoSteer went off, and the lap outside the fence of the boundary curve was shown. A soft boundary changes
+nothing. Tests: `HardFencePassesTests`.
+
 ## Steer wizard: tuning the wheels
 The Steer Wizard's *Tune steering* step (`TuneSteeringStepViewModel`, after the Ackermann circle and before the
 gains page; arithmetic in `SteerTuneMath`; fork only) finds the three settings of the module's own loop,

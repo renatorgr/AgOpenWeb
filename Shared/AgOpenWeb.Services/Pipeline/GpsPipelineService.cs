@@ -655,7 +655,15 @@ public sealed class GpsPipelineService : IGpsPipelineService
             int delta = intents.GuidanceSnap.Value
                 ? (_guidanceWorking.IsHeadingSameWay ? -1 : 1)
                 : (_guidanceWorking.IsHeadingSameWay ? 1 : -1);
-            _guidanceWorking.HowManyPathsAway += delta;
+            // Not onto a pass wholly outside a hard outer boundary (HardFencePasses; fork only).
+            Models.Track.Track? snapTrack;
+            Boundary? snapBoundary;
+            lock (_stateLock) { snapTrack = _activeTrack; snapBoundary = _boundary; }
+            int from = _guidanceWorking.HowManyPathsAway, to = from + delta;
+            if (snapTrack != null && PassOutsideHardFence(snapTrack, to, _guidanceWorking.NudgeOffset, snapBoundary))
+                _passNotice = $"Pass {PassName(to)} is outside the hard boundary: the line stays on pass {PassName(from)}";
+            else
+                _guidanceWorking.HowManyPathsAway = to;
             // The nudge stays: a lateral move is a pass, not a reset (AgOpenGPS BuildManualYouLateral).
             _trackGuidanceState = null;
 
@@ -1936,6 +1944,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             LineEntryPath = _lineEntryPath ?? _lineEntryOffer ?? _sideStepPath,
             LineEntryOfferPass = _lineEntryPath == null && _lineEntryOffer != null ? PassName(_lineEntryOfferPass) : null,
             LineEntryNotice = TakeLineEntryNotice(),
+            PassNotice = TakePassNotice(),
         };
 
         CycleCompleted?.Invoke(result);
@@ -2632,6 +2641,50 @@ public sealed class GpsPipelineService : IGpsPipelineService
         return _guideLines = lines;
     }
 
+    // Passes of the active track wholly outside the hard outer boundary (HardFencePasses), worked out
+    // once each and kept until the track, its points, the fence, the width or the nudge change.
+    // Cycle-owned. Fork only.
+    private readonly Dictionary<int, bool> _outsidePasses = new();
+    private Models.Track.Track? _outsideTrack;
+    private object? _outsidePoints;
+    private int _outsideCount;
+    private BoundaryPolygon? _outsideFence;
+    private double _outsideWidth, _outsideNudge;
+    private string? _passNotice;
+
+    /// <summary>Whether pass <paramref name="pass"/> of <paramref name="track"/> lies wholly outside the
+    /// hard outer boundary of <paramref name="boundary"/> (none, or a soft one: never).</summary>
+    private bool PassOutsideHardFence(Models.Track.Track track, int pass, double nudge, Boundary? boundary)
+    {
+        if (boundary?.OuterBoundary is not { IsHard: true, IsValid: true } fence) return false;
+        double width = _configStore.ActualToolWidth - _configStore.Tool.Overlap;
+        if (width < 0.1) width = 1.0;
+        if (!ReferenceEquals(track, _outsideTrack) || !ReferenceEquals(track.Points, _outsidePoints)
+            || track.Points.Count != _outsideCount || !ReferenceEquals(fence, _outsideFence)
+            || width != _outsideWidth || nudge != _outsideNudge)
+        {
+            _outsidePasses.Clear();
+            _outsideTrack = track;
+            _outsidePoints = track.Points;
+            _outsideCount = track.Points.Count;
+            _outsideFence = fence;
+            _outsideWidth = width;
+            _outsideNudge = nudge;
+        }
+        if (_outsidePasses.TryGetValue(pass, out bool outside)) return outside;
+        outside = HardFencePasses.WhollyOutside(track, Models.Track.PassGeometry.Offset(track, pass, width, nudge), fence);
+        if (_outsidePasses.Count > 4 * HardFencePasses.MaxSearch) _outsidePasses.Clear();
+        _outsidePasses[pass] = outside;
+        return outside;
+    }
+
+    private string? TakePassNotice()
+    {
+        var notice = _passNotice;
+        _passNotice = null;
+        return notice;
+    }
+
     /// <summary>The last cycle's steer angle (°, + = right) when a line was steered or shown, else
     /// null: the curve the fence guard looks along (<see cref="HardFenceGuard"/>).</summary>
     private double? _lastLineSteerAngle;
@@ -2670,6 +2723,11 @@ public sealed class GpsPipelineService : IGpsPipelineService
         {
             _passPickTrack = track;
             _lastPassPick = now;
+            // Not a pass wholly outside a hard outer boundary: the nearest one that isn't (fork only).
+            if (boundary?.OuterBoundary is { IsHard: true, IsValid: true })
+                nearestPass = HardFencePasses.NearestInside(nearestPass, sampleDist,
+                    p => PassOutsideHardFence(track, p, nudgeOffset, boundary),
+                    p => Models.Track.PassGeometry.Offset(track, p, widthMinusOverlap, nudgeOffset, toolShift));
         }
         else nearestPass = passNumber;
         double distAway = Models.Track.PassGeometry.Offset(track, nearestPass, widthMinusOverlap, nudgeOffset, toolShift);

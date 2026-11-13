@@ -164,6 +164,12 @@ public record GpsCycleResult
     /// the start of the pass fits through the headland (fork only): shown to the operator.
     /// </summary>
     public string? LineEntryNotice { get; init; }
+
+    /// <summary>
+    /// Non-null on the cycle where a lateral move was refused because the pass lies wholly outside
+    /// the hard outer boundary (fork only): shown to the operator.
+    /// </summary>
+    public string? PassNotice { get; init; }
 }
 
 /// <summary>
