@@ -72,6 +72,22 @@ public class RefNudgeTests
     }
 
     [Test]
+    public void AMove_ForgetsThePassesMarkedWorked_TheJobsMapSaysWhichAre()
+    {
+        // The marks are pass numbers, and pass N is another strip of ground on the moved line
+        // (fork only: Tapada da Casa, the line moved half a pass and back).
+        var vm = NewVm();
+        vm.SavedTracks[0].MarkPathWorked(3);
+
+        vm.RefHalfNudgeRightCommand!.Execute(null);
+        Assert.That(vm.SavedTracks[0].IsPathWorked(3), Is.False, "moved");
+
+        vm.SavedTracks[0].MarkPathWorked(3);
+        vm.RefNudgeUndoCommand!.Execute(null);
+        Assert.That(vm.SavedTracks[0].IsPathWorked(3), Is.False, "put back");
+    }
+
+    [Test]
     public void Save_WritesTheMovedLine()
     {
         var vm = NewVm();

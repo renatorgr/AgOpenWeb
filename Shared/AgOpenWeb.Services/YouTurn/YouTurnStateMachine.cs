@@ -966,6 +966,30 @@ public sealed class YouTurnStateMachine
     }
 
     /// <summary>
+    /// The active track's line moved (same track, new points: Reference Line Nudge, an end trimmed):
+    /// pass N is another strip of ground, so the snake order and everything remembered about each
+    /// pass (worked on the map, open at this end, an end with no turn) go. A turn being driven is
+    /// left alone. Fork only.
+    /// </summary>
+    public void ForgetPassStatus(YouTurnWorkingState turn)
+    {
+        turn.SnakeSequence = null;
+        turn.SnakeIndex = -1;
+        _coveredPasses.Clear();
+        _openAtEnd.Clear();
+        _failedEnd = null;
+    }
+
+    /// <summary>
+    /// Is pass <paramref name="pass"/> worked: marked so, or at least half covered on the job's map
+    /// inside the cultivated area (<see cref="YouTurnPathingService.IsPassWorked"/>, the snake's
+    /// test). For AutoSteer choosing the pass to join (fork only).
+    /// </summary>
+    public bool IsPassWorked(Models.Track.Track track, int pass, double nudgeOffset, Boundary? boundary,
+        IReadOnlyList<Vec3>? headlandLine, Func<double, double, bool>? isPointCovered) =>
+        _pathing.IsPassWorked(track, pass, nudgeOffset, boundary, headlandLine, isPointCovered);
+
+    /// <summary>
     /// Drop a planned turn that isn't being driven yet: the path, the next track and the
     /// snake / alternate target pass (#1203). The next tick plans a fresh one. Without the
     /// target reset, a later Normal or manual turn would complete onto the stale pass.
