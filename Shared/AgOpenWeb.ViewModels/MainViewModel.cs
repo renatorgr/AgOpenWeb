@@ -694,19 +694,13 @@ public partial class MainViewModel : ObservableObject
         var p = _positionEstimator.GetPose(renderTs);
 
         var tool = ConfigStore.Tool;
-        // Rigid tools use Tool.HitchLength (axle -> working center); trailing/TBT use
-        // Vehicle.HitchLength (axle -> tractor hitch pin). Matches ToolPositionService.
-        double hitchDistance = (tool.IsToolFrontFixed || tool.IsToolRearFixed)
-            ? Math.Abs(tool.HitchLength)
-            : Math.Abs(ConfigStore.Vehicle.HitchLength);
-        if (tool.IsToolRearFixed || tool.IsToolTrailing || tool.IsToolTBT)
-            hitchDistance = -hitchDistance;
-
-        double hitchE = p.Position.Easting + Math.Sin(p.Heading) * hitchDistance;
-        double hitchN = p.Position.Northing + Math.Cos(p.Heading) * hitchDistance;
+        // The point the tool hangs on, as the tool position has it (RigGeometry).
+        var hitch = AgOpenWeb.Models.Tool.RigGeometry.AlongTractor(new Vec3(p.Position.Easting, p.Position.Northing, p.Heading), p.Heading,
+            AgOpenWeb.Models.Tool.RigGeometry.AttachX(ConfigStore.Vehicle, tool));
+        double hitchE = hitch.Easting, hitchN = hitch.Northing;
 
         double toolE, toolN, toolHeading;
-        if (tool.IsToolFrontFixed || tool.IsToolRearFixed)
+        if (AgOpenWeb.Models.Tool.RigGeometry.IsRigid(AgOpenWeb.Models.Tool.RigGeometry.Mount(tool)))
         {
             // Fixed tool follows the vehicle exactly — no Torriem state.
             toolHeading = p.Heading;
@@ -721,7 +715,7 @@ public partial class MainViewModel : ObservableObject
             // with the tool position's own geometry: the pivot distance's
             // sign as AgOpenGPS's, so "Behind" is drawn behind the wheels.
             toolHeading = _toolPositionService.ToolHeading;
-            (toolE, toolN) = AgOpenWeb.Services.Tool.ToolPositionService.TrailedToolCentre(
+            (toolE, toolN) = AgOpenWeb.Models.Tool.RigGeometry.TrailedToolCentre(
                 hitchE, hitchN, _toolPositionService.TankPosition.Heading, toolHeading, tool);
         }
 
@@ -1911,6 +1905,10 @@ public partial class MainViewModel : ObservableObject
             {
                 _coverageMapService.LoadFromFile(fieldPath, activeJob.TaskName);
                 _logger.LogDebug($"[Coverage] Loaded coverage from {fieldPath} job={activeJob.TaskName}");
+                // A newer AgOpenWeb's job: its coverage isn't read, and nothing is written to it
+                // (JobJsonService.IsNewerFormat), so the work done now is not kept.
+                if (Services.Fields.JobJsonService.IsNewerFormat(fieldPath, activeJob.TaskName))
+                    ReportFailure("This job was saved by a newer AgOpenWeb: its coverage is not shown and work done in it is not saved. Start a new job, or update AgOpenWeb.");
             }
             else
             {
@@ -1991,6 +1989,11 @@ public partial class MainViewModel : ObservableObject
             FieldFullyLoaded?.Invoke(field);
 
             StatusMessage = $"Opened field: {fieldName}";
+
+            // A newer AgOpenWeb's field: this build reads it but writes nothing to it, so it
+            // can't overwrite what it doesn't understand (GeoJsonFieldService.CurrentFormatVersion).
+            if (Services.GeoJson.GeoJsonFieldService.IsNewerFormat(fieldPath))
+                ReportFailure("This field was saved by a newer AgOpenWeb: changes to its boundaries, tracks, flags and headland are not saved. Update AgOpenWeb to edit it.");
         }
         catch (Exception ex)
         {

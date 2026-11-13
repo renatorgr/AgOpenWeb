@@ -111,16 +111,19 @@ public partial class YouTurnCreationService
         // Diagnostic: one line per turn build to see whether the clearance path is
         // armed at runtime and with what geometry (note actualWidth vs storedWidth).
         _logger.LogDebug(
-            "[YouTurn][HardBoundary] hardOuter={Hard} isHard={IsHard} validOuter={Valid} actualWidth={AW:F1} storedWidth={W:F1} rearFixed={RF} trailing={TR} length={L:F1} margin={M:F1}",
+            "[YouTurn][HardBoundary] hardOuter={Hard} isHard={IsHard} validOuter={Valid} actualWidth={AW:F1} storedWidth={W:F1} mount={Mount} length={L:F1} margin={M:F1}",
             hardOuter, boundary?.OuterBoundary?.IsHard, boundary?.OuterBoundary?.IsValid,
-            config.ActualToolWidth, config.Tool.Width, config.Tool.IsToolRearFixed,
-            config.Tool.IsToolTrailing, config.Tool.Length, clearanceMargin);
+            config.ActualToolWidth, config.Tool.Width, RigGeometry.Mount(config.Tool),
+            config.Tool.Length, clearanceMargin);
 
         const double SetbackStep = 0.5;
         const double MaxExtraSetback = 30.0;
         // A turn seated back to clear a hard boundary must still start this far ahead of the tractor.
         const double MinArcStartAhead = 2.0;
         double extraSetback = 0.0;
+        // Where the pass leaves the turn area on the first try: a try with the turn lines moved in
+        // seats the turn back from there (YouTurnCreationInput.TurnLineEndIndex).
+        int? turnLineEnd = null;
 
         while (true)
         {
@@ -134,8 +137,11 @@ public partial class YouTurnCreationService
                 _logger.LogWarning("[YouTurn] Failed to build creation input - no boundary available?");
                 return new TurnPathResult(null, false);
             }
+            if (extraSetback > 0) input.TurnLineEndIndex = turnLineEnd;
 
             var output = CreateTurn(input);
+            if (turnLineEnd == null && output.Success && output.TurnLineEndIndex >= 0)
+                turnLineEnd = output.TurnLineEndIndex;
 
             if (output.Success && output.TurnPath != null && output.TurnPath.Count > 10)
             {
@@ -271,28 +277,10 @@ public partial class YouTurnCreationService
     /// Maps the runtime tool/vehicle config onto the pure <see cref="ToolGeometry"/>
     /// used by the implement swept-path clearance check.
     /// </summary>
-    private static ToolGeometry BuildToolGeometry(ConfigurationStore config)
-    {
-        var tool = config.Tool;
-        ToolMount mount =
-            tool.IsToolFrontFixed ? ToolMount.FrontFixed :
-            tool.IsToolTBT ? ToolMount.TBT :
-            tool.IsToolTrailing ? ToolMount.Trailing :
-            ToolMount.RearFixed; // rear-fixed is the default
-
-        return new ToolGeometry(
-            Mount: mount,
-            // Real implement width comes from the active sections (ActualToolWidth),
-            // not Tool.Width — the latter is a stored fallback (often the 6 m default).
-            Width: config.ActualToolWidth,
-            Offset: tool.Offset,
-            VehicleHitchLength: config.Vehicle.HitchLength,
-            ToolHitchLength: tool.HitchLength,
-            TrailingHitchLength: tool.TrailingHitchLength,
-            TrailingToolToPivotLength: tool.TrailingToolToPivotLength,
-            TankTrailingHitchLength: tool.TankTrailingHitchLength,
-            Length: tool.Length);
-    }
+    // Real implement width comes from the active sections (ActualToolWidth), not Tool.Width:
+    // the latter is a stored fallback (often the 6 m default).
+    private static ToolGeometry BuildToolGeometry(ConfigurationStore config) =>
+        RigGeometry.Geometry(config.Vehicle, config.Tool, config.ActualToolWidth);
 
     /// <summary>
     /// True when the implement swept along <paramref name="path"/> stays clear of a
