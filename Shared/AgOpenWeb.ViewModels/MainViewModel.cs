@@ -526,6 +526,8 @@ public partial class MainViewModel : ObservableObject
         // AutoSteer goes off when what it steers by changes under it (vehicle, implement,
         // GPS and roll settings, a profile load).
         WatchSettingsUnderAutoSteer();
+        // Every change of a steering setting goes into the log, before and after (fork).
+        LogSteerSettingChanges();
 
         // Subscribe to ConfigurationStore changes to update NumSections
         _numSections = _configStore.NumSections;

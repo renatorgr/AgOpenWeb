@@ -84,6 +84,9 @@ public static partial class RemoteServerWiring
                         });
                     }
 
+                    // The AutoSteer card's edits go into the log (fork): with the "[Steer settings]"
+                    // line after it, a bug report shows a value changed from a screen and when.
+                    var webSettingsLog = services.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()?.CreateLogger("WebSettings");
                     server.CommandHandler = (cmd, arg) =>
                         dispatcher.Post(() =>
                         {
@@ -210,6 +213,9 @@ public static partial class RemoteServerWiring
                                     return;
                                 case "config.set": // config bridge (Phase 9a). arg = "key:value"
                                     var ci = arg.IndexOf(':');
+                                    if (ci > 0 && arg.StartsWith("autosteer.", StringComparison.Ordinal) && webSettingsLog != null)
+                                        Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(webSettingsLog,
+                                            "[Config] From a web screen: {Key} = {Value}", arg[..ci], arg[(ci + 1)..]);
                                     if (ci > 0
                                         && ApplyCheckedConfigSet(
                                             services.GetRequiredService<AgOpenWeb.Models.Configuration.ConfigurationStore>(),
