@@ -89,4 +89,59 @@ public class HardFenceGuardTests
         double h = Rad(90);
         Assert.That(HardFenceGuard.HeadingOut(Fence, new Vec3(0, 0, h), h, Reach, 10.0), Is.EqualTo(0));
     }
+
+    // A round fence of 40 m radius round the origin.
+    private static readonly BoundaryPolygon RoundFence = new()
+    {
+        Points = Enumerable.Range(0, 360)
+            .Select(i => new BoundaryPoint(40 * Math.Sin(Rad(i)), 40 * Math.Cos(Rad(i)), 0)).ToList(),
+        IsHard = true,
+    };
+
+    [Test]
+    public void Round_a_bend_the_ends_follow_the_curve_steered()
+    {
+        // The first lap of a boundary curve, turning right round the field with the fence on the left:
+        // the pivot heads north 35.6 m west of the centre, a front boom 4.5 m ahead, its left end 0.1 m
+        // inside the fence. 4.4 m straight ahead (2 s at 8 km/h) that end is 0.7 m out, but the tractor
+        // steering round the bend keeps it where it is (a tester's field: AutoSteer on the line was
+        // taken off at a bend).
+        double rp = Math.Sqrt(39.9 * 39.9 - 4.5 * 4.5) - Reach;
+        var pivot = new Vec3(-rp, 0, 0);
+        var centre = new Vec3(-rp, 4.5, 0);
+        Assume.That(HardFenceGuard.HeadingOut(RoundFence, centre, 0, Reach, 4.4), Is.GreaterThan(HardFenceGuard.Margin),
+            "straight ahead leaves the bend");
+        Assert.That(HardFenceGuard.HeadingOut(RoundFence, centre, 0, Reach, 4.4, pivot, 1 / rp), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void Steering_out_across_the_fence_counts_before_the_heading_does()
+    {
+        // Heading north along the east fence, a front boom 4.5 m ahead with its right end 0.6 m inside
+        // it, the tractor steering 15° right: straight ahead stays inside, the curve steered takes the
+        // end 1.8 m out.
+        const double wheelbase = 2.9;
+        var pivot = new Vec3(50 - 0.6 - Reach, 0, 0);
+        var centre = new Vec3(pivot.Easting, 4.5, 0);
+        double k = HardFenceGuard.Curvature(15, wheelbase, 35);
+        Assert.Multiple(() =>
+        {
+            Assert.That(HardFenceGuard.HeadingOut(Fence, centre, 0, Reach, 4.4), Is.EqualTo(0));
+            Assert.That(HardFenceGuard.HeadingOut(Fence, centre, 0, Reach, 4.4, pivot, k), Is.EqualTo(1.8).Within(0.1));
+            Assert.That(HardFenceGuard.HeadingOut(Fence, centre, 0, Reach, 4.4, pivot, -k), Is.EqualTo(0), "steering away");
+        });
+    }
+
+    [Test]
+    public void The_curvature_is_the_steer_angle_over_the_wheelbase()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(HardFenceGuard.Curvature(15, 2.9, 35), Is.EqualTo(Math.Tan(Rad(15)) / 2.9).Within(1e-12));
+            Assert.That(HardFenceGuard.Curvature(-15, 2.9, 35), Is.EqualTo(-Math.Tan(Rad(15)) / 2.9).Within(1e-12), "left");
+            Assert.That(HardFenceGuard.Curvature(80, 2.9, 35), Is.EqualTo(Math.Tan(Rad(35)) / 2.9).Within(1e-12), "within the maximum");
+            Assert.That(HardFenceGuard.Curvature(15, 0, 35), Is.EqualTo(0), "no wheelbase");
+            Assert.That(HardFenceGuard.Curvature(double.NaN, 2.9, 35), Is.EqualTo(0));
+        });
+    }
 }

@@ -378,6 +378,9 @@ public partial class MainViewModel
         State.Operation.LineEntryOfferPass = result.LineEntryOfferPass;
         if (result.LineEntryNotice != null)
             ReportFailure(result.LineEntryNotice);
+        // A lateral move onto a pass wholly outside a hard boundary, refused (a toast). Fork only.
+        if (result.PassNotice != null)
+            ReportFailure(result.PassNotice);
         State.Vehicle.RtkHoldM = result.RtkHoldM;
 
         // Map vehicle/tool/hitch positions are pushed by OnRenderPullTick at

@@ -171,6 +171,73 @@ public class AutoSteerOffReasonTests
             "[AutoSteer] steer module stopped steering (switch, button or kickout); AutoSteer stays on (steer switch / button: None)"));
     }
 
+    [Test]
+    public void The_module_answering_an_engage_the_app_took_back_does_not_turn_AutoSteer_on_again()
+    {
+        // Button, a module whose steer bit follows the engage. A guard takes AutoSteer off as it goes
+        // on; the module's "steering" then arrives, and its "stopped" after it. Before, that turned
+        // AutoSteer on again, the guard off again, and so on: 13 s of on and off (a tester's bench).
+        var clock = new AgOpenWeb.Models.Timing.TestClock();
+        AgOpenWeb.Models.Timing.Clock.Set(clock);
+        try
+        {
+            ConfigurationStore.Instance.AutoSteer.ExternalEnable = 2;
+            _vm.State.Connections.IsAutoSteerDataOk = true;
+            ModuleSteering(false);
+            Engage();
+            _vm.ApplyGpsCycleResult(new GpsCycleResult
+            {
+                AutoSteerDisengagedThisCycle = true,
+                DisengageReason = "AutoSteer off: the implement is heading across the hard boundary. Steer by hand.",
+            });
+            clock.AdvanceMs(30);
+            ModuleSteering(true);
+            Assert.That(_vm.IsAutoSteerEngaged, Is.False, "the module's answer is not the operator");
+            clock.AdvanceMs(30);
+            ModuleSteering(false);
+            Assert.That(_vm.IsAutoSteerEngaged, Is.False);
+            Assert.That(OffLines(), Has.Length.EqualTo(1));
+            Assert.That(_log.Lines.Count(l => l.StartsWith("[AutoSteer] On: ")), Is.EqualTo(1));
+
+            // The operator presses the module's button: AutoSteer goes on.
+            clock.AdvanceSeconds(MainViewModel.ModuleAnswerSeconds);
+            ModuleSteering(true);
+            Assert.That(_vm.IsAutoSteerEngaged, Is.True);
+            Assert.That(_log.Lines.Last(l => l.StartsWith("[AutoSteer] On: ")), Is.EqualTo("[AutoSteer] On: steer switch or button on the steer module"));
+        }
+        finally
+        {
+            AgOpenWeb.Models.Timing.Clock.Reset();
+        }
+    }
+
+    [Test]
+    public void The_module_button_pressed_again_right_after_it_stopped_steering_turns_AutoSteer_on()
+    {
+        // Only the app's own stop holds the module's "steering" back: after the module's (its button,
+        // a kickout) the next press is the operator's.
+        var clock = new AgOpenWeb.Models.Timing.TestClock();
+        AgOpenWeb.Models.Timing.Clock.Set(clock);
+        try
+        {
+            ConfigurationStore.Instance.AutoSteer.ExternalEnable = 2;
+            _vm.State.Connections.IsAutoSteerDataOk = true;
+            ModuleSteering(false);
+            ModuleSteering(true);
+            Assume.That(_vm.IsAutoSteerEngaged, Is.True);
+            clock.AdvanceMs(100);
+            ModuleSteering(false);
+            Assume.That(_vm.IsAutoSteerEngaged, Is.False);
+            clock.AdvanceMs(100);
+            ModuleSteering(true);
+            Assert.That(_vm.IsAutoSteerEngaged, Is.True);
+        }
+        finally
+        {
+            AgOpenWeb.Models.Timing.Clock.Reset();
+        }
+    }
+
     private sealed class ListLogger : ILogger<MainViewModel>
     {
         public List<string> Lines { get; } = new();

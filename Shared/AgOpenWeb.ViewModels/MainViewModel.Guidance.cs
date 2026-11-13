@@ -2,6 +2,7 @@
 // Copyright (C) 2024-2025 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+using AgOpenWeb.Models.Timing;
 using AgOpenWeb.Models.Track;
 using AgOpenWeb.Services.AutoSteer;
 using AgOpenWeb.Services.Interfaces;
@@ -54,8 +55,31 @@ public partial class MainViewModel
     /// reason: the status line only shows the latest message, and the steer module sees
     /// only that PGN 254 stopped asking it to steer.
     /// </summary>
-    private void LogAutoSteerOff(string reason) =>
+    private void LogAutoSteerOff(string reason)
+    {
         _logger.LogInformation("[AutoSteer] Off: {Reason}", reason);
+        if (!_offFromModule) _appTookAutoSteerOffAt = Clock.Current.GetTimestamp();
+    }
+
+    /// <summary>
+    /// For this long after the app took AutoSteer off itself, the steer module reporting that it
+    /// steers is the module answering the engage it was sent a moment before (its steer bit follows
+    /// PGN 254), not the operator pressing its button. A guard that took AutoSteer off as it went
+    /// on was followed by the module's late "steering", which turned AutoSteer on again, the guard
+    /// off again, and so on: 13 s of on and off, two sounds each time (Button, a tester's bench
+    /// module with the simulator driving it). Fork only.
+    /// </summary>
+    internal const double ModuleAnswerSeconds = 1.0;
+
+    // When the app last took AutoSteer off for a reason of its own (a guard, the screen button), not
+    // because the module stopped steering. Null before the first time.
+    private long? _appTookAutoSteerOffAt;
+    private bool _offFromModule;
+
+    /// <summary>Whether the module's "steering" now is its answer to an engage the app has since taken back.</summary>
+    private bool IsModuleAnsweringTheApp() =>
+        _appTookAutoSteerOffAt is long at
+        && Clock.Current.ElapsedSeconds(at, Clock.Current.GetTimestamp()) < ModuleAnswerSeconds;
 
     /// <summary>
     /// Why the dual antenna's heading can't be steered with, from the last GPS cycle, or null.

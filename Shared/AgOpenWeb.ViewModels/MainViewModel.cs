@@ -1332,11 +1332,24 @@ public partial class MainViewModel : ObservableObject
             if (IsSteerWizardOpen && !IsAutoSteerEngaged)
                 return;
 
+            if (!IsAutoSteerEngaged && IsModuleAnsweringTheApp())
+            {
+                // Not the operator: the module still answering the engage the app took back
+                // (ModuleAnswerSeconds). Turning AutoSteer on again here started an on/off loop.
+                _logger.LogInformation("[AutoSteer] The steer module reports steering just after the app took AutoSteer off: its answer to the engage, not the operator. AutoSteer stays off");
+                return;
+            }
+
             // Toggle autosteer when requested by module communication service
             // (e.g., from work switch or steer switch)
-            ToggleAutoSteerCommand?.Execute(IsAutoSteerEngaged
-                ? ModuleStoppedSteeringReason()
-                : "steer switch or button on the steer module");
+            if (IsAutoSteerEngaged)
+            {
+                _offFromModule = true;
+                try { ToggleAutoSteerCommand?.Execute(ModuleStoppedSteeringReason()); }
+                finally { _offFromModule = false; }
+            }
+            else
+                ToggleAutoSteerCommand?.Execute("steer switch or button on the steer module");
         }
 
         // UpdateModuleSwitches runs on the host loop, so toggle right away and report the
