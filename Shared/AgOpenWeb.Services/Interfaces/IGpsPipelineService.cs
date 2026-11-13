@@ -126,6 +126,12 @@ public interface IGpsPipelineService
     /// default: PGN 254 status stays 0 while the simulator is the GPS source.</summary>
     void SetSimulatorSteersModule(bool steers);
 
+    /// <summary>The simulator runs in time-lapse (the sim bar's 10x): each of its fixes is
+    /// processed at once, on the caller's thread, so its steer angle is known before the next
+    /// one. Never dropped as "busy" either: the simulator waits for the cycle instead of
+    /// running ahead of the guidance. Fork only.</summary>
+    void SetSimulatorTimeLapse(bool on);
+
     /// <summary>The headland toggle: the headland distance HUD and the hydraulic lift follow it.</summary>
     void SetHeadlandOn(bool on);
 

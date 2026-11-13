@@ -560,6 +560,9 @@ public partial class MainViewModel : ObservableObject
         _simulatorTimer = _timerFactory.Create();
         _simulatorTimer.Interval = TimeSpan.FromMilliseconds(33); // ~30Hz — pipeline back-pressure skips if processing is slow
         _simulatorTimer.Tick += OnSimulatorTick;
+        // The motion clock is static and the process may outlive a backend (Android, iOS):
+        // a backend stopped in time-lapse must not leave the next one's GPS on 10x time.
+        MotionClock.SetScale(1.0);
 
         // Initialize commands (split into partial class files for organization)
         InitializeChainNavigationCommands();
@@ -690,7 +693,10 @@ public partial class MainViewModel : ObservableObject
         // Capture the instant this pose is dead-reckoned to, so the web Tick can stamp the
         // pose with ITS compute time (consistent value↔timestamp) rather than the later
         // broadcast time — see VehicleState.RenderPoseMs.
-        long renderTs = Clock.Current.GetTimestamp();
+        // The pose at "now" on the motion clock (the simulator's time-lapse runs it faster);
+        // the web client's timeline stays real time (RenderPoseMs below). Fork only.
+        long realTs = Clock.Current.GetTimestamp();
+        long renderTs = MotionClock.FromReal(realTs);
         var p = _positionEstimator.GetPose(renderTs);
 
         var tool = ConfigStore.Tool;
@@ -752,7 +758,7 @@ public partial class MainViewModel : ObservableObject
         vs.RenderSpeed = p.SpeedMps;
         vs.RenderPoseValid = true;
         // Stopwatch-basis ms of this pose's compute instant (matches the web HostMs basis).
-        vs.RenderPoseMs = renderTs * 1000.0 / Clock.Current.Frequency;
+        vs.RenderPoseMs = realTs * 1000.0 / Clock.Current.Frequency;
 
         if (sm)
         {
@@ -973,7 +979,11 @@ public partial class MainViewModel : ObservableObject
     /// <summary>The backend is stopping: end the background loops (the module hello loop). The
     /// process may outlive the backend (Android), and a loop still waiting kept the whole
     /// backend alive (the working day harness's BACKEND-NOT-FREED-AFTER-EXIT).</summary>
-    public void StopBackgroundLoops() => _backendStopping.Cancel();
+    public void StopBackgroundLoops()
+    {
+        _backendStopping.Cancel();
+        MotionClock.SetScale(1.0);   // the time-lapse ends with the backend (fork only)
+    }
 
     private async Task StartHelloTimerAsync()
     {

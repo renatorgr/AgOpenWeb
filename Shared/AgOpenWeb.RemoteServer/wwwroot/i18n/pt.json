@@ -102,7 +102,7 @@
   "1 cm per click": "1 cm por clique",
   "1 tool width": "1 largura de alfaia",
   "100 = neutral": "100 = neutro",
-  "10× speed multiplier": "10× multiplicador de velocidade",
+  "10× time: the simulation runs ten times faster, at the speed shown": "10× tempo: a simulação corre dez vezes mais depressa, à velocidade indicada",
   "4WD / Articulated": "4WD / Articulado",
   "A switch or button wired to the steer module. When set, it engages and disengages AutoSteer (and a module kickout disengages it).": "Interruptor ou botão ligado ao steer module. Quando definido, ativa e desativa AutoSteer (e um solavanco desativa o módulo).",
   "A+ Line": "Linha A+",

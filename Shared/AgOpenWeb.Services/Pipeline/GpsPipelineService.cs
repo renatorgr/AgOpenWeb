@@ -507,6 +507,11 @@ public sealed class GpsPipelineService : IGpsPipelineService
         HoldSteeringOnTheSimulator();
     }
 
+    // The simulator's time-lapse (sim 10x, fork only): fixes processed inline, in order.
+    private volatile bool _simulatorTimeLapse;
+
+    public void SetSimulatorTimeLapse(bool on) => _simulatorTimeLapse = on;
+
     // A tuning run's gains (Steer Response, Stanley); null = the settings'. One reference,
     // swapped whole, read once per use: no lock on the cycle.
     private volatile Models.Pipeline.GuidanceGainsOverride? _gainsOverride;
@@ -571,6 +576,22 @@ public sealed class GpsPipelineService : IGpsPipelineService
             // Test mode: process inline, no back-pressure, no threading
             try { ProcessCycle(data); }
             catch (Exception ex) { _logger.LogError(ex, "GpsPipelineService.ProcessCycle failed"); }
+            return;
+        }
+
+        if (_simulatorTimeLapse)
+        {
+            // Time-lapse (fork only): the simulator sends a few fixes per timer tick, each a
+            // tenth of a second of driving after the last, and steers each step by the angle
+            // the cycle before gave. So every fix is processed, in order, before the call
+            // returns: none dropped as "busy", and the simulator can't run ahead of the
+            // guidance (a slow cycle slows the time-lapse down instead). A cycle still in
+            // flight from before the time-lapse is waited for: two cycles never overlap.
+            var spin = new SpinWait();
+            while (Interlocked.CompareExchange(ref _processing, 1, 0) != 0) spin.SpinOnce();
+            try { ProcessCycle(data); }
+            catch (Exception ex) { _logger.LogError(ex, "GpsPipelineService.ProcessCycle failed"); }
+            finally { Volatile.Write(ref _processing, 0); }
             return;
         }
 
@@ -1034,7 +1055,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
             double rollRad = hasAttitude
                 ? _roll * Math.PI / 180.0
                 : 0.0;
-            long ts = Clock.Current.GetTimestamp();
+            // The motion clock (real time, or the simulator's time-lapse); a fix that knows
+            // the instant it stands for (the time-lapse's) brings it along (fork only).
+            long ts = data.MotionTimestamp != 0 ? data.MotionTimestamp : MotionClock.GetTimestamp();
             _positionEstimator.UpdateFromGps(new PoseSnapshot(
                 new Vec2(driftedEasting, driftedNorthing),
                 headingRad,

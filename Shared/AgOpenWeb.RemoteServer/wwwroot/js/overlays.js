@@ -560,9 +560,9 @@ function renderSimBar() {
     SIM.steer.value = deg;
     SIM.steerVal.textContent = deg.toFixed(1) + '°';
   }
-  // Speed readout: apply 10× then format per units (mirrors SimulatorSpeedDisplay).
-  const eff = (s.simSpeedKph || 0) * (s.sim10x ? 10 : 1);
-  SIM.speedVal.textContent = fmtUnit(eff, 'kmh', 1);
+  // Speed readout, formatted per units (mirrors SimulatorSpeedDisplay). 10x is time-lapse:
+  // the speed shown is the speed driven (fork only).
+  SIM.speedVal.textContent = fmtUnit(s.simSpeedKph || 0, 'kmh', 1);
   // GPS (teleport) only while sim disabled.
   SIM.gps.disabled = !!s.simEnabled;
   SIM.gps.style.opacity = s.simEnabled ? '0.4' : '1';

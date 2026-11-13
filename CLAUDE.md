@@ -179,6 +179,25 @@ guard, the screen button), the module reporting "steering" is its answer to that
 each time (Button, a bench module with the simulator driving it). After the module's own stop (its button, a
 kickout) the next press counts at once. Fork only.
 
+### The simulator's 10x is a time-lapse
+The sim bar's 10x (`IsSimulatorSpeed10x`) runs time ten times faster at the speed shown, not the tractor
+ten times faster: at 100-250 km/h the look-ahead, the U-turn trigger and the simulator's steering failed,
+and the simulator drove on through the fence (official issue #726). `MotionClock` (`Models/Timing`) is
+`Clock.Current` run `SimulatorTimeLapse.Scale` times faster while the simulator and 10x are both on
+(`MainViewModel.ApplySimulatorTimeLapse`), and only the vehicle's motion reads it: the estimator's stamp
+on each fix (`GpsData.MotionTimestamp`, else `MotionClock.GetTimestamp()`), the 100 Hz control loop's
+tick and the render pull's pose (its `RenderPoseMs` stays real: the web client's timeline). NTRIP, RTCM,
+module silence and logs stay on real time. `SimulatorTimeLapse.Advance` drives the simulator up to the
+motion clock's now in its own 1/30 s steps (`IGpsSimulationService.Tick(steer, dt)`), every third step a
+fix stamped with its instant; the pipeline processes those fixes inline, none skipped
+(`IGpsPipelineService.SetSimulatorTimeLapse`), and the VM applies each result inline
+(`OnGpsCycleCompleted`), so the steps after a fix are steered by it, as at 1x. The section timers count
+control ticks, so `SectionControlService.TickHz` is the loop's rate / 10. More than 2 s behind (a slow
+PC) the tractor waits instead of jumping. A new backend and `StopBackgroundLoops` put the clock back to
+real time (the process outlives the backend on Android and iOS). Tests: `SimulatorTimeLapseUTurnTests`
+(the same U-turn at 1x and 10x; the old 10x drove 1.7 km on past the fence), `SimulatorTimeLapseTests`,
+`MotionClockTests`. Fork only: at a sync keep the fork side in the simulator files.
+
 ### Host ↔ client commands
 The client sends `id|arg` strings (`transport.send('track.select|0')`). `RemoteServerWiring`
 (in `RemoteWiring`) switches on the id and calls the VM; `RemoteServerWiring.Helpers.cs` holds

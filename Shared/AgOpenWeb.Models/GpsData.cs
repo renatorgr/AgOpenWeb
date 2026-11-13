@@ -75,6 +75,14 @@ public class GpsData
     public DateTime Timestamp { get; set; } = DateTime.Now;
 
     /// <summary>
+    /// The instant this fix stands for on the <see cref="Timing.MotionClock"/>, when the
+    /// source knows it; 0 = when the GPS cycle gets it. The simulator's time-lapse sets it:
+    /// its fixes are a tenth of a second of driving apart but reach the cycle together.
+    /// Fork only.
+    /// </summary>
+    public long MotionTimestamp { get; set; }
+
+    /// <summary>
     /// Whether GPS data is currently valid (can be overridden by parser for quality filtering)
     /// </summary>
     private bool? _isValidOverride;
