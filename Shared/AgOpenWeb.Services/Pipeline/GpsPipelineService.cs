@@ -1336,15 +1336,20 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // (5b'''') A hard outer boundary and no U-turn planned or driven (a turn keeps the implement
         // off the fence itself): an end of the implement heading out across the fence within 2 s of
         // travel takes AutoSteer off with the alarm (HardFenceGuard). Only with the tractor inside
-        // the fence, going forward. Fork only.
+        // the fence, going forward. Along the curve steered (the last cycle's steer angle, the one
+        // the line asked for when AutoSteer has just gone on), not straight ahead, which leaves a
+        // bend; a cycle with no line steered before it waits for the next. Fork only.
         if (autoSteerEngaged && !_isReverse && _youTurn.TurnPath == null && !_youTurn.IsExecuting
+            && _lastLineSteerAngle is double lastSteer
             && boundary?.OuterBoundary is { IsHard: true, IsValid: true } hardOuter
             && _toolPositionService.HasPosition
             && hardOuter.IsPointInside(driftedEasting, driftedNorthing))
         {
             double lookAhead = HardFenceGuard.LookAheadSeconds * Math.Abs(pos.Speed);
             double reach = toolWidth / 2 + Math.Abs(config.Tool.Offset);
-            double outBy = HardFenceGuard.HeadingOut(hardOuter, toolPos, toolHeading, reach, lookAhead);
+            double curvature = HardFenceGuard.Curvature(lastSteer, config.Vehicle.Wheelbase, config.Vehicle.MaxSteerAngle);
+            double outBy = HardFenceGuard.HeadingOut(hardOuter, toolPos, toolHeading, reach, lookAhead,
+                new Vec3(driftedEasting, driftedNorthing, headingRad), curvature);
             if (outBy > 0)
             {
                 autoSteerEngaged = false;
@@ -1401,6 +1406,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         double crossTrackError = 0;
         double goalE = 0, goalN = 0;
         bool hasGuidance = false;
+        bool hasDisplaySteer = false; // AutoSteer off: the steer angle the line would ask for
         bool hasGoal = false;
         bool youTurnCompleted = false;
         string? statusMessage = null;
@@ -1713,6 +1719,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 if (display is { } dg)
                 {
                     steerAngle = dg.SteerAngle;
+                    hasDisplaySteer = true;
                     if (dg.Goal is { } goal)
                     {
                         goalE = goal.Easting;
@@ -1730,6 +1737,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // working state the authoritative source (today the flat GpsCycleResult
         // fields are still populated from locals and consumed by ApplyResults).
         _guidanceWorking.SteerAngle = steerAngle;
+        _lastLineSteerAngle = hasGuidance || hasDisplaySteer ? steerAngle : null;
         _guidanceWorking.CrossTrackError = crossTrackError;
         _guidanceWorking.GoalPoint = new Vec2(goalE, goalN);
         _guidanceWorking.HasGoalPoint = hasGoal;
@@ -2623,6 +2631,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
         _guideKey = key;
         return _guideLines = lines;
     }
+
+    /// <summary>The last cycle's steer angle (°, + = right) when a line was steered or shown, else
+    /// null: the curve the fence guard looks along (<see cref="HardFenceGuard"/>).</summary>
+    private double? _lastLineSteerAngle;
 
     private const double PassPickIntervalSeconds = 0.66;
     private Models.Track.Track? _passPickTrack;
