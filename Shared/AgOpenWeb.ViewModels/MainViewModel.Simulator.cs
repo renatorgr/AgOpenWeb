@@ -6,6 +6,8 @@ using System;
 
 using Microsoft.Extensions.Logging;
 using AgOpenWeb.Models.Base;
+using AgOpenWeb.Models.Timing;
+using AgOpenWeb.Services;
 using AgOpenWeb.Services.Interfaces;
 
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -33,6 +35,11 @@ public partial class MainViewModel
     private double _simulatorSpeedKph;
     private bool _isSimulatorSpeed10x;
 
+    // Time-lapse (the sim bar's 10x, fork only): the motion clock runs ten times faster and
+    // the simulated tractor keeps the speed shown (SimulatorTimeLapse).
+    private SimulatorTimeLapse? _timeLapse;
+    private bool _timeLapseOn;
+
     #endregion
 
     #region Simulator Event Handlers
@@ -48,14 +55,46 @@ public partial class MainViewModel
             return;
         }
 
+        if (_timeLapseOn)
+        {
+            // Time-lapse (fork only): drive up to "now" on the motion clock; each fix is
+            // processed inline and its steer angle steers the steps after it.
+            _timeLapse!.Advance(MotionClock.GetTimestamp(), Clock.Current.Frequency,
+                () => SimulatorSteerAngle, () => _timeLapseOn);
+            return;
+        }
+
         // Call simulator Tick with current steer angle
         _simulatorService.Tick(SimulatorSteerAngle);
+    }
+
+    /// <summary>
+    /// Starts or stops the time-lapse as the simulator and its 10x button say: the motion clock's
+    /// rate, the GPS cycle processing the simulator's fixes inline, and the section timers
+    /// counted in motion time (the control loop still ticks at its real rate). Fork only.
+    /// </summary>
+    private void ApplySimulatorTimeLapse()
+    {
+        bool on = _isSimulatorEnabled && _isSimulatorSpeed10x;
+        if (on == _timeLapseOn) return;
+
+        double scale = on ? SimulatorTimeLapse.Scale : 1.0;
+        MotionClock.SetScale(scale);
+        _gpsPipelineService.SetSimulatorTimeLapse(on);
+        if (_controlLoop is not null && _sectionControlService is Services.Section.SectionControlService scs)
+            scs.TickHz = _controlLoop.FrequencyHz / scale;
+        _timeLapse ??= new SimulatorTimeLapse(_simulatorService);
+        _timeLapse.Start(MotionClock.GetTimestamp());
+        _timeLapseOn = on;
+        _logger.LogInformation("[Simulator] Time-lapse {State}", on ? "on (10x time)" : "off");
     }
 
     private void OnSimulatorGpsDataUpdated(object? sender, GpsSimulationEventArgs e)
     {
         // Ignore GPS data when simulator is disabled
         if (!_isSimulatorEnabled) return;
+        // A time-lapse step between two fixes moves the tractor only (fork only).
+        if (_timeLapse?.IsStepBetweenFixes == true) return;
 
         // The simulator builds GpsData and feeds it to the GpsService.
         // The GpsPipelineService (subscribed to GpsService.GpsDataUpdated)
@@ -120,7 +159,9 @@ public partial class MainViewModel
             ImuHeading = simulatedData.HeadingDegrees,
             ImuValid = true,
             SentenceType = AgOpenWeb.Models.GpsSentenceType.Simulator,
-            Timestamp = Models.Timing.Clock.Current.Now
+            Timestamp = Models.Timing.Clock.Current.Now,
+            // The time-lapse's fixes carry the instant they stand for (fork only).
+            MotionTimestamp = _timeLapse?.FixTimestamp ?? 0
         };
 
         // Feed into GpsService — this fires GpsDataUpdated which the pipeline picks up
@@ -199,6 +240,7 @@ public partial class MainViewModel
                     _simulatorTimer.Stop();
                     StatusMessage = "Simulator OFF";
                 }
+                ApplySimulatorTimeLapse();
             }
         }
     }
@@ -267,7 +309,7 @@ public partial class MainViewModel
     public string SimulatorSteerAngleDisplay => $"{_simulatorSteerAngle:F1}°";
 
     /// <summary>
-    /// Simulator speed in kph. Range: -10 to +25 kph (or -100 to +250 with 10x enabled).
+    /// Simulator speed in kph. Range: -10 to +25 kph, also with 10x on (10x is time-lapse, fork only).
     /// Converts to/from stepDistance using formula: speedKph = stepDistance * 40
     /// </summary>
     public double SimulatorSpeedKph
@@ -284,7 +326,10 @@ public partial class MainViewModel
     }
 
     /// <summary>
-    /// When enabled, multiplies the speed slider value by 10 for testing large fields.
+    /// Time-lapse, for working a large field quickly (fork only): ten seconds of driving pass
+    /// in each real second, at the speed shown. It used to multiply the speed by 10, so that
+    /// guidance, U-turns and sections ran at 100-250 km/h and the turns were not made
+    /// (official issue #726).
     /// </summary>
     public bool IsSimulatorSpeed10x
     {
@@ -293,14 +338,15 @@ public partial class MainViewModel
         {
             SetProperty(ref _isSimulatorSpeed10x, value);
             State.Simulator.Is10x = value; // mirror for the web-UI projector
-            UpdateSimulatorSpeed();
+            ApplySimulatorTimeLapse();
             OnPropertyChanged(nameof(SimulatorSpeedDisplay));
         }
     }
 
     private void UpdateSimulatorSpeed()
     {
-        double effectiveSpeed = _isSimulatorSpeed10x ? _simulatorSpeedKph * 10 : _simulatorSpeedKph;
+        // The speed shown is the speed driven, with the time-lapse too (fork only).
+        double effectiveSpeed = _simulatorSpeedKph;
         PersistentState.SimulatorSpeed = effectiveSpeed; // persisted on close
         OnPropertyChanged(nameof(SimulatorSpeedDisplay));
         if (_isSimulatorEnabled)
@@ -317,10 +363,9 @@ public partial class MainViewModel
     {
         get
         {
-            // No "(10x)" suffix — the 10x toggle sits beside this readout and the
-            // value already reflects the multiplier, so the readout stays compact
-            // enough to hug the speed arrows while fitting a 3-digit speed.
-            double speed = _isSimulatorSpeed10x ? _simulatorSpeedKph * 10 : _simulatorSpeedKph;
+            // The speed driven: the 10x toggle beside it runs time faster, not the
+            // tractor (fork only).
+            double speed = _simulatorSpeedKph;
             if (ConfigStore.IsMetric)
                 return $"{speed:F1} kph";
             else

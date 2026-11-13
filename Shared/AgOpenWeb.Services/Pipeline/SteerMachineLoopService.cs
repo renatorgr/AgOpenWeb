@@ -98,7 +98,9 @@ public sealed class SteerMachineLoopService : ISteerMachineLoopService, IDisposa
         {
             while (await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
             {
-                Ticked?.Invoke(Clock.Current.GetTimestamp());
+                // The motion clock: the estimator dead-reckons the tick's pose on it, in
+                // real time or in the simulator's time-lapse (fork only).
+                Ticked?.Invoke(MotionClock.GetTimestamp());
             }
         }
         catch (OperationCanceledException)
