@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.NetworkInformation;
 using System.Threading;
+using AgOpenWeb.Services.Interfaces;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -50,6 +51,10 @@ public interface INetworkWatcher
 /// Wi-Fi join fires several), so a check runs once they have settled for
 /// <see cref="DefaultSettle"/>. A <see cref="DefaultHeartbeat"/> beat runs a check either way,
 /// for platforms that report nothing.
+/// Given the computer's links, it also logs them at the start and each time they differ
+/// (on an event or a beat), so a bug report says which link went away and came back: the
+/// modules' data stopped and resumed with a Windows address change while the modules still
+/// heard the app (2026-11-13).
 /// </summary>
 public sealed class NetworkWatcher : INetworkWatcher, IDisposable
 {
@@ -63,13 +68,19 @@ public sealed class NetworkWatcher : INetworkWatcher, IDisposable
     private readonly bool _systemEvents;
     private readonly object _gate = new();
     private readonly List<(NetworkStage Stage, Action<NetworkCheckReason> OnCheck)> _subscribers = new();
+    private readonly ILocalNetworkInfoProvider? _links;
+    private readonly object _linksGate = new();
+    private string? _lastLinks;
 
-    public NetworkWatcher(ILogger<NetworkWatcher>? logger = null)
-        : this(logger, systemEvents: true, DefaultSettle, DefaultHeartbeat) { }
+    public NetworkWatcher(ILogger<NetworkWatcher>? logger = null, ILocalNetworkInfoProvider? links = null)
+        : this(logger, systemEvents: true, DefaultSettle, DefaultHeartbeat, links) { }
 
-    internal NetworkWatcher(ILogger<NetworkWatcher>? logger, bool systemEvents, TimeSpan settle, TimeSpan heartbeat)
+    internal NetworkWatcher(ILogger<NetworkWatcher>? logger, bool systemEvents, TimeSpan settle, TimeSpan heartbeat,
+        ILocalNetworkInfoProvider? links = null)
     {
         _logger = logger ?? NullLogger<NetworkWatcher>.Instance;
+        _links = links;
+        NoteLinks();
         _settle = settle;
         _settleTimer = new Timer(_ => Check(NetworkCheckReason.AddressChanged));
         _heartbeat = new Timer(_ => Check(NetworkCheckReason.Heartbeat), null, heartbeat, heartbeat);
@@ -95,7 +106,44 @@ public sealed class NetworkWatcher : INetworkWatcher, IDisposable
         }
     }
 
-    public void NotifyChanged() => _settleTimer.Change(_settle, Timeout.InfiniteTimeSpan);
+    public void NotifyChanged()
+    {
+        NoteLinks();
+        _settleTimer.Change(_settle, Timeout.InfiniteTimeSpan);
+    }
+
+    /// <summary>Log the computer's IPv4 links when they differ from the last ones logged
+    /// (the first call logs them as they are at the start).</summary>
+    internal void NoteLinks()
+    {
+        if (_links is null) return;
+        string now;
+        try { now = DescribeLinks(_links.GetIPv4Addresses()); }
+        catch (Exception ex)
+        {
+            _logger.LogDebug("[Network] links not read: {Message}", ex.Message);
+            return;
+        }
+        lock (_linksGate)
+        {
+            if (now == _lastLinks) return;
+            if (_lastLinks is null)
+                _logger.LogInformation("[Network] links at the start: {Links}", now);
+            else
+                _logger.LogInformation("[Network] links now: {Links} (were: {Was})", now, _lastLinks);
+            _lastLinks = now;
+        }
+    }
+
+    /// <summary>"Ethernet 192.168.5.10/24, Wi-Fi 192.168.0.21/24", in name order; "none"
+    /// when the computer has no IPv4 link up.</summary>
+    internal static string DescribeLinks(IReadOnlyList<LocalNetworkAddress> addresses)
+    {
+        if (addresses.Count == 0) return "none";
+        return string.Join(", ", addresses
+            .Select(a => $"{(string.IsNullOrWhiteSpace(a.InterfaceName) ? "?" : a.InterfaceName)} {a.Address}/{a.PrefixLength}")
+            .OrderBy(t => t, StringComparer.Ordinal));
+    }
 
     private void OnSystemChange(object? sender, EventArgs e) => NotifyChanged();
 
@@ -103,10 +151,18 @@ public sealed class NetworkWatcher : INetworkWatcher, IDisposable
     /// check at a time.</summary>
     internal void Check(NetworkCheckReason reason)
     {
+        NoteLinks();
         lock (_gate)
         {
             if (reason == NetworkCheckReason.AddressChanged)
-                _logger.LogInformation("[Network] addresses changed");
+            {
+                string? links;
+                lock (_linksGate) links = _lastLinks;
+                if (links is null)
+                    _logger.LogInformation("[Network] addresses changed");
+                else
+                    _logger.LogInformation("[Network] addresses changed; links: {Links}", links);
+            }
             foreach (var (stage, onCheck) in _subscribers.OrderBy(s => s.Stage).ToList())
             {
                 try { onCheck(reason); }
