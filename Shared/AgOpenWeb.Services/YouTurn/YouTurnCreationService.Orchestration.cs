@@ -135,6 +135,9 @@ public partial class YouTurnCreationService
         // and the plan is tried again every cycle until a turn is found).
         const double ObstacleSetbackStep = 4.0;
         double extraSetback = 0.0;
+        // Where the pass leaves the turn area on the first try: a try with the turn lines moved in
+        // seats the turn back from there (YouTurnCreationInput.TurnLineEndIndex).
+        int? turnLineEnd = null;
 
         while (true)
         {
@@ -149,8 +152,11 @@ public partial class YouTurnCreationService
                 _logger.LogWarning("[YouTurn] Failed to build creation input - no boundary available?");
                 return new TurnPathResult(null, false);
             }
+            if (extraSetback > 0) input.TurnLineEndIndex = turnLineEnd;
 
             var output = CreateTurn(input);
+            if (turnLineEnd == null && output.Success && output.TurnLineEndIndex >= 0)
+                turnLineEnd = output.TurnLineEndIndex;
 
             // A pass that runs into an obstacle turns before it. When no turn fits there, the
             // fallback (laid out from the outer boundary) would drive the tractor into the
