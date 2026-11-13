@@ -170,6 +170,15 @@ before it goes on, red while on (`statusBar.simDrivesSteering`). Never saved; dr
 is turned off and when the steer module goes silent; a change takes AutoSteer off first. The web client
 harness reads PGN 254 on the simulator, so its rig makes this choice (`WebClientRig`). Fork only.
 
+### The steer module's switch
+With the steer switch / button set (`AutoSteer.ExternalEnable`), PGN 253's steer bit turns AutoSteer on and off
+(`ModuleCommunicationService.CheckSwitches`, as AgOpenGPS). The module's bit also follows the engage the app sends
+it, so for `MainViewModel.ModuleAnswerSeconds` (1 s) after the app took AutoSteer off for a reason of its own (a
+guard, the screen button), the module reporting "steering" is its answer to that engage, not the operator
+(`IsModuleAnsweringTheApp`): a guard going off as AutoSteer went on was followed by 13 s of on and off, two sounds
+each time (Button, a bench module with the simulator driving it). After the module's own stop (its button, a
+kickout) the next press counts at once. Fork only.
+
 ### Host ↔ client commands
 The client sends `id|arg` strings (`transport.send('track.select|0')`). `RemoteServerWiring`
 (in `RemoteWiring`) switches on the id and calls the VM; `RemoteServerWiring.Helpers.cs` holds
