@@ -681,10 +681,22 @@ public sealed class GpsPipelineService : IGpsPipelineService
             Boundary? snapBoundary;
             lock (_stateLock) { snapTrack = _activeTrack; snapBoundary = _boundary; }
             int from = _guidanceWorking.HowManyPathsAway, to = from + delta;
+            string side = intents.GuidanceSnap.Value ? "left" : "right";
             if (snapTrack != null && PassOutsideHardFence(snapTrack, to, _guidanceWorking.NudgeOffset, snapBoundary))
+            {
                 _passNotice = $"Pass {PassName(to)} is outside the hard boundary: the line stays on pass {PassName(from)}";
+                _logger.LogInformation("[Guidance] Lateral move {Side} refused: pass {To} is outside the hard boundary, staying on pass {From}",
+                    side, PassName(to), PassName(from));
+            }
             else
+            {
                 _guidanceWorking.HowManyPathsAway = to;
+                // Told and logged (fork only): the line moves a whole pass with no turn, and a tap on
+                // the lateral button is easy to miss. A report of the line jumping to the next pass
+                // with the tractor standing still had nothing in its log to show what moved it.
+                _passNotice = $"Line moved one pass {side}: now on pass {PassName(to)}";
+                _logger.LogInformation("[Guidance] Lateral move {Side}: pass {From} -> {To}", side, PassName(from), PassName(to));
+            }
             // The nudge stays: a lateral move is a pass, not a reset (AgOpenGPS BuildManualYouLateral).
             _trackGuidanceState = null;
 
@@ -695,6 +707,12 @@ public sealed class GpsPipelineService : IGpsPipelineService
             // exit pass) instead of replanning for the just-snapped pass.
             // Mirrors the direction-override re-arm in YouTurnStateMachine.
             YouTurnStateMachine.DiscardPlannedTurn(_youTurn);
+        }
+        else if (intents.GuidanceSnap.HasValue)
+        {
+            _passNotice = "Finish the U-turn first: the line does not move a pass during a turn";
+            _logger.LogInformation("[Guidance] Lateral move {Side} ignored: a U-turn is being driven",
+                intents.GuidanceSnap.Value ? "left" : "right");
         }
         // Phase D D5. Nudge accumulates (multiple clicks between drains sum).
         // Heading-same-way flips the sign so "left" always means left from the

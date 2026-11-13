@@ -166,8 +166,9 @@ public record GpsCycleResult
     public string? LineEntryNotice { get; init; }
 
     /// <summary>
-    /// Non-null on the cycle where a lateral move was refused because the pass lies wholly outside
-    /// the hard outer boundary (fork only): shown to the operator.
+    /// Non-null on the cycle of a lateral move (fork only): the pass the line moved to, or why it
+    /// stayed (the pass lies wholly outside the hard outer boundary, a U-turn is being driven).
+    /// Shown to the operator.
     /// </summary>
     public string? PassNotice { get; init; }
 }
