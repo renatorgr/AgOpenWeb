@@ -1145,6 +1145,21 @@ public sealed class YouTurnStateMachine
                 RefuseDirectionSwap(swapped, effects);
         }
 
+        // The order's next pass far along the headland, with passes still to do beside the tractor:
+        // the nearest of those first, and the order is planned again from where the turn lands. The
+        // order is fixed for the field (one pass in two, then back for the others), so with the passes
+        // it had next worked before, its next one was ten passes over, an 80 m "turn" along the
+        // headland, with the passes either side of the tractor still to do (Tapada da Casa, simulator:
+        // 17R to 7R, with 16R and 14R open). Fork only.
+        bool nearestTried = false;
+        if (operatorSide == 0 && Math.Abs(target - guidance.HowManyPathsAway) > MaxFallbackStep(ctx.UTurnSkipRows + 1))
+        {
+            if (TurnOntoNearestOpenPass(in ctx, track, abHeading, headingRadians, guidance, turn, effects, isWorked, target, operatorSide,
+                    orderPassFar: true))
+                return;
+            nearestTried = true;
+        }
+
         // The order's next pass may be inside only at the far end (an hourglass field's other
         // lobe): a turn onto it here lands in the headland and drives out of the field.
         bool landable = _pathing.IsPathLandable(track, abHeading, target, ctx.Boundary, ctx.HeadlandLine, currentPosition, guidance.IsHeadingSameWay, turn.DistanceToHeadland, guidance.HowManyPathsAway);
@@ -1169,7 +1184,8 @@ public sealed class YouTurnStateMachine
         // Ours, not AgOpenGPS's: its GetNextNotWorkedTrack starts at the skip in the turn's direction
         // and steps outward past worked tracks, checks neither room nor whether the turn builds, and
         // never looks at the other side.
-        if (TurnOntoNearestOpenPass(in ctx, track, abHeading, headingRadians, guidance, turn, effects, isWorked, target, operatorSide))
+        if (!nearestTried
+            && TurnOntoNearestOpenPass(in ctx, track, abHeading, headingRadians, guidance, turn, effects, isWorked, target, operatorSide))
             return;
 
         if (refused is { } failed)
@@ -1233,7 +1249,8 @@ public sealed class YouTurnStateMachine
     /// (a hard fence on that side), the ones further that way fit no better. True when one was built
     /// and is the planned turn. Ours: AgOpenGPS (CYouTurn.GetNextNotWorkedTrack) only steps outward
     /// on the turn's side past worked tracks; the other side, passes nearer than the skip and the
-    /// room and build checks are not in it.
+    /// room and build checks are not in it. <paramref name="orderPassFar"/>: asked before the order's
+    /// pass, which is further than <see cref="MaxFallbackStep"/> (only the log says so).
     /// </summary>
     private bool TurnOntoNearestOpenPass(
         in TickContext ctx,
@@ -1245,7 +1262,8 @@ public sealed class YouTurnStateMachine
         YouTurnEffects effects,
         Func<int, bool> isWorked,
         int orderPass,
-        int operatorSide)
+        int operatorSide,
+        bool orderPassFar = false)
     {
         if (turn.SnakeSequence is not { } seq) return false;
         int current = guidance.HowManyPathsAway;
@@ -1269,8 +1287,12 @@ public sealed class YouTurnStateMachine
                 AimTurnAt(track, abHeading, guidance, turn, effects, pass, "Snake (nearest open pass)");
                 if (BuildTurnPath(in ctx, track, headingRadians, abHeading, guidance, turn, effects).Path != null)
                 {
-                    _logger.LogDebug("[YouTurn] Snake pass {Order} has no turn at this end - turning onto pass {Pass}, the nearest still to do",
-                        orderPass, pass);
+                    if (orderPassFar)
+                        _logger.LogDebug("[YouTurn] Snake pass {Order} is {Count} passes over - turning onto pass {Pass}, the nearest still to do",
+                            orderPass, Math.Abs(orderPass - current), pass);
+                    else
+                        _logger.LogDebug("[YouTurn] Snake pass {Order} has no turn at this end - turning onto pass {Pass}, the nearest still to do",
+                            orderPass, pass);
                     return true;
                 }
                 break;
