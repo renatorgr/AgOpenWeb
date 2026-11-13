@@ -80,6 +80,12 @@ namespace AgOpenWeb.Services.Interfaces
         void Tick(double steerAngleDegrees);
 
         /// <summary>
+        /// Advance the simulation by <paramref name="dtSeconds"/> of driving at the speed set,
+        /// whatever the real time between calls: the time-lapse's steps (fork only).
+        /// </summary>
+        void Tick(double steerAngleDegrees, double dtSeconds);
+
+        /// <summary>
         /// Reset simulation to initial state
         /// </summary>
         void Reset();

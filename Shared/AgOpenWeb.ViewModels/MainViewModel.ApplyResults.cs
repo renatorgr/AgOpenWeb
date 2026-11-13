@@ -15,6 +15,13 @@ public partial class MainViewModel
     /// </summary>
     private void OnGpsCycleCompleted(GpsCycleResult result)
     {
+        // The simulator's time-lapse processes its fix on this thread, inside its timer tick,
+        // and steers its next steps by this result: apply it now (fork only).
+        if (_timeLapseOn && _dispatcher.CheckAccess())
+        {
+            ApplyGpsCycleResult(result);
+            return;
+        }
         _dispatcher.Post(() => ApplyGpsCycleResult(result));
     }
 
