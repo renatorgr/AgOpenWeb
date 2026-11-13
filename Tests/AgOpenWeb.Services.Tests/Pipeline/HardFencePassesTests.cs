@@ -235,7 +235,7 @@ public class HardFencePassesTests
             Assert.That(refused.Guidance!.HowManyPathsAway, Is.EqualTo(0));
             Assert.That(refused.PassNotice, Is.EqualTo("Pass 1L is outside the hard boundary: the line stays on pass 1R"));
             Assert.That(moved.Guidance!.HowManyPathsAway, Is.EqualTo(1), "into the field");
-            Assert.That(moved.PassNotice, Is.Null);
+            Assert.That(moved.PassNotice, Is.EqualTo("Line moved one pass right: now on pass 2R"), "a move made is told too");
         });
     }
 }

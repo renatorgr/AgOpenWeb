@@ -17,6 +17,7 @@ using AgOpenWeb.Services.Section;
 using AgOpenWeb.Services.Tool;
 using AgOpenWeb.Services.Track;
 using AgOpenWeb.Services.YouTurn;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -35,6 +36,17 @@ public class LateralMoveTests
     private GpsService _gpsService = null!;
     private GpsPipelineService _pipeline = null!;
     private List<GpsCycleResult> _results = null!;
+    private CaptureLogger _log = null!;
+
+    private sealed class CaptureLogger : ILogger<GpsPipelineService>
+    {
+        public readonly List<string> Messages = new();
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? ex,
+            Func<TState, Exception?, string> formatter) => Messages.Add($"{logLevel}: {formatter(state, ex)}");
+        private sealed class NullScope : IDisposable { public static readonly NullScope Instance = new(); public void Dispose() { } }
+    }
 
     [SetUp]
     public void SetUp()
@@ -74,7 +86,7 @@ public class LateralMoveTests
             Substitute.For<IAudioService>(),
             _intents,
             headingFusion,
-            NullLogger<GpsPipelineService>.Instance,
+            _log = new CaptureLogger(),
             config,
             new PositionEstimator());
 
@@ -122,6 +134,36 @@ public class LateralMoveTests
             Assert.That(moved.HowManyPathsAway, Is.EqualTo(nudged.HowManyPathsAway + 1));
             Assert.That(moved.NudgeOffset, Is.EqualTo(nudged.NudgeOffset).Within(1e-9));
             Assert.That(moved.NudgeOffset, Is.EqualTo(0.3).Within(1e-9));
+        });
+    }
+
+    // The line moves a whole pass with no turn, and a tap on the lateral button is easy to miss: the
+    // operator is told and the log a bug report carries says so (a report of the line moving to the
+    // next pass with the tractor standing still had nothing in its log to show what moved it).
+    [Test]
+    public void A_lateral_move_is_told_and_logged()
+    {
+        var track = Models.Track.Track.FromABLine("AB", new Vec3(0, -100, 0), new Vec3(0, 100, 0));
+        _pipeline.SetActiveTrack(track, passNumber: 0, nudgeOffset: 0);
+        _pipeline.SetAutoSteerEngaged(true);
+        Cycle();
+        Assert.That(_results[^1].PassNotice, Is.Null, "nothing to tell before a move");
+
+        _intents.RequestGuidanceSnap(left: false);
+        Cycle();
+        var right = _results[^1].PassNotice;
+        _intents.RequestGuidanceSnap(left: true);
+        Cycle();
+        var left = _results[^1].PassNotice;
+        Cycle();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(right, Is.EqualTo("Line moved one pass right: now on pass 2R"));
+            Assert.That(left, Is.EqualTo("Line moved one pass left: now on pass 1R"));
+            Assert.That(_results[^1].PassNotice, Is.Null, "told once");
+            Assert.That(_log.Messages, Does.Contain("Information: [Guidance] Lateral move right: pass 1R -> 2R"));
+            Assert.That(_log.Messages, Does.Contain("Information: [Guidance] Lateral move left: pass 2R -> 1R"));
         });
     }
 
