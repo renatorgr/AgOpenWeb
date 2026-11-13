@@ -44,6 +44,7 @@ Most of these have been offered to the official project too. When one is merged 
 - **Web cards.** ⚙ › "Search the network" finds the modules' web pages: first the ones that announce themselves by mDNS, then by asking each address on the local network; a module found that way is then asked for its own name, so it is listed by name even where the network loses mDNS on its way to the Wi-Fi. Each page has a zoom button, and the card's header buttons are big enough to hit in a moving cab.
 - **Field data card beside the right buttons.** The card that opens from the field line in the top bar (Total, Worked, Remaining... Reset trip) opens next to the buttons on the right, just under the U-turn arrow, not over the map ahead of the tractor. The U-turn arrow and its distance stay where they are and in sight.
 - **Speeds in km/h.** Speeds, and the messages that mention one, read "km/h" as they did before the official project changed them to "kph" (#275). Their translations still apply.
+- **Smaller bug reports.** The Bug Report panel leaves the field's background photo out of the report unless "Include the field's background image" is ticked: it can be 10 MB or more and is rarely what a bug is about. A note in the report says it was left out.
 
 ## Download
 
