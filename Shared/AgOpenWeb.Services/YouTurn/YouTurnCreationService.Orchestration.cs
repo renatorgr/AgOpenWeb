@@ -1096,12 +1096,21 @@ public partial class YouTurnCreationService
         const double MinLeg = 2.0;
         const double MinArcAhead = 2.0;
         double maxSetback = Math.Min(headlandLegLength + MaxIntoField, distToHeadland + headlandLegLength - MinArcAhead);
+        // Seated back only on a straight pass. The path runs straight from the tractor along the
+        // pass's heading where the tractor is; on a curve that line leaves the pass the further
+        // ahead the turn is. Seated to fit while the tractor was still far off (190 m on a
+        // boundary curve's inner pass once U-turns turn at the turn line, official #816), the
+        // turn was never joined: the tractor passed beside its start and the turn was made "from
+        // here", onto a pass whose line had already ended. On a curve the fallback is the
+        // official one: built where the ray puts it, used only if it stays in the field (below),
+        // and built again as the tractor comes closer.
+        bool seatBack = selectedTrack == null || selectedTrack.Points.Count <= 2;
         double setback = 0;
         while (true)
         {
             path.Clear();
             int arcFrom = BuildSimplePath(path, setback);
-            if (outerPolygon == null) break;
+            if (outerPolygon == null || !seatBack) break;
 
             var clearance = TurnClearance.Evaluate(path.Skip(arcFrom), outerPolygon, TurnClearance.KeepSide.Inside, distanceFromBoundary);
             if (clearance.IsClear)

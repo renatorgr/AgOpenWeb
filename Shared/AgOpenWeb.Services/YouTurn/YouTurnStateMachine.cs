@@ -123,7 +123,22 @@ public sealed class YouTurnStateMachine
         double HeadlandCalculatedWidth,
         double HeadlandDistance,
         bool IsAlternateSkipMode = false, // AgOpenGPS SkipMode.Alternative (#111)
-        Func<double, double, bool>? IsPointCovered = null); // the job's coverage: worked passes on the map
+        Func<double, double, bool>? IsPointCovered = null, // the job's coverage: worked passes on the map
+        // The operator's headland line, for the warning that a turn leaves its pass before it
+        // ("Headland too narrow"); null with none or with it off. HeadlandLine above is the turn line.
+        IReadOnlyList<Vec3>? WorkHeadlandLine = null,
+        // Fork only: where the work on a pass ends, for the fork's own checks at the end of a pass
+        // (the end-of-pass stop, the line facing out of the field, a pass still open at this end):
+        // the headland line the pipeline arms them on, the turn line with no headland. They measure
+        // from where the crop ends, not from where the turn is made: from the turn line a headland
+        // more than 10 m wider than the U-turn distance never stopped AutoSteer at the end of a
+        // pass, and the headland's own uncovered band made every worked pass look open. Null:
+        // HeadlandLine.
+        IReadOnlyList<Vec3>? PassEndLine = null)
+    {
+        /// <summary>The line the fork's end-of-pass checks measure from (<see cref="PassEndLine"/>).</summary>
+        public IReadOnlyList<Vec3>? WorkEndLine => PassEndLine ?? HeadlandLine;
+    }
 
     /// <summary>
     /// Run one cycle of the state machine. Precondition: autosteer engaged, track active,
@@ -777,7 +792,7 @@ public sealed class YouTurnStateMachine
         // Off the line's direction (turning by hand) is not the end of a pass.
         if (Math.Abs(diff) > AlignmentTolerance && Math.PI - Math.Abs(diff) > AlignmentTolerance) return false;
         bool sameWay = Math.Abs(diff) < Math.PI / 2;
-        return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.HeadlandLine, p, sameWay);
+        return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.WorkEndLine, p, sameWay);
     }
 
     /// <summary>
@@ -797,7 +812,7 @@ public sealed class YouTurnStateMachine
             ? LocalCurveHeading(track, p)
             : Math.Atan2(track.Points[1].Easting - track.Points[0].Easting, track.Points[1].Northing - track.Points[0].Northing);
         bool sameWay = Math.Abs(Math.IEEERemainder(heading - abHeading, 2 * Math.PI)) < Math.PI / 2;
-        return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.HeadlandLine, p, sameWay);
+        return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.WorkEndLine, p, sameWay);
     }
 
     /// <summary>
@@ -1190,6 +1205,15 @@ public sealed class YouTurnStateMachine
             turn.SnakeSequence, fieldStamp, ctx.UTurnSkipRows, turn.NextUTurnDirectionLeftOverride, settings);
     }
 
+    /// <summary>
+    /// The furthest pass the fallback turns onto: twice the skip's step (4 passes with 1 row
+    /// skipped). Further, the "U-turn" runs along the headland across the field (W1 on Baetas:
+    /// 80 m in two minutes, and 128 m onto a pass that took the tractor out of the field), and
+    /// AgOpenGPS never goes there (GetNextNotWorkedTrack steps outward on the turn's side past
+    /// worked tracks): the end of the field is said and the operator decides.
+    /// </summary>
+    private static int MaxFallbackStep(int skipStep) => 2 * skipStep;
+
     /// <summary>At most this many passes still to do are looked at on each side for one with room.</summary>
     private const int MaxOpenPassesLookedAt = 6;
 
@@ -1224,7 +1248,7 @@ public sealed class YouTurnStateMachine
         foreach (int side in sides)
         {
             var candidates = seq.Distinct()
-                .Where(p => p != orderPass && Math.Sign(p - current) == side)
+                .Where(p => p != orderPass && Math.Sign(p - current) == side && Math.Abs(p - current) <= MaxFallbackStep(skip))
                 .OrderBy(p => Math.Abs(p - current) < skip ? 1 : 0)
                 .ThenBy(p => Math.Abs(p - current));
             int looked = 0;
@@ -1327,6 +1351,7 @@ public sealed class YouTurnStateMachine
         }
         var position = ctx.CurrentPosition;
         double headlandAhead = turn.DistanceToHeadland;
+        var workEndLine = ctx.WorkEndLine;
         return pass =>
         {
             bool worked = track.IsPathWorked(pass);
@@ -1336,7 +1361,7 @@ public sealed class YouTurnStateMachine
             // Worked on the whole but left to do at this end: open here, so a turn can be made
             // onto it (Tapada da Casa: 27R, its last 100 m at the end ahead, was turned past).
             if (!_openAtEnd.TryGetValue(pass, out bool open))
-                _openAtEnd[pass] = open = _pathing.IsPassOpenAtThisEnd(track, abHeading, pass, nudge, boundary, headlandLine,
+                _openAtEnd[pass] = open = _pathing.IsPassOpenAtThisEnd(track, abHeading, pass, nudge, boundary, workEndLine,
                     position, sameWay, headlandAhead, isPointCovered);
             return !open;
         };
@@ -1507,6 +1532,23 @@ public sealed class YouTurnStateMachine
         bool? keepPositive = _lastStep != 0 && _lastStepTrack == track.Name ? _lastStep > 0 : null;
         var (nextLineInside, positiveDirection) = _pathing.WouldNextLineBeInsideBoundary(
             track, abHeading, guidance, ctx.Boundary, ctx.HeadlandLine, ctx.UTurnSkipRows, keepPositive, currentPosition, turn.DistanceToHeadland);
+        // The first turn on a track goes the way the work is: with a headland, the side whose next
+        // pass is in the area it encloses. The turn line alone counts the passes in the headland
+        // band too, and the pass along the fence the operator started beside (Olival, T5: -7, all
+        // of it in the 16 m band) took the first turn there, then the end of the field. With no pass
+        // in the work area on either side (a boundary curve's outer passes), the turn line decides.
+        if (keepPositive is null && ctx.WorkHeadlandLine is { Count: >= 3 } work)
+        {
+            // Where the work is, not whether a turn can land there from here (the turn-line check
+            // above says that): any of the pass in the work area (J8 starts outside the field, the
+            // far turn line 295 m ahead, where no pass is landable yet).
+            var (workInside, workPositive) = _pathing.WouldNextLineBeInsideBoundary(
+                track, abHeading, guidance, ctx.Boundary, work, ctx.UTurnSkipRows, null);
+            _logger.LogDebug("[YouTurn] First turn: the work area's side {Side} (a pass there: {Inside})", workPositive ? "+" : "-", workInside);
+            if (workInside) (nextLineInside, positiveDirection) = (true, workPositive);
+        }
+        else if (keepPositive is null)
+            _logger.LogDebug("[YouTurn] First turn: no work area given (headland off or none)");
 
         _logger.LogDebug("[YouTurn] Creating turn? nextLineInside={Inside} positiveDir={Dir}", nextLineInside, positiveDirection);
         // The turns step one way across the field (#523). When that side has no pass left, the
@@ -1698,7 +1740,7 @@ public sealed class YouTurnStateMachine
         turn.TurnAtObstacleIndex = result.AtObstacleIndex;
         _plannedObstacleStamp = YouTurnCreationService.ObstacleStamp(ctx.Boundary);
         turn.YouTurnCounter = 0;
-        double startsInside = TurnStartInsideHeadlandLine(result.ArcStart, ctx.HeadlandLine);
+        double startsInside = TurnStartInsideHeadlandLine(result.ArcStart, ctx.WorkHeadlandLine);
         if (startsInside > NarrowHeadlandToleranceM && effects.StatusMessage == null)
             effects.StatusMessage = HeadlandTooNarrowMessage(startsInside);
         else if (!result.UsedFallback && effects.StatusMessage == null)
