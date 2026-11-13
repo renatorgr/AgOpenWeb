@@ -138,6 +138,36 @@ public class SnakeOpenEndTests
     }
 
     [Test]
+    public void With_the_turn_line_the_open_end_is_measured_from_the_headland_line()
+    {
+        // Official #816: the U-turn gets the turn line (here 2 m in from the fence, ±48) and the
+        // headland (±30, 20 m wide) is left to the sections, so every pass is uncovered for the
+        // 18 m between them. Measured from the turn line, the 20 m next to the end were that band,
+        // and every worked pass looked open at this end; measured from the headland line they are
+        // the crop. The pipeline gives the headland as PassEndLine.
+        var offset = new PolygonOffsetService();
+        var turnLine = offset.CalculatePointHeadings(new List<Vec2> { new(-48, -48), new(48, -48), new(48, 48), new(-48, 48) });
+        var headland = offset.CalculatePointHeadings(new List<Vec2> { new(-30, -30), new(30, -30), new(30, 30), new(-30, 30) });
+        Func<double, double, bool> cropWorked = (e, n) => Math.Abs(n) < 30;
+        var position = new Position { Easting = PassX(6), Northing = -25, Heading = 180, Speed = 2.78 };
+        Assert.That(_pathing.IsPassOpenAtThisEnd(_track, 0, 4, 0, _boundary, turnLine, position,
+            headingSameWay: false, headlandAhead: 23, cropWorked), Is.True, "the scenario: from the turn line pass 4 looks open");
+
+        var ctx = new YouTurnStateMachine.TickContext(position, _track, _boundary, turnLine,
+            UTurnSkipRows: 1, IsSkipWorkedMode: true, HeadlandCalculatedWidth: 20.0, HeadlandDistance: 20.0,
+            IsPointCovered: cropWorked, WorkHeadlandLine: headland, PassEndLine: headland);
+        var guidance = new GuidanceWorkingState { HowManyPathsAway = 6, IsHeadingSameWay = false };
+        var turn = new YouTurnWorkingState { IsEnabled = true };
+        var effects = _sm.Tick(ctx, guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null, $"no turn onto a worked pass (to {turn.ReturnPassTargetPath})");
+            Assert.That(effects.StatusMessage, Is.EqualTo("Field complete — all tracks worked"));
+        });
+    }
+
+    [Test]
     public void The_stretch_at_this_end_is_measured_from_where_the_pass_leaves_the_field()
     {
         var position = new Position { Easting = PassX(6), Northing = -25, Heading = 180 };

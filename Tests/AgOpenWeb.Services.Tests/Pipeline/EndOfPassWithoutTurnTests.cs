@@ -214,6 +214,40 @@ public class EndOfPassWithoutTurnTests
         });
     }
 
+    // Official #816 turns at the turn line (the fence moved in by the U-turn distance, 2 m here:
+    // ±48) and keeps the headland for the sections. The fork's stops measure from the headland
+    // line, where the crop ends: measured from the turn line, a headland 20 m wide left 17 m of
+    // "field" ahead of the tractor and AutoSteer steered on towards the fence.
+
+    [Test]
+    public void A_wide_headland_still_stops_a_metre_past_its_line()
+    {
+        Field(hard: true, Square(30));
+        Drive(10, 48);
+
+        var off = WentOff();
+        Assert.That(off, Is.Not.Null, "AutoSteer steered on towards the fence");
+        Assert.That(off!.Value.Result.DisengageReason, Does.Contain("end of the pass and no U-turn"));
+        Assert.That(off.Value.Northing, Is.InRange(30.9, 31.6), "a metre past the headland line");
+    }
+
+    [Test]
+    public void A_wide_headland_joining_the_line_facing_out_goes_off_at_once()
+    {
+        Field(hard: true, Square(30));
+        _pipeline.SetAutoSteerEngaged(false);
+        Drive(33, 34);
+        _cycles.Clear();
+
+        _pipeline.SetAutoSteerEngaged(true);
+        Drive(34.2, 36);
+        Assert.Multiple(() =>
+        {
+            Assert.That(WentOff()?.Northing, Is.EqualTo(34.2).Within(0.01), "at the press");
+            Assert.That(WentOff()?.Result.DisengageReason, Does.Contain("Turn the tractor to face the field"));
+        });
+    }
+
     [Test]
     public void A_planned_or_driven_turn_is_not_the_end_of_the_pass()
     {

@@ -1086,7 +1086,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
             headlandDistanceConfig,
             isAlternateSkipMode,
             _isPointCovered,
-            workHeadland);
+            workHeadland,
+            // Fork only: the fork's end-of-pass checks measure from where the crop ends.
+            turnField?.HeadlandLine ?? headlandLine);
 
         // Manual trigger — runs even when the auto gate would fail (e.g., YouTurn
         // toggle off). TriggerManual enforces its own preconditions (autosteer +
