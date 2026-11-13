@@ -11,6 +11,7 @@ using AgOpenWeb.Models.Base;
 using AgOpenWeb.Models.Guidance;
 using AgOpenWeb.Models.Track;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
 
 namespace AgOpenWeb.ViewModels;
 
@@ -113,8 +114,17 @@ public partial class MainViewModel
         _refNudgeSaved.TryAdd(track, saved); // the line as saved, kept for Undo and for other saves
         _refNudgeOffset[track] = offset;
         track.Points = moved; // a new list (or the saved one): the cycle may be reading the old one
+        // The passes worked are marked by number, and pass N is another strip of ground on the moved
+        // line: the job's map says which are worked (fork only).
+        track.ClearWorkedPaths();
         State.Operation.RefNudgePending = true;
         RefreshGuidanceAfterRefNudge();
+        // Logged (fork only): a report where every pass was half painted again had nothing in its
+        // log to show the line had been moved a second time.
+        _logger.LogInformation("[Guidance] Reference line '{Name}' moved {Side} {Cm} cm: {Total} m from the saved line (+ right of A-B), not saved yet",
+            track.Name, meters > 0 ? "right" : "left",
+            Math.Abs(meters * 100).ToString("F1", CultureInfo.InvariantCulture),
+            offset.ToString("F2", CultureInfo.InvariantCulture));
 
         StatusMessage = string.Create(CultureInfo.InvariantCulture,
             $"Moved '{track.Name}' {(meters > 0 ? "right" : "left")} {Math.Abs(meters * 100):F1} cm");
@@ -131,6 +141,7 @@ public partial class MainViewModel
         }
         _refNudgeOffset.Remove(track);
         SaveTracksToFile();
+        _logger.LogInformation("[Guidance] Reference line '{Name}' saved where it was moved to", track.Name);
         State.Operation.RefNudgeMoved = 0;
         State.Operation.RefNudgePending = false;
         StatusMessage = $"Saved '{track.Name}'";
@@ -146,6 +157,7 @@ public partial class MainViewModel
             return;
         }
         RefreshGuidanceAfterRefNudge();
+        _logger.LogInformation("[Guidance] Reference line '{Name}' put back where it was saved", track.Name);
         StatusMessage = $"Undid the move of '{track.Name}'";
     }
 
@@ -162,6 +174,7 @@ public partial class MainViewModel
         if (!_refNudgeSaved.Remove(track, out var saved)) return false;
         _refNudgeOffset.Remove(track);
         track.Points = saved;
+        track.ClearWorkedPaths();
         State.Operation.RefNudgeMoved = 0;
         State.Operation.RefNudgePending = false;
         return true;

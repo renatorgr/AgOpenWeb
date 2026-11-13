@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -217,6 +218,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     // observable State.* on the UI thread.
     private readonly YouTurnWorkingState _youTurn = new();
     private Models.Track.Track? _youTurnTrack; // the track _youTurn was planned on
+    private List<Vec3>? _youTurnTrackPoints; // its points then: a moved line is a new set of passes
     private readonly GuidanceWorkingState _guidanceWorking = new();
 
     // ── Joining a new line at the start of the pass (fork only) ─────────
@@ -233,6 +235,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private string? _lineEntryNotice;
     private bool _lineEntryWasEngaged;
     private Models.Track.Track? _lineEntryTrack;
+    // The way being driven is to the pass AutoSteer chose itself as the nearest still to do
+    // (NearestOpenPassEntry): kept whatever the entry mode, as the pass was not the operator's.
+    private bool _lineEntryChosen;
 
     /// <summary>How long the way to the start of the pass stays offered (Ask), ms.</summary>
     internal const long LineEntryOfferMs = 30_000;
@@ -818,7 +823,17 @@ public sealed class GpsPipelineService : IGpsPipelineService
         if (!ReferenceEquals(track, _youTurnTrack))
         {
             _youTurnTrack = track;
+            _youTurnTrackPoints = track?.Points;
             _youTurnStateMachine.ForgetTrack(_youTurn);
+        }
+        else if (!ReferenceEquals(track?.Points, _youTurnTrackPoints))
+        {
+            // The same track with its line moved (Reference Line Nudge, a trimmed end): pass N is
+            // another strip of ground now, so what was found out about each pass (worked, open at
+            // this end, an end with no turn) and the snake order go. Kept, the snake turned past
+            // the clean passes of the moved line (Tapada da Casa). Fork only.
+            _youTurnTrackPoints = track?.Points;
+            _youTurnStateMachine.ForgetPassStatus(_youTurn);
         }
 
         if (resetSnake)
@@ -1095,8 +1110,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // headland: by GuidanceConfig.LineEntryMode the way through the headland to the start of
         // the pass is driven, or offered with a sound (the nearest point is steered meanwhile).
         bool joinedNewLine = UpdateLineEntry(in intents, config, autoSteerEngaged, track, passNumber, nudgeOffset,
-            headlandLine, boundary, contourOn || recordedPath != null,
+            headlandLine, boundary, contourOn || recordedPath != null, isSkipWorkedMode,
             driftedEasting, driftedNorthing, headingRad);
+        // AutoSteer may have chosen the pass to join (the nearest one still to do).
+        passNumber = _guidanceWorking.HowManyPathsAway;
 
         // ── (2d) Stepping onto a line beside a hard fence (fork only) ──
         // AutoSteer joining a line sideways with the implement near a hard fence: the way onto it
@@ -2921,11 +2938,13 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// then); no way through the headland says so once and joins at the nearest point. Only with
     /// the tractor in the headland, going forward, on an open track with a headland line. True on
     /// the cycle AutoSteer joins a new line, whatever the mode (<see cref="_lineEntryPath"/> is the
-    /// way, if one is driven).
+    /// way, if one is driven). With the U-turn skip mode "Ignore worked tracks"
+    /// (<paramref name="skipWorked"/>), AutoSteer engaged in the headland joins the nearest pass
+    /// still to do that it can drive onto straight, whatever the mode (<see cref="NearestOpenPassEntry"/>).
     /// </summary>
     private bool UpdateLineEntry(in PipelineIntentBatch intents, ConfigurationStore config, bool autoSteerEngaged,
         Models.Track.Track? track, int passNumber, double nudgeOffset, List<Vec3>? headlandLine, Boundary? boundary,
-        bool otherGuidance, double e, double n, double headingRad)
+        bool otherGuidance, bool skipWorked, double e, double n, double headingRad)
     {
         var mode = config.Guidance.LineEntryMode;
         bool trackSwitched = !ReferenceEquals(track, _lineEntryTrack);
@@ -2933,14 +2952,16 @@ public sealed class GpsPipelineService : IGpsPipelineService
         bool engagedNow = autoSteerEngaged && !_lineEntryWasEngaged;
         _lineEntryWasEngaged = autoSteerEngaged;
 
-        bool possible = mode != LineEntryMode.Nearest && autoSteerEngaged && !otherGuidance
+        bool canPlan = autoSteerEngaged && !otherGuidance
             && track != null && track.Points.Count >= 2 && !track.IsClosed
             && headlandLine is { Count: >= 3 } && boundary?.OuterBoundary is { IsValid: true }
             && !_isReverse && !_youTurn.IsExecuting;
+        bool possible = mode != LineEntryMode.Nearest && canPlan;
 
         // A way being driven belongs to its pass: dropped when the line or the mode changes or a
-        // manual U-turn is asked for (AutoSteer then steers to the nearest point).
-        if (_lineEntryPath != null && (!possible || trackSwitched || passNumber != _lineEntryPass
+        // manual U-turn is asked for (AutoSteer then steers to the nearest point). A way to a pass
+        // AutoSteer chose itself does not depend on the mode.
+        if (_lineEntryPath != null && (!(_lineEntryChosen ? canPlan : possible) || trackSwitched || passNumber != _lineEntryPass
                 || Math.Abs(nudgeOffset - _lineEntryNudge) > 1e-6 || intents.ManualYouTurn.HasValue))
             _lineEntryPath = null;
 
@@ -2954,6 +2975,46 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // A new line: AutoSteer engaged, the line moved a pass (the snap applied above), another track.
         bool snapped = intents.GuidanceSnap.HasValue && !_youTurn.IsExecuting;
         bool joined = autoSteerEngaged && (engagedNow || snapped || trackSwitched);
+
+        // Engaged in the headland with "Ignore worked tracks": the nearest pass still to do that the
+        // way through the headland reaches straight, not the pass under the tractor. Renato on Tapada
+        // da Casa: "go to the nearest clean pass you can get onto the line well; if it means going in
+        // very crooked, avoid that one". A lateral move or another track is the operator's own
+        // choice of pass and is left alone. Fork only.
+        if (engagedNow && !snapped && skipWorked && canPlan && InHeadland(boundary!, headlandLine!, e, n))
+        {
+            var chosen = NearestOpenPassEntry(config, track!, passNumber, nudgeOffset, headlandLine!, boundary!,
+                e, n, headingRad, out bool onWorkedPass);
+            if (chosen is { } c)
+            {
+                _lineEntryOffer = null;
+                if (c.Pass != passNumber)
+                {
+                    _guidanceWorking.HowManyPathsAway = c.Pass;
+                    _trackGuidanceState = null;
+                    YouTurnStateMachine.DiscardPlannedTurn(_youTurn);
+                    _passNotice = $"AutoSteer joins pass {PassName(c.Pass)}, the nearest one still to do";
+                    _logger.LogInformation("[LineEntry] Engaged in the headland by pass {From}: joining pass {To}, the nearest still to do with a straight way in",
+                        PassName(passNumber), PassName(c.Pass));
+                }
+                // Driven, or offered with Ask (the operator who wants to be asked is asked).
+                if (c.Plan.Outcome == LineEntryOutcome.Planned)
+                {
+                    if (mode == LineEntryMode.Ask)
+                        OfferLineEntry(c.Plan, c.Pass, nudgeOffset);
+                    else
+                        StartLineEntry(c.Plan, c.Pass, nudgeOffset, chosen: true);
+                }
+                return joined;
+            }
+            if (onWorkedPass)
+            {
+                _lineEntryNotice = $"No pass still to do near here that AutoSteer can drive onto straight - joining pass {PassName(passNumber)}";
+                _logger.LogInformation("[LineEntry] Engaged in the headland on worked pass {Pass}: no pass still to do nearby with a straight way in",
+                    PassName(passNumber));
+            }
+        }
+
         if (possible && joined)
         {
             _lineEntryOffer = null;
@@ -2966,11 +3027,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 }
                 else
                 {
-                    _lineEntryOffer = plan.Path;
-                    _lineEntryOfferPass = passNumber;
-                    _lineEntryOfferNudge = nudgeOffset;
-                    _lineEntryOfferUntilMs = NowMs() + LineEntryOfferMs;
-                    _audioService.Play(SoundEffect.YouTurnApproach);
+                    OfferLineEntry(plan, passNumber, nudgeOffset);
                 }
             }
             else if (plan.Outcome == LineEntryOutcome.NoRoom)
@@ -2994,6 +3051,67 @@ public sealed class GpsPipelineService : IGpsPipelineService
             _lineEntryOffer = null;
         }
         return joined;
+    }
+
+    /// <summary>Passes looked at either side of the one under the tractor for one still to do.</summary>
+    internal const int NearestOpenPassReach = 8;
+
+    /// <summary>At most this many ways through the headland are planned in one look (each is a few
+    /// Dubins paths with their checks, all in the cycle AutoSteer is engaged).</summary>
+    private const int NearestOpenPassMaxPlans = 8;
+
+    /// <summary>
+    /// The pass AutoSteer joins when engaged in the headland with "Ignore worked tracks" (fork only):
+    /// the nearest pass to <paramref name="passNumber"/> (that one first, then one either side, two
+    /// either side, up to <see cref="NearestOpenPassReach"/>) that is still to do (not worked: the
+    /// snake's test, <see cref="YouTurnStateMachine.IsPassWorked"/>), not wholly outside a hard fence,
+    /// and that the way to the start of the pass reaches straight (<see cref="PlanLineEntry"/>: on the
+    /// pass before the crop, at the U-turn radius, in the headland, the implement off a hard fence),
+    /// or that the tractor is on already. Of two at the same distance the shorter way. A pass the way
+    /// cannot reach (it would have to go in crooked) is passed over for the next. Null when none is
+    /// found; <paramref name="onWorkedPass"/> says whether the pass under the tractor is worked.
+    /// </summary>
+    private (int Pass, LineEntryPlan Plan)? NearestOpenPassEntry(ConfigurationStore config, Models.Track.Track track,
+        int passNumber, double nudgeOffset, List<Vec3> headlandLine, Boundary boundary, double e, double n,
+        double headingRad, out bool onWorkedPass)
+    {
+        onWorkedPass = false;
+        int planned = 0;
+        for (int k = 0; k <= NearestOpenPassReach; k++)
+        {
+            (int Pass, LineEntryPlan Plan, double Length)? best = null;
+            foreach (int pass in k == 0 ? new[] { passNumber } : new[] { passNumber - k, passNumber + k })
+            {
+                if (PassOutsideHardFence(track, pass, nudgeOffset, boundary)) continue;
+                if (_youTurnStateMachine.IsPassWorked(track, pass, nudgeOffset, boundary, headlandLine, _isPointCovered))
+                {
+                    if (k == 0) onWorkedPass = true;
+                    continue;
+                }
+                if (planned++ >= NearestOpenPassMaxPlans) return null;
+                var plan = PlanLineEntry(config, track, pass, nudgeOffset, headlandLine, boundary, e, n, headingRad);
+                double length = plan.Outcome switch
+                {
+                    LineEntryOutcome.NotNeeded => 0.0,
+                    LineEntryOutcome.Planned => PolylineLength(plan.Path!),
+                    _ => double.NaN,
+                };
+                _logger.LogDebug("[LineEntry] Pass {Pass} is still to do: {Outcome}{Length}", PassName(pass), plan.Outcome,
+                    double.IsNaN(length) ? "" : string.Create(CultureInfo.InvariantCulture, $", way {length:F0} m"));
+                if (double.IsNaN(length)) continue;
+                if (best == null || length < best.Value.Length) best = (pass, plan, length);
+            }
+            if (best is { } b) return (b.Pass, b.Plan);
+        }
+        return null;
+    }
+
+    private static double PolylineLength(IReadOnlyList<Vec3> path)
+    {
+        double len = 0;
+        for (int i = 1; i < path.Count; i++)
+            len += GeometryMath.Distance(path[i - 1], path[i]);
+        return len;
     }
 
     private LineEntryPlan PlanLineEntry(ConfigurationStore config, Models.Track.Track track, int passNumber, double nudgeOffset,
@@ -3031,9 +3149,19 @@ public sealed class GpsPipelineService : IGpsPipelineService
         }
     }
 
-    private void StartLineEntry(LineEntryPlan plan, int passNumber, double nudgeOffset)
+    private void OfferLineEntry(LineEntryPlan plan, int passNumber, double nudgeOffset)
+    {
+        _lineEntryOffer = plan.Path;
+        _lineEntryOfferPass = passNumber;
+        _lineEntryOfferNudge = nudgeOffset;
+        _lineEntryOfferUntilMs = NowMs() + LineEntryOfferMs;
+        _audioService.Play(SoundEffect.YouTurnApproach);
+    }
+
+    private void StartLineEntry(LineEntryPlan plan, int passNumber, double nudgeOffset, bool chosen = false)
     {
         _lineEntryPath = plan.Path;
+        _lineEntryChosen = chosen;
         _lineEntryPass = passNumber;
         _lineEntryNudge = nudgeOffset;
         _lineEntryOffer = null;
