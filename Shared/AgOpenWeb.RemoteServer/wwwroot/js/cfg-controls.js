@@ -23,7 +23,25 @@ function cfgGet(key) {
 // panel then saves the profile, as AgOpenGPS does when its settings form closes. Unsaved, a
 // change was lost when the key went off before the exit save (POWERCUT-UNSAVED-PROFILE-EDIT-LOST).
 let cfgEditedSinceOpen = false;
-function cfgSend(key, val) { cfgEditedSinceOpen = true; transport.send('config.set|' + key + ':' + val); }
+function cfgSend(key, val) {
+  if (cfgAskFirst(key, val)) return;
+  cfgEditedSinceOpen = true; transport.send('config.set|' + key + ':' + val);
+}
+// Ackermann scales every left angle the steer module reads (90 = ×0.90): at 0 a left turn reads
+// 0° and the motor drives on to the stop. A value under 50 is asked first (fork, Renato
+// 2026-11-13: it went 90 → 0 on the tractor with nobody meaning to). The panel shows the kept
+// value until Confirm, so Cancel or a tap beside the box leaves nothing changed.
+const ACKERMANN_ASK_BELOW = 50;
+function cfgAskFirst(key, val) {
+  if (key !== 'autosteer.ackermann') return false;
+  const v = Number(val), was = Number(cfgGet(key));
+  if (!(v < ACKERMANN_ASK_BELOW) || !(was >= ACKERMANN_ASK_BELOW)) return false;
+  if (typeof populateAutoSteer === 'function') populateAutoSteer(true);
+  showConfirm(tr('Set Ackermann to {v}?', { v }),
+    tr('The steer module will read every left angle at {v} % (now {was} %). Under 50, AutoSteer turns the wheels left much further than the angle asked for.', { v, was }),
+    () => { cfgEditedSinceOpen = true; transport.send('config.set|' + key + ':' + val); });
+  return true;
+}
 // Save Profile acts on press, but the box still being typed in sends its value only when it loses
 // focus, which comes after the press: the save went out first and missed the last edit. Blur it
 // before saving so its 'change' reaches the host ahead of the save.
@@ -73,10 +91,39 @@ function wireCfgControls(panel) {
   // data-fmt — e.g. the Vehicle heading-fusion slider — are wired by hand.)
   for (const s of panel.querySelectorAll('.cfg-slider[data-fmt]')) {
     const ro = panel.querySelector('.cfg-ro[data-for="' + s.dataset.key + '"]');
+    guardSliderTap(s, ro); // first: its listeners run before the two below
     s.addEventListener('input', () => { if (ro) ro.textContent = fmtRo(s.value, s.dataset.fmt); });
     s.addEventListener('change', () => cfgSend(s.dataset.key, s.value));
     wireSliderNudge(s, ro);
   }
+}
+// A press on a slider's bar away from its thumb jumped the value to that spot and sent it: one
+// stray tap set Ackermann 0 and Max Steer Angle 61 on a tractor (fork, Renato 2026-11-13: the
+// tablet's keyboard had covered the boxes; a tap on the bar at 64 % gives 61-62, at its left
+// end 0). Now only the thumb moves a slider: a press on the bar leaves the value as it was.
+// Dragging the thumb, − / + and typing the value work as before.
+const SLIDER_THUMB_REACH_PX = 22; // half the thumb (8 px) and a finger's slack
+function sliderThumbX(s) {
+  const r = s.getBoundingClientRect(), min = Number(s.min), max = Number(s.max), thumb = 16;
+  const f = max > min ? (Number(s.value) - min) / (max - min) : 0;
+  return r.left + thumb / 2 + f * (r.width - thumb);
+}
+function guardSliderTap(s, ro) {
+  let held = null; // the value when a press began on the bar, not on the thumb
+  const keep = e => {
+    if (held === null) return;
+    e.stopImmediatePropagation();         // neither the readout nor cfgSend sees it
+    s.value = held;                        // the browser moved it to the finger: put it back
+    if (ro) ro.textContent = fmtRo(s.value, s.dataset.fmt);
+  };
+  s.addEventListener('pointerdown', e => {
+    held = Math.abs(e.clientX - sliderThumbX(s)) <= SLIDER_THUMB_REACH_PX ? null : s.value;
+  });
+  s.addEventListener('input', keep);
+  s.addEventListener('change', keep);
+  // After the release's own 'change': the arrow keys on a focused slider work as before.
+  for (const ev of ['pointerup', 'pointercancel'])
+    s.addEventListener(ev, () => setTimeout(() => { held = null; }, 0));
 }
 // A slider is hard to set to one exact value with a finger, so each gets − / + buttons (one
 // step a tap, repeating while held; sent once on release) and its value box can be tapped to
