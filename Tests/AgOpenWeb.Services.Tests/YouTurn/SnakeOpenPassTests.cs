@@ -148,6 +148,84 @@ public class SnakeOpenPassTests
         });
     }
 
+    // The square -40..40 (passes -10..9), the tractor on pass 0 heading south 15 m from the south
+    // edge. The order from pass 0 goes east one pass in two (2, 4, 6, 8, then back on 9, 7, ...);
+    // with 2, 4 and 6 worked its next pass is 8, eight passes over, with 1 and 3 beside the tractor
+    // still to do: as on a tester's field (simulator), 17R to 7R along the headland with the
+    // passes in between worked before and 16R and 14R open.
+    private (GuidanceWorkingState Guidance, YouTurnWorkingState Turn, List<Vec3> Cultivated) FarOrderPass()
+    {
+        foreach (int k in new[] { 0, 2, 4, 6 }) _track.MarkPathWorked(k);
+        return (new GuidanceWorkingState { HowManyPathsAway = 0, IsHeadingSameWay = false },
+            new YouTurnWorkingState { IsEnabled = true },
+            Ring((-40, -40), (40, -40), (40, 40), (-40, 40)));
+    }
+
+    [Test]
+    public void The_order_s_next_pass_far_along_the_headland_waits_for_the_passes_beside_the_tractor()
+    {
+        var (guidance, turn, square) = FarOrderPass();
+
+        var effects = _sm.Tick(Ctx(square, PassX(0), -25, 180), guidance, turn);
+
+        Assert.That(turn.SnakeSequence!.Take(5), Is.EqualTo(new[] { 0, 2, 4, 6, 8 }), "the scenario: the order goes on east");
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Not.Null, $"a turn, not \"{effects.StatusMessage}\"");
+            Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(3),
+                "the nearest pass still to do on the order's side, at least the skip away: not 8 along the headland");
+            Assert.That(turn.NextTrack!.Points[0].Easting, Is.EqualTo(PassX(3)).Within(0.01));
+            Assert.That(effects.TurnCreationFailedSound, Is.False);
+        });
+
+        // Landed on pass 3, the order is planned again from there: one pass in two on, 1 next.
+        turn.IsTriggered = turn.IsExecuting = true;
+        _sm.CompleteFromGuidance(Ctx(square, PassX(3), -40.5, 0), guidance, turn);
+        Assert.That(guidance.HowManyPathsAway, Is.EqualTo(3));
+        _sm.Tick(Ctx(square, PassX(3), -35, 0), guidance, turn);
+        Assert.That(turn.TurnPath, Is.Not.Null, "the turn at the north end");
+        Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(1), "the order from pass 3");
+    }
+
+    [Test]
+    public void The_order_s_far_pass_is_still_taken_with_none_still_to_do_beside_the_tractor()
+    {
+        // As above with every pass within twice the skip's step either side worked: the order's
+        // pass is next, as before, so the field still gets done.
+        var (guidance, turn, square) = FarOrderPass();
+        foreach (int k in new[] { -4, -3, -2, -1, 1, 3 }) _track.MarkPathWorked(k);
+
+        var effects = _sm.Tick(Ctx(square, PassX(0), -25, 180), guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Not.Null, $"a turn, not \"{effects.StatusMessage}\"");
+            Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(8));
+        });
+    }
+
+    [Test]
+    public void With_no_turn_fitting_onto_the_passes_beside_the_tractor_the_order_s_far_pass_is_taken()
+    {
+        // The hard fence 2 m past the headland line of FailingEnd, with a 16 m turn radius: a turn
+        // onto pass 3 or -2 (12 and 8 m over) is a loop that does not clear it; onto pass 8, 32 m
+        // over, it is a plain U that does. Each pass is built once: the nearest still to do on each
+        // side, then the order's.
+        var (guidance, turn, _) = FarOrderPass();
+        ConfigurationStore.Instance.Guidance.UTurnRadius = 16.0;
+        _boundary.OuterBoundary!.IsHard = true;
+        var cultivated = Ring((-48, -48), (48, -48), (48, 48), (-48, 48));
+
+        _sm.Tick(Ctx(cultivated, PassX(0), -18, 180), guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Not.Null);
+            Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(8));
+            Assert.That(_creation.TurnPathBuilds, Is.EqualTo(3), "pass 3, pass -2, then the order's pass 8");
+        });
+    }
+
     [Test]
     public void The_order_is_planned_again_when_the_headland_changes()
     {
