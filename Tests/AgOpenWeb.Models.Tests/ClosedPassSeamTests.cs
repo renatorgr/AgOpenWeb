@@ -11,7 +11,7 @@ using AgOpenWeb.Models.Guidance;
 namespace AgOpenWeb.Models.Tests;
 
 /// <summary>
-/// A closed track's pass at its seam (fork only). The loop's last point repeats its first, and the
+/// A closed track's pass at its seam. The loop's last point repeats its first, and the
 /// offset moved that point twice: once along the last stretch's normal, once along the first's.
 /// On the inside of the bend there the second copy lies behind the first, so the pass ran past the
 /// seam and back (0.2 m on a 26 m lap): its closing stretch pointed backwards, and a tractor a little

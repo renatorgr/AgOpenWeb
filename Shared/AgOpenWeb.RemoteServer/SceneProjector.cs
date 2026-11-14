@@ -824,21 +824,28 @@ public sealed class SceneProjector : System.IDisposable
         var t = _config.Tool;
         var g = _config.Guidance;
         var m = _config.Machine;
-        int toolType = t.IsToolFrontFixed ? 0 : t.IsToolRearFixed ? 1 : t.IsToolTBT ? 2 : 3;
+        // The mount the tool position uses (RigGeometry), as the panel's type: 0 front, 1 rear, 2 TBT, 3 trailing.
+        int toolType = AgOpenWeb.Models.Tool.RigGeometry.Mount(t) switch
+        {
+            AgOpenWeb.Models.Tool.ToolMount.FrontFixed => 0,
+            AgOpenWeb.Models.Tool.ToolMount.RearFixed => 1,
+            AgOpenWeb.Models.Tool.ToolMount.TBT => 2,
+            _ => 3,
+        };
         // Send all MaxSections widths/colours (not 16) so sections 17-64 get their data too (#41).
         var widths = new double[ToolConfig.MaxSections]; for (int i = 0; i < widths.Length; i++) widths[i] = t.GetSectionWidth(i);
         var colors = new int[ToolConfig.MaxSections]; for (int i = 0; i < colors.Length; i++) colors[i] = (int)t.GetSectionColor(i);
         var zones = new int[9]; for (int i = 0; i < 9; i++) zones[i] = t.GetZoneEndSection(i);
         var pins = new int[24]; for (int i = 0; i < 24; i++) pins[i] = (int)m.GetPinAssignment(i);
         return new ConfigDto(
-            new VehicleConfigDto(v.Name, (int)v.Type, v.HitchType, v.HitchLength, v.Wheelbase,
+            new VehicleConfigDto(v.Name, (int)v.Type, v.HitchType, v.HitchLength, v.ThreePointHitchLength, v.FrontHitchLength, v.Wheelbase,
                 v.TrackWidth, v.AntennaPivot, v.AntennaHeight, v.AntennaOffset,
                 v.ImuPivot, v.ImuHeight, v.ImuOffset),
             new GpsConfigDto(c.IsDualGps, c.DualHeadingOffset, c.DualReverseDistance, c.AutoDualFix,
                 c.DualSwitchSpeed, c.MinGpsStep, c.FixToFixDistance, c.HeadingFusionWeight,
                 c.ReverseDetection, c.RtkLostAlarm, c.RtkLostAction, c.RtkHold),
             new RollConfigDto(a.RollZero, a.RollFilter, a.IsRollInvert),
-            new ToolConfigDto(toolType, t.HitchType, t.HitchLength, t.TrailingHitchLength,
+            new ToolConfigDto(toolType, t.HitchType, t.WorkingPointFromHitch, t.TrailingHitchLength,
                 t.TankTrailingHitchLength, t.Length, t.LookAheadOnSetting, t.LookAheadOffSetting,
                 t.TurnOffDelay, t.Offset, t.Overlap, t.TrailingToolToPivotLength,
                 t.IsSectionsNotZones, _config.NumSections, t.DefaultSectionWidth, widths,
@@ -933,20 +940,20 @@ public sealed class SceneProjector : System.IDisposable
         h = h * 31 + (c.IsDualGps ? 1 : 0) * 7 + (c.AutoDualFix ? 1 : 0) * 11
                    + (c.ReverseDetection ? 1 : 0) * 13 + (c.RtkLostAlarm ? 1 : 0) * 17
                    + c.RtkLostAction * 19 + (a.IsRollInvert ? 1 : 0) * 23 + (c.RtkHold ? 1 : 0) * 29;
-        foreach (var d in new[] { v.HitchLength, v.Wheelbase, v.TrackWidth, v.AntennaPivot,
+        foreach (var d in new[] { v.HitchLength, v.ThreePointHitchLength, v.FrontHitchLength, v.Wheelbase, v.TrackWidth, v.AntennaPivot,
                                   v.AntennaHeight, v.AntennaOffset, c.DualHeadingOffset,
                                   c.DualReverseDistance, c.DualSwitchSpeed, c.MinGpsStep,
                                   c.FixToFixDistance, c.HeadingFusionWeight, a.RollZero, a.RollFilter })
             h = h * 31 + d.GetHashCode();
         // Tool / U-Turn / Tram / Machine (so Tool-dialog edits re-send the frame).
         var t = _config.Tool; var g = _config.Guidance; var mc = _config.Machine;
-        h = h * 31 + (t.IsToolFrontFixed ? 1 : t.IsToolRearFixed ? 2 : t.IsToolTBT ? 3 : 4);
+        h = h * 31 + (int)AgOpenWeb.Models.Tool.RigGeometry.Mount(t) + 1;
         h = h * 31 + t.HitchType + t.Zones * 31 + _config.NumSections * 7
               + (t.IsSectionsNotZones ? 1 : 0) + (t.IsMultiColoredSections ? 2 : 0)
               + (t.IsSectionOffWhenOut ? 4 : 0) + (t.IsHeadlandSectionControl ? 8 : 0) + t.MinCoverage
               + (t.IsWorkSwitchEnabled ? 16 : 0) + (t.IsWorkSwitchActiveLow ? 32 : 0) + (t.IsWorkSwitchManualSections ? 64 : 0)
               + (t.IsSteerSwitchEnabled ? 128 : 0) + (t.IsSteerSwitchManualSections ? 256 : 0);
-        foreach (var d in new[] { t.HitchLength, t.TrailingHitchLength, t.TankTrailingHitchLength, t.Length,
+        foreach (var d in new[] { t.WorkingPointFromHitch, t.TrailingHitchLength, t.TankTrailingHitchLength, t.Length,
                                   t.LookAheadOnSetting, t.LookAheadOffSetting, t.TurnOffDelay, t.Offset, t.Overlap,
                                   t.TrailingToolToPivotLength, t.DefaultSectionWidth, t.SlowSpeedCutoff, t.CoverageMargin,
                                   g.UTurnExtension, g.UTurnRadius, g.UTurnDistanceFromBoundary, g.GoAroundRadius, g.GoAroundMargin,

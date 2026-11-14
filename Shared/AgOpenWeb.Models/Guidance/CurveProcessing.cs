@@ -758,7 +758,7 @@ namespace AgOpenWeb.Models.Guidance
             // its closing stretch pointing backwards, and a tractor a little off the line at the seam
             // was steered to a goal behind it and turned round. There it is left out, and the pass
             // goes from the last stretch's offset straight to the first's, as at any inside bend; on
-            // the outside it starts the arc round the seam (below). Fork only.
+            // the outside it starts the arc round the seam (below).
             bool seamInside = closed && refCount > 2
                 && SamePoint(originalPoints[0], originalPoints[refCount - 1])
                 && Math.IEEERemainder(originalPoints[0].Heading - originalPoints[refCount - 2].Heading, 2 * Math.PI) * offsetDistance > 0;
@@ -843,7 +843,7 @@ namespace AgOpenWeb.Models.Guidance
             // same collision test: untested, a seam at the tip of a narrow slot into the field (its
             // sides closer than twice the offset) put the whole arc round the tip into the pass, out
             // across the fence beyond it (8.7 m on a 12 m lap), and the pass crossed itself coming
-            // back. Fork only.
+            // back.
             if (closed && offsetPoints.Count > 2)
             {
                 if (refCount > 2)

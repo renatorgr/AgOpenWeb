@@ -127,7 +127,9 @@ public class ToolPositionMatchesAgOpenGpsTests
         var c = ConfigurationStore.Instance;
         c.Vehicle.AntennaPivot = 0;
         c.Vehicle.HitchLength = Hitch;
-        c.Tool.HitchLength = Hitch;
+        // A fixed tool's working point Hitch m from the rear axle: the tractor's hitch there, the tool on it (#547).
+        c.Vehicle.ThreePointHitchLength = c.Vehicle.FrontHitchLength = System.Math.Abs(Hitch);
+        c.Tool.WorkingPointFromHitch = 0;
         c.Tool.TankTrailingHitchLength = Tank;
         c.Tool.TrailingHitchLength = Trailing;
         c.Tool.TrailingToolToPivotLength = pivotDistance;
@@ -157,7 +159,7 @@ public class ToolPositionMatchesAgOpenGpsTests
             {
                 // The map's implement (MainViewModel's render pull) is placed from the hitch and
                 // the headings with TrailedToolCentre: it must land on the tool position, every step.
-                var (me, mn) = ToolPositionService.TrailedToolCentre(ours.HitchPosition.Easting, ours.HitchPosition.Northing,
+                var (me, mn) = AgOpenWeb.Models.Tool.RigGeometry.TrailedToolCentre(ours.HitchPosition.Easting, ours.HitchPosition.Northing,
                     ours.TankPosition.Heading, ours.ToolHeading, c.Tool);
                 double dm = Math.Sqrt(Math.Pow(me - ours.ToolPosition.Easting, 2) + Math.Pow(mn - ours.ToolPosition.Northing, 2));
                 if (dm > worstMap) { worstMap = dm; worstMapAt = step; }

@@ -61,7 +61,9 @@ public class FrontToolCurveTests
         config.Tool.IsToolRearFixed = false;
         config.Tool.IsToolTrailing = false;
         config.Tool.IsToolTBT = false;
-        config.Tool.HitchLength = Hitch;
+        // A fixed tool's working point Hitch m from the rear axle: the tractor's hitch there, the tool on it (#547).
+        config.Vehicle.ThreePointHitchLength = config.Vehicle.FrontHitchLength = System.Math.Abs(Hitch);
+        config.Tool.WorkingPointFromHitch = 0;
         config.Guidance.UTurnRadius = 8;
 
         _gpsService = new GpsService();
@@ -218,7 +220,9 @@ public class FrontToolCurveTests
     {
         ConfigurationStore.Instance.Tool.IsToolFrontFixed = false;
         ConfigurationStore.Instance.Tool.IsToolRearFixed = true;
-        ConfigurationStore.Instance.Tool.HitchLength = -1.5;
+        // A fixed tool's working point -1.5 m from the rear axle: the tractor's hitch there, the tool on it (#547).
+        ConfigurationStore.Instance.Vehicle.ThreePointHitchLength = ConfigurationStore.Instance.Vehicle.FrontHitchLength = System.Math.Abs(-1.5);
+        ConfigurationStore.Instance.Tool.WorkingPointFromHitch = 0;
         Open();
         var (_, _, pivot) = DriveRound(LapRadius);
         Assert.That(pivot, Is.EqualTo(0).Within(0.08), "the pivot on the lap");

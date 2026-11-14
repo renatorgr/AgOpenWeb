@@ -68,7 +68,7 @@ Their points are `[longitude, latitude, heading]`: drop the third value, which i
 
 | Role | Geometry | Count | Properties |
 | --- | --- | --- | --- |
-| `metadata` | Point at the origin | Exactly 1, first | `name`, `originLatitude`, `originLongitude`, `convergence`, `areaHectares`, `createdDate`, `lastModifiedDate` |
+| `metadata` | Point at the origin | Exactly 1, first | `formatVersion`, `name`, `originLatitude`, `originLongitude`, `convergence`, `areaHectares`, `createdDate`, `lastModifiedDate` |
 | `outer-boundary` | Polygon, 1 ring, closed, with headings | 0 or 1 | `isDriveThrough`, `isHard`, `areaHectares` |
 | `inner-boundary` | Polygon, as above | 0 or more | `atObstacle`, `isDriveThrough`, `isHard`, `areaHectares`, `circleCenter`, `circleDiameter` |
 | `headland` | Polygon, as above | 0 or 1 | `isDriveThrough`, `isHard`, `areaHectares` (only geometry is read) |
@@ -92,7 +92,14 @@ Property details:
 - **`headland-line`:** headland guidance paths built from the boundary. `moveDistance` in metres; `mode` and `aPointIndex` are AgOpenWeb builder state, preserve them as read.
 - **Mercator bounds:** EPSG:3857 metres of the image, present only when the image was captured from a web-map tile service.
 
-A reader must ignore roles and properties it doesn't know, and a writer must keep them: AgOpenWeb saves each part on its own and leaves other features untouched.
+A reader must ignore roles and properties it doesn't know, and a writer must keep them: AgOpenWeb saves each part on its own and leaves other features untouched, and writes a part's properties it doesn't read back as they were (a newer build's, another tool's). Members of a feature other than `type`, `geometry` and `properties` (an `id`, a `bbox`) are kept on the features AgOpenWeb doesn't rewrite; new data goes in `properties`.
+
+### Format version
+
+- **`formatVersion`:** integer, on the `metadata` feature; a file without one is version `1`. This document describes version `1`.
+- **Adding** a role or a property does not change the version: an older reader ignores it and keeps it.
+- **The version goes up** only when a change alters what something already in the file means (a property's unit or reference point, a role's geometry). Such a change says here how the earlier version is read.
+- **A file in a newer version than the reader knows** is read as far as it understands it and is never written: AgOpenWeb opens such a field, tells the operator that changes to its boundaries, tracks, flags and headland are not saved, and writes nothing to its `field.geojson`. Another tool should do the same.
 
 ### Example
 
@@ -107,6 +114,7 @@ The metadata and boundary come from a real field (ring shortened to 3 points); t
       "geometry": { "type": "Point", "coordinates": [-87.1802554, 32.59058587] },
       "properties": {
         "role": "metadata",
+        "formatVersion": 1,
         "name": "Test1",
         "originLatitude": 32.59058587,
         "originLongitude": -87.1802554,
@@ -170,6 +178,15 @@ A job's worked area is stored as square binary tiles on the field's plane grid: 
 
 CamelCase JSON: `schemaVersion` (1), `id` (GUID), `fieldName`, `taskName` (same as the folder name), `workType`, `notes`, `startedAt`, `endedAt`, `lastOpenedAt` (ISO 8601), `status` (`"InProgress"`, `"Done"` or `"Abandoned"`), `distanceTraveledMeters`, `areaWorkedHectares`, `uTurnCount`. A `jobs/<task>/` folder without `job.json` is not listed as a job.
 
+`rig` (optional; absent in jobs saved before it was kept): the machine the job was worked with, a copy of the profiles, not their names only, kept up to date while the job is open. As ISO 11783-10, each part is measured from the connector it hangs on, in metres, distances positive in their own direction:
+
+- `vehicle`: `profileName`, `type` (`"Tractor"`, `"Harvester"`, `"Articulated"`), `hitchType` (ISO 11783 coupling type, DDI 157: -1 not available, 0 unknown), and its connectors from the rear axle: `drawbarHitch` and `rearThreePointHitch` (the centre of the lower link points) behind it, `frontThreePointHitch` ahead of it (0: none set).
+- `tools`: the tools in order from the vehicle. Each has `profileName`, `connector` (`"RearThreePoint"`, `"Drawbar"`, `"FrontThreePoint"` on the vehicle, or `"PreviousTool"`: the rear connector of the tool before it), `mount` (`"FrontFixed"`, `"RearFixed"`, `"Trailing"`, `"TBT"`), `hitchType`, then its distances from its connector: `workingPointFromHitch` (a fixed tool; negative is on the vehicle's side of the connector), `trailingHitchLength` (a trailed tool: connector to its wheels), `tankTrailingHitchLength` (TBT: connector to the tank's wheels), `trailingToolToPivotLength` (its wheels to the working point, + behind), and `offset` (working point to the right of the vehicle's centre line), `length`, `width`, `sectionWidths` (left to right), `rearConnectorFromHitch` (its own rear connector behind its connector, for a tool hung behind it; absent when it has none). A distance the tool's `mount` doesn't use is 0.
+
+AgOpenWeb works with one tool and writes a chain of one; a reader should accept more. A job reopened in AgOpenWeb gets the machine loaded then.
+
+`schemaVersion` follows the rules of `formatVersion` (section 3): members a reader doesn't know are kept by a writer, and the version goes up only for a change of meaning. A job whose `job.json` or coverage `manifest.json` is in a newer version than the reader knows is listed, but its coverage is not read and nothing is written to the job (AgOpenWeb tells the operator to start a new job). A `status` the reader doesn't know reads as `"InProgress"`.
+
 ### manifest.json
 
 PascalCase JSON. A previous good copy is kept as `manifest.json.bak`.
@@ -188,7 +205,7 @@ PascalCase JSON. A previous good copy is kept as `manifest.json.bak`.
 
 - `DisplayCellSize`: metres per display pixel. It names the display folder: `s` + round(cell × 10⁶), e.g. 0.35 m → `s350000`.
 - `TotalWorkedArea`: square metres.
-- `MinE` … `MaxN`: the coverage grid's bounds in plane metres. A manifest is valid only if `SchemaVersion` is 1, `DisplayCellSize` > 0, `MaxE` > `MinE` and `MaxN` > `MinN`.
+- `MinE` … `MaxN`: the coverage grid's bounds in plane metres. A manifest is valid only if `SchemaVersion` is 1, `DisplayCellSize` > 0, `MaxE` > `MinE` and `MaxN` > `MinN`. A manifest (or its `.bak`) with a higher `SchemaVersion` is a newer format, not damage: it is never set aside, and the coverage folder is neither read nor written.
 
 ### Tile addressing
 

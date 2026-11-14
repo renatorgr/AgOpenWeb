@@ -14,6 +14,10 @@ namespace AgOpenWeb.Models.Job;
 /// </summary>
 public class Job
 {
+    /// <summary>The members of its job.json that this build does not read (a newer build's),
+    /// written back as they were (FIELD_FILE_FORMATS.md).</summary>
+    public IReadOnlyDictionary<string, System.Text.Json.JsonElement>? UnknownProperties { get; set; }
+
     /// <summary>
     /// Stable identifier. Coverage and section-log files key off this on
     /// disk so renaming <see cref="TaskName"/> doesn't break references.
@@ -73,4 +77,10 @@ public class Job
     /// Number of U-turns executed during this job.
     /// </summary>
     public int UTurnCount { get; set; }
+
+    /// <summary>
+    /// The vehicle and the chain of tools the job was worked with (#547), a copy of the loaded
+    /// profiles kept up to date while the job is open; null for a job saved before it was kept.
+    /// </summary>
+    public JobRig? Rig { get; set; }
 }

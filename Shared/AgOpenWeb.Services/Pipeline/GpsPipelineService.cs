@@ -2078,9 +2078,12 @@ public sealed class GpsPipelineService : IGpsPipelineService
     {
         int pass = landingPass ?? g.HowManyPathsAway;
         bool sameWay = landingPass.HasValue ? !g.IsHeadingSameWay : g.IsHeadingSameWay;
-        g.CurrentLineLabel = (sameWay ? "↑" : "↓") + (pass >= 0 ? $"{pass + 1}R" : $"{-pass}L");
+        g.CurrentLineLabel = (sameWay ? "↑" : "↓") + PassName(pass);
         return g;
     }
+
+    /// <summary>The pass as its label names it: pass 0 is 1R, pass −1 is 1L.</summary>
+    private static string PassName(int pass) => pass >= 0 ? $"{pass + 1}R" : $"{-pass}L";
 
     private static GuidanceSnapshot BuildGuidanceSnapshot(
         GuidanceWorkingState src,
@@ -2176,7 +2179,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
         Models.Track.Track steered)
     {
         var config = _configStore;
-        double reach = Math.Abs(config.Tool.HitchLength);
+        // The working point ahead of the rear axle: the vehicle's front hitch plus the tool's distance from it (#547).
+        double reach = Math.Abs(Models.Tool.RigGeometry.AttachX(config.Vehicle, config.Tool));
         double minRadius = config.Vehicle.MinTurningRadius;
         double passRadius = config.Guidance.UTurnRadius; // the passes' bends are opened to it
         var key = (track, track.Points, distAway, bent, steered.Points.Count, steered.IsClosed, reach, minRadius, passRadius);
@@ -2304,7 +2308,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // A front-mounted implement runs outside the pivot's line round a bend: the pivot steers
         // inside it, so the implement runs on the pass (FrontToolLine). The same points, moved.
         // Fork only.
-        if (config.Tool.IsToolFrontFixed && currentTrack.Points.Count > 2
+        if (Models.Tool.RigGeometry.Mount(config.Tool) == Models.Tool.ToolMount.FrontFixed && currentTrack.Points.Count > 2
             && FrontToolSteered(track, distAway, bent, currentTrack) is { } frontLine)
             currentTrack = new Models.Track.Track
             {
@@ -3245,9 +3249,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
         IReadOnlyList<Vec3> line = sameWay ? pass : Reversed(pass);
 
         var tool = config.Tool;
-        double along = tool.IsToolFrontFixed ? Math.Abs(tool.HitchLength)
-            : tool.IsToolRearFixed ? -Math.Abs(tool.HitchLength)
-            : -Math.Abs(config.Vehicle.HitchLength); // a trailed implement at the hitch
+        // Along the tractor from the rear axle (+ ahead): a fixed implement's working point, a trailed
+        // implement at the drawbar pin (RigGeometry, #547).
+        double along = Models.Tool.RigGeometry.AttachX(config.Vehicle, tool);
         double reach = config.ActualToolWidth / 2 + Math.Abs(tool.Offset); // as the fence guard
         var obstacles = boundary.InnerBoundaries.Where(o => o is { IsValid: true, IsDriveThrough: false }).ToList();
         // On an open pass with U-turns the turn is planned only after the S: it must end in the
@@ -3283,9 +3287,6 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private static bool InHeadland(Boundary boundary, List<Vec3> headlandLine, double e, double n) =>
         boundary.OuterBoundary is { IsValid: true } outer && outer.IsPointInside(e, n)
         && !GeometryMath.IsPointInPolygon(headlandLine, e, n);
-
-    /// <summary>A pass as the pass label names it, without the arrow: pass 0 is 1R, pass −1 is 1L.</summary>
-    private static string PassName(int pass) => pass >= 0 ? $"{pass + 1}R" : $"{-pass}L";
 
     private string? TakeLineEntryNotice()
     {

@@ -65,7 +65,7 @@ namespace AgOpenWeb.Models.YouTurn
         /// again with the turn lines moved in (the clearance from a hard fence, a landing on a bend):
         /// the turn is then seated back from that end, at the moved turn line's crossing nearest to
         /// it. Null on the first try. Moved in, the fence's turn line can cross the pass much earlier
-        /// where the fence bulges in beside it, and the turn was made there. Fork only.
+        /// where the fence comes in beside it, and the turn was made there.
         /// </summary>
         public int? TurnLineEndIndex { get; set; }
 

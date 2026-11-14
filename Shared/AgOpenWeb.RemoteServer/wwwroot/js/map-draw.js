@@ -276,7 +276,8 @@ function drawExtraGuidelinesSk(canvas) {
   const cmds = [], outer = outerBoundary();
   for (const gl of scene.guideLines || []) {
     if (!gl || gl.length < 2 || (outer && !entersField(gl, outer))) continue;
-    lineCmds(drawnPts(extendAbLine(gl)), false, cmds);
+    const pts = extendAbLine(gl);
+    if (pts && pts.length >= 2) lineCmds(drawnPts(pts), false, cmds);
   }
   strokeCmdsSk(canvas, cmds, [SKP.extraGuideShadow, SKP.extraGuide]);
 }

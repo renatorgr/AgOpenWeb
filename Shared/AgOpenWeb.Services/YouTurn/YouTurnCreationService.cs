@@ -1275,12 +1275,12 @@ namespace AgOpenWeb.Services.YouTurn
         /// walking back from the end the first try found towards the tractor, the first point of the
         /// run of points outside the moved turn area that reaches that end. Null on a first try, or
         /// when that end is not ahead on this pass or not outside the moved turn area.
-        /// The moved line only seats the turn further back. Where the fence bulges in beside the pass
+        /// The moved line only seats the turn further back. Where the fence comes in beside the pass
         /// (a narrowing of the field the pass runs past, inside the turn line all the way), the line
-        /// moved in crosses the pass there, and the first crossing ahead was that one: on Tapada da
-        /// Casa a front boom near the fence at the far end moved the turn line in 5 m, and the turn
-        /// was made 260 m before the end, beside the bulge, landing on the next pass 16 m after its
-        /// edge entered the crop, which was never sprayed. Fork only.
+        /// moved in crosses the pass there, and the first crossing ahead was that one: a field with an
+        /// 8 m boom near a hard fence at the far end had its turn line moved in 5 m, and the turn was
+        /// made 260 m before the end, beside the narrowing, landing on the next pass 16 m after its
+        /// edge entered the crop, which was never worked.
         /// </summary>
         private static int? TurnLineEndOnRetry(YouTurnCreationInput input, int count)
         {

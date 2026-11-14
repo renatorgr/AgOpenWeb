@@ -170,7 +170,7 @@ public class AgOpenGpsProfileImportTests
 
         Assert.That(store.Tool.TankTrailingHitchLength, Is.EqualTo(1.8));
         // Heading north, straight behind the tractor: the tool is 4.2 m south of the hitch.
-        var (easting, northing) = ToolPositionService.TrailedToolCentre(0, 0, 0.0, 0.0, store.Tool);
+        var (easting, northing) = AgOpenWeb.Models.Tool.RigGeometry.TrailedToolCentre(0, 0, 0.0, 0.0, store.Tool);
         Assert.That(easting, Is.EqualTo(0.0).Within(1e-9));
         Assert.That(northing, Is.EqualTo(-4.2).Within(1e-9), "tank and tool behind the hitch (-0.6 with the tank ahead of it)");
     }
@@ -290,9 +290,14 @@ public class AgOpenGpsProfileImportTests
         Assert.That(autoSteer["Case"].ProportionalGain, Is.EqualTo(120));
         Assert.That(autoSteer["Case"].MinSteerSpeed, Is.EqualTo(1.2));
 
+        // The mounted sprayer's 1.6 m is the tractor's rear 3-point now, the sprayer at it (#547):
+        // on the tractor, its working point where AgOpenGPS has it.
+        Assert.That(store.Vehicle.ThreePointHitchLength, Is.EqualTo(1.6), "the 3-point, from the mounted implement");
         var sprayer = new ConfigurationStore();
+        Assert.That(VehicleProfileJsonService.Load(vehicles, "Case", sprayer), Is.True);
         Assert.That(tools.Load("Sprayer", sprayer), Is.True);
-        Assert.That(sprayer.Tool.HitchLength, Is.EqualTo(1.6), "the distance, not 0");
+        Assert.That(sprayer.Tool.WorkingPointFromHitch, Is.EqualTo(0).Within(1e-9));
+        Assert.That(AgOpenWeb.Models.Tool.RigGeometry.AxleToWorkingPoint(sprayer.Vehicle, sprayer.Tool), Is.EqualTo(1.6).Within(1e-9), "the distance, not 0");
 
         var tool = new ConfigurationStore();
         Assert.That(tools.Load("Seeder", tool), Is.True);

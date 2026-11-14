@@ -36,7 +36,9 @@ public class ManualTurnHardBoundaryTests
         config.NumSections = 1;
         config.Tool.SetSectionWidth(0, 1600); // 16 m via sections -> ActualToolWidth = 16
         config.Tool.Overlap = 0;
-        config.Tool.HitchLength = 2;
+        // A fixed tool's working point 2 m from the rear axle: the tractor's hitch there, the tool on it (#547).
+        config.Vehicle.ThreePointHitchLength = config.Vehicle.FrontHitchLength = System.Math.Abs(2);
+        config.Tool.WorkingPointFromHitch = 0;
         config.Tool.IsToolRearFixed = true;
         config.Tool.IsToolTrailing = false;
         config.Tool.IsToolTBT = false;
@@ -124,7 +126,9 @@ public class ManualTurnHardBoundaryTests
         var c = ConfigurationStore.Instance;
         c.Tool.Width = 8;
         c.Tool.SetSectionWidth(0, 800);
-        c.Tool.HitchLength = hitch;
+        // A fixed tool's working point hitch m from the rear axle: the tractor's hitch there, the tool on it (#547).
+        c.Vehicle.ThreePointHitchLength = c.Vehicle.FrontHitchLength = System.Math.Abs(hitch);
+        c.Tool.WorkingPointFromHitch = 0;
         c.Tool.IsToolFrontFixed = front;
         c.Tool.IsToolRearFixed = !front;
         c.Guidance.UTurnRadius = 8;
