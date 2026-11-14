@@ -188,12 +188,51 @@ public class SnakeOpenPassTests
     }
 
     [Test]
-    public void The_order_s_far_pass_is_still_taken_with_none_still_to_do_beside_the_tractor()
+    public void A_pass_still_to_do_nearer_than_the_order_s_far_pass_is_taken_though_more_than_twice_the_skip_over()
     {
-        // As above with every pass within twice the skip's step either side worked: the order's
-        // pass is next, as before, so the field still gets done.
+        // As above with 1 and 3 worked too: the nearest pass still to do is 5, five over, more than
+        // twice the skip's step but nearer than the order's 8. As on a tester's field (simulator):
+        // on 21R the order's 8R was 13 passes over and 15R six over; the search stopped at four
+        // passes, the turn onto 8R did not build, and there was no turn at all.
         var (guidance, turn, square) = FarOrderPass();
         foreach (int k in new[] { -4, -3, -2, -1, 1, 3 }) _track.MarkPathWorked(k);
+
+        var effects = _sm.Tick(Ctx(square, PassX(0), -25, 180), guidance, turn);
+
+        Assert.That(turn.SnakeSequence!.Take(5), Is.EqualTo(new[] { 0, 2, 4, 6, 8 }), "the scenario: the order goes on east");
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Not.Null, $"a turn, not \"{effects.StatusMessage}\"");
+            Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(5), "the nearest pass still to do, not the order's 8");
+            Assert.That(turn.NextTrack!.Points[0].Easting, Is.EqualTo(PassX(5)).Within(0.01));
+            Assert.That(_creation.TurnPathBuilds, Is.EqualTo(1), "only the turn onto pass 5 is built");
+        });
+    }
+
+    [Test]
+    public void A_pass_still_to_do_on_the_other_side_nearer_than_the_order_s_far_pass_is_taken()
+    {
+        // Every pass east up to the order's 8 worked; west, -5 is still to do, five over.
+        var (guidance, turn, square) = FarOrderPass();
+        foreach (int k in new[] { -4, -3, -2, -1, 1, 3, 5, 7 }) _track.MarkPathWorked(k);
+
+        var effects = _sm.Tick(Ctx(square, PassX(0), -25, 180), guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Not.Null, $"a turn, not \"{effects.StatusMessage}\"");
+            Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(-5), "the nearest pass still to do, not the order's 8");
+            Assert.That(turn.NextTrack!.Points[0].Easting, Is.EqualTo(PassX(-5)).Within(0.01));
+        });
+    }
+
+    [Test]
+    public void The_order_s_far_pass_is_still_taken_with_none_still_to_do_nearer()
+    {
+        // As above with every pass nearer than the order's worked, either side: the order's pass
+        // is next, as before, so the field still gets done.
+        var (guidance, turn, square) = FarOrderPass();
+        foreach (int k in new[] { -7, -6, -5, -4, -3, -2, -1, 1, 3, 5, 7 }) _track.MarkPathWorked(k);
 
         var effects = _sm.Tick(Ctx(square, PassX(0), -25, 180), guidance, turn);
 
