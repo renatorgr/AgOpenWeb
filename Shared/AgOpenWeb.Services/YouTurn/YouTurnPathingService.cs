@@ -883,6 +883,60 @@ public sealed class YouTurnPathingService
     }
 
     /// <summary>
+    /// The least unworked crop a turn onto a pass left to do at its end must drive over, m: less, and
+    /// the turn lands short of what is left (<see cref="TurnReachesUnworkedGround"/>).
+    /// </summary>
+    public const double MinNewGround = 5.0;
+
+    /// <summary>
+    /// Does a turn onto a pass left to do at its end (<see cref="IsPassOpenAtThisEnd"/>) get there:
+    /// at least <see cref="MinNewGround"/> of unworked crop, inside the cultivated area, along the
+    /// turn's last <see cref="OpenEndStretch"/> (the exit leg, on the pass) and as much again on along
+    /// its last heading. A turn lands abreast of where it leaves the tractor's pass; where the pass's
+    /// own end lies beyond that (a slanting headland, a turn seated back from the fence or an
+    /// obstacle) the end is out of its reach. True with no map, or with no crop to judge. Fork only.
+    /// </summary>
+    public bool TurnReachesUnworkedGround(IReadOnlyList<Vec3> turnPath, Boundary? boundary,
+        IReadOnlyList<Vec3>? headlandLine, Func<double, double, bool>? isPointCovered)
+    {
+        const double Step = 1.0;
+        if (isPointCovered == null || turnPath.Count < 2) return true;
+        var samples = new List<Vec2>();
+        // Back along the path from its end.
+        double walked = 0;
+        for (int i = turnPath.Count - 1; i > 0 && walked < OpenEndStretch; i--)
+        {
+            var a = turnPath[i];
+            var b = turnPath[i - 1];
+            double d = GeometryMath.Distance(a, b);
+            for (double t = 0; t < d && walked + t < OpenEndStretch; t += Step)
+            {
+                double f = d > 1e-9 ? t / d : 0;
+                samples.Add(new Vec2(a.Easting + (b.Easting - a.Easting) * f, a.Northing + (b.Northing - a.Northing) * f));
+            }
+            walked += d;
+        }
+        // On past its end, the way it ends.
+        var last = turnPath[^1];
+        int k = turnPath.Count - 2;
+        while (k > 0 && GeometryMath.Distance(turnPath[k], last) < 0.5) k--;
+        double de = last.Easting - turnPath[k].Easting, dn = last.Northing - turnPath[k].Northing;
+        double len = Math.Sqrt(de * de + dn * dn);
+        if (len > 1e-6)
+            for (double s = Step; s <= OpenEndStretch; s += Step)
+                samples.Add(new Vec2(last.Easting + de / len * s, last.Northing + dn / len * s));
+
+        int inside = 0, unworked = 0;
+        foreach (var p in samples)
+        {
+            if (!IsPointInsideCultivatedArea(p.Easting, p.Northing, boundary, headlandLine)) continue;
+            inside++;
+            if (!isPointCovered(p.Easting, p.Northing)) unworked++;
+        }
+        return inside == 0 || unworked * Step >= MinNewGround;
+    }
+
+    /// <summary>
     /// Points every metre along the first <see cref="OpenEndStretch"/> of pass
     /// <paramref name="pathsAway"/> inside the cultivated area back from the end the tractor is
     /// heading for: from where the pass leaves the area at that end (found from the point abreast

@@ -1191,8 +1191,11 @@ public sealed class YouTurnStateMachine
         if (landable)
         {
             AimTurnAt(track, abHeading, guidance, turn, effects, target, "Snake");
+            string? message = effects.StatusMessage;
             var built = BuildTurnPath(in ctx, track, headingRadians, abHeading, guidance, turn, effects);
-            if (built.Path != null) return;
+            // Taken for its end left to do, and the turn lands short of it: worked at this end, and
+            // the next pass of the order is looked for on the next cycle.
+            if (built.Path != null) { TurnMissesOpenEnd(in ctx, track, target, turn, effects, message); return; }
             refused = built;
         }
         else
@@ -1314,8 +1317,11 @@ public sealed class YouTurnStateMachine
                 if (!SnakeLandable(in ctx, track, abHeading, pass, guidance, turn))
                     continue;
                 AimTurnAt(track, abHeading, guidance, turn, effects, pass, "Snake (nearest open pass)");
+                string? message = effects.StatusMessage;
                 if (BuildTurnPath(in ctx, track, headingRadians, abHeading, guidance, turn, effects).Path != null)
                 {
+                    // Taken for its end left to do, and the turn lands short of it: the next one.
+                    if (TurnMissesOpenEnd(in ctx, track, pass, turn, effects, message)) continue;
                     if (orderPassFar)
                         _logger.LogDebug("[YouTurn] Snake pass {Order} is {Count} passes over - turning onto pass {Pass}, the nearest still to do",
                             orderPass, Math.Abs(orderPass - current), pass);
@@ -1353,6 +1359,29 @@ public sealed class YouTurnStateMachine
             return true;
         _logger.LogDebug("[YouTurn] Snake pass {Pass} has too little crop inside the headland line at this end", pass);
         return false;
+    }
+
+    /// <summary>
+    /// Pass <paramref name="pass"/>, worked on the whole and taken as still to do only at this end
+    /// (<see cref="YouTurnPathingService.IsPassOpenAtThisEnd"/>), and the turn just built onto it
+    /// lands short of that end: the turn is dropped and the pass counts worked at this end. A turn
+    /// lands abreast of where it leaves the tractor's pass, and the end of the next pass can lie
+    /// beyond that (the headland line slanting out, a turn seated back from a fence or an
+    /// obstacle): the end stays unworked whatever turn is made here, and the whole pass was driven
+    /// again for nothing (a tester's field, simulator: the turn from 1L onto 2R at the north end,
+    /// seated back from the fence and a tree, and 2R driven a second time). Fork only.
+    /// </summary>
+    private bool TurnMissesOpenEnd(in TickContext ctx, Models.Track.Track track, int pass, YouTurnWorkingState turn,
+        YouTurnEffects effects, string? messageBefore)
+    {
+        if (turn.TurnPath is not { } path || !_openAtEnd.TryGetValue(pass, out bool open) || !open) return false;
+        if (!track.IsPathWorked(pass) && !(_coveredPasses.TryGetValue(pass, out bool covered) && covered)) return false;
+        if (_pathing.TurnReachesUnworkedGround(path, ctx.Boundary, ctx.WorkEndLine, ctx.IsPointCovered)) return false;
+        _logger.LogDebug("[YouTurn] Snake pass {Pass} is left to do only beyond where a turn here lands on it - worked at this end", pass);
+        _openAtEnd[pass] = false;
+        DiscardPlannedTurn(turn);
+        effects.StatusMessage = messageBefore; // not "YouTurn path created"
+        return true;
     }
 
     // The snake order this state machine planned, and the field it planned it for.
