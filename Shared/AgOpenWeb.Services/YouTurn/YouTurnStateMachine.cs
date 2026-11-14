@@ -1273,8 +1273,9 @@ public sealed class YouTurnStateMachine
     /// (a hard fence on that side), the ones further that way fit no better. True when one was built
     /// and is the planned turn. Ours: AgOpenGPS (CYouTurn.GetNextNotWorkedTrack) only steps outward
     /// on the turn's side past worked tracks; the other side, passes nearer than the skip and the
-    /// room and build checks are not in it. <paramref name="orderPassFar"/>: asked before the order's
-    /// pass, which is further than <see cref="MaxFallbackStep"/> (only the log says so).
+    /// room and build checks are not in it. Passes up to <see cref="MaxFallbackStep"/> away are looked
+    /// at, or with <paramref name="orderPassFar"/> (asked before the order's pass, which is further than
+    /// that) every pass nearer than the order's.
     /// </summary>
     private bool TurnOntoNearestOpenPass(
         in TickContext ctx,
@@ -1294,10 +1295,15 @@ public sealed class YouTurnStateMachine
         int skip = ctx.UTurnSkipRows + 1;
         int orderSide = orderPass >= current ? 1 : -1;
         int[] sides = operatorSide != 0 ? new[] { operatorSide } : new[] { orderSide, -orderSide };
+        // Asked before a far order pass, any pass nearer than it is a shorter way: within twice the
+        // skip only, the order's own pass further over was tried and nearer ones were not (Tapada da
+        // Casa: on 21R the order's 8R was 13 passes over, 15R six over was never looked at, and the
+        // turn onto 8R did not build).
+        int reach = orderPassFar ? Math.Abs(orderPass - current) - 1 : MaxFallbackStep(skip);
         foreach (int side in sides)
         {
             var candidates = seq.Distinct()
-                .Where(p => p != orderPass && Math.Sign(p - current) == side && Math.Abs(p - current) <= MaxFallbackStep(skip))
+                .Where(p => p != orderPass && Math.Sign(p - current) == side && Math.Abs(p - current) <= reach)
                 .OrderBy(p => Math.Abs(p - current) < skip ? 1 : 0)
                 .ThenBy(p => Math.Abs(p - current));
             int looked = 0;
