@@ -90,6 +90,59 @@ public class FrontToolLineTests
         });
     }
 
+    // The line's easting at a northing, between its points (a line running north).
+    private static double EastingAt(IReadOnlyList<Vec3> line, double northing)
+    {
+        for (int i = 0; i + 1 < line.Count; i++)
+        {
+            var a = line[i];
+            var b = line[i + 1];
+            if ((a.Northing - northing) * (b.Northing - northing) > 0 || Math.Abs(b.Northing - a.Northing) < 1e-9) continue;
+            double t = (northing - a.Northing) / (b.Northing - a.Northing);
+            return a.Easting + (b.Easting - a.Easting) * t;
+        }
+        throw new ArgumentOutOfRangeException(nameof(northing));
+    }
+
+    [Test]
+    public void After_a_bend_the_line_is_back_on_a_long_straight_stretch_within_a_few_metres()
+    {
+        // As a pass bent round a Go around tree: north on points a metre apart, a sideways bump of
+        // 3 m over 30 m, then one straight stretch of 200 m, two points. The stretch's first point
+        // moved with the bend and its far one did not: steered one for one, the line ran slanted
+        // the whole 200 m (0.40 m beside the pass 100 m on, on a tester's field).
+        var pts = new List<Vec3>();
+        for (int i = 0; i < 50; i++) pts.Add(new Vec3(0, i, 0));
+        for (int i = 0; i <= 30; i++) pts.Add(new Vec3(3 * (1 - Math.Cos(2 * Math.PI * i / 30)) / 2, 50 + i, 0));
+        pts.Add(new Vec3(0, 280, 0));
+
+        var line = FrontToolLine.Steered(pts, closed: false, Reach, MinRadius)!;
+        Assert.That(line, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(Math.Abs(EastingAt(line, 65)), Is.GreaterThan(0.05), "the bend itself moves");
+            Assert.That(Math.Abs(EastingAt(line, 95)), Is.LessThan(0.01), "15 m past the bend, back on the pass");
+            Assert.That(Math.Abs(EastingAt(line, 180)), Is.LessThan(1e-9), "and on it along the stretch");
+            Assert.That(line[^1].Northing, Is.EqualTo(280), "to the pass's end");
+        });
+    }
+
+    [Test]
+    public void A_closed_pass_keeps_its_points_one_for_one()
+    {
+        // PassUnfit marks a closed pass's points by index.
+        var square = new List<Vec3>();
+        for (int i = 0; i < 4; i++)
+        {
+            double a = Math.PI / 2 * i;
+            square.Add(new Vec3(50 * Math.Sin(a), 50 * Math.Cos(a), 0));
+        }
+        var circle = Circle(20);
+        Assert.That(FrontToolLine.Steered(circle, closed: true, Reach, MinRadius)!.Count, Is.EqualTo(circle.Count));
+        var steered = FrontToolLine.Steered(square, closed: true, Reach, MinRadius);
+        Assert.That(steered == null || steered.Count == square.Count);
+    }
+
     [Test]
     public void Never_tighter_than_the_tractor_turns()
     {

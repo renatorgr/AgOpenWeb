@@ -105,14 +105,25 @@ public sealed class GoAroundPasses
     /// <summary>
     /// The radius the bends are built with: the Curve radius setting, but never under the
     /// tractor's own minimum turning radius (wheelbase over the tangent of the steer angle),
-    /// since the follower cannot hold a bend the tractor cannot steer.
+    /// since the follower cannot hold a bend the tractor cannot steer. With a front-mounted
+    /// implement, never under √(r² + h²) for a minimum turning radius r and the implement h ahead
+    /// of the pivot: the pivot steers a bend of √(R² − h²) to keep the implement on one of R
+    /// (<see cref="FrontToolLine"/>), and on a tighter bend the implement runs outside it (fork
+    /// only: on a tester's field, simulator, a 5 m bend with a 6 m boom 4.5 m ahead and a 4.6 m
+    /// turning radius took the boom 1.35 m off the pass and onto the next tree).
     /// </summary>
     public double Radius
     {
         get
         {
             double setting = _config.Guidance.GoAroundRadius, min = _config.Vehicle.MinTurningRadius;
-            return double.IsFinite(min) && min > 0 ? Math.Max(setting, min) : setting;
+            if (!double.IsFinite(min) || min <= 0) min = 0;
+            if (Models.Tool.RigGeometry.Mount(_config.Tool) == Models.Tool.ToolMount.FrontFixed)
+            {
+                double h = Math.Abs(Models.Tool.RigGeometry.AttachX(_config.Vehicle, _config.Tool));
+                if (double.IsFinite(h)) min = Math.Sqrt(min * min + h * h);
+            }
+            return Math.Max(setting, min);
         }
     }
 
