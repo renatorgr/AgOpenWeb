@@ -1350,7 +1350,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 {
                     _headlandEntryArmed = false;
                     if (autoSteerEngaged && !_isReverse && fence.IsPointInside(driftedEasting, driftedNorthing)
-                        && _youTurnStateMachine.EndOfPassWithoutTurn(in tickCtx, _guidanceWorking, _youTurn))
+                        && _youTurnStateMachine.EndOfPassWithoutTurn(in tickCtx, _guidanceWorking, _youTurn,
+                            _goAround.Current is { GoneRound.Count: > 0 } bend ? bend.Points : null))
                     {
                         autoSteerEngaged = false;
                         autoSteerDisengaged = true;

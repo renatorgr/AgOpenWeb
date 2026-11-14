@@ -783,9 +783,16 @@ public sealed class YouTurnStateMachine
     /// it drives on across), on the line, and no U-turn is planned or driven: none could be made
     /// at this end ("End of field reached", no turn that fits), or U-turns are off. The pipeline
     /// asks once as the tractor enters the headland and, with a hard outer boundary, takes
-    /// AutoSteer off, so the operator has the headland to turn by hand. Fork only.
+    /// AutoSteer off, so the operator has the headland to turn by hand.
+    /// On a pass bent round Go around obstacles, <paramref name="steeredLine"/> is the bend the
+    /// tractor follows: "on the line" and "the pass ahead" are that line's. A bend leaves the
+    /// crop up to 45 degrees off the pass, and measured against the pass the check took the
+    /// tractor for one turning by hand: on Tapada da Casa (simulator) 3R, bent round two trees in
+    /// the headland, left the crop 36 degrees off and AutoSteer steered on along the bend for
+    /// 40 m, until the fence guard stopped it with the boom over the fence. Fork only.
     /// </summary>
-    public bool EndOfPassWithoutTurn(in TickContext ctx, GuidanceWorkingState guidance, YouTurnWorkingState turn)
+    public bool EndOfPassWithoutTurn(in TickContext ctx, GuidanceWorkingState guidance, YouTurnWorkingState turn,
+        IReadOnlyList<Vec3>? steeredLine = null)
     {
         if (turn.IsExecuting || turn.TurnPath != null) return false;
         var track = ctx.SelectedTrack;
@@ -795,11 +802,32 @@ public sealed class YouTurnStateMachine
         double abHeading = track.Points.Count > 2
             ? LocalCurveHeading(track, p)
             : Math.Atan2(track.Points[1].Easting - track.Points[0].Easting, track.Points[1].Northing - track.Points[0].Northing);
-        double diff = Math.IEEERemainder(heading - abHeading, 2 * Math.PI);
+        if (steeredLine is { Count: < 2 }) steeredLine = null;
+        double lineHeading = steeredLine != null ? NearestSegmentHeading(steeredLine, p.Easting, p.Northing) : abHeading;
+        double diff = Math.IEEERemainder(heading - lineHeading, 2 * Math.PI);
         // Off the line's direction (turning by hand) is not the end of a pass.
         if (Math.Abs(diff) > AlignmentTolerance && Math.PI - Math.Abs(diff) > AlignmentTolerance) return false;
-        bool sameWay = Math.Abs(diff) < Math.PI / 2;
-        return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.WorkEndLine, p, sameWay);
+        bool sameWay = Math.Abs(Math.IEEERemainder(heading - abHeading, 2 * Math.PI)) < Math.PI / 2;
+        return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.WorkEndLine, p, sameWay,
+            steeredLine);
+    }
+
+    /// <summary>The compass heading (radians) of the segment of <paramref name="line"/> nearest (e, n).</summary>
+    private static double NearestSegmentHeading(IReadOnlyList<Vec3> line, double e, double n)
+    {
+        double best = double.MaxValue, heading = 0;
+        for (int i = 0; i < line.Count - 1; i++)
+        {
+            double ax = line[i].Easting, ay = line[i].Northing;
+            double dx = line[i + 1].Easting - ax, dy = line[i + 1].Northing - ay;
+            double len2 = dx * dx + dy * dy;
+            if (len2 < 1e-12) continue;
+            double t = Math.Clamp(((e - ax) * dx + (n - ay) * dy) / len2, 0, 1);
+            double ex = ax + dx * t - e, ey = ay + dy * t - n;
+            double d = ex * ex + ey * ey;
+            if (d < best) { best = d; heading = Math.Atan2(dx, dy); }
+        }
+        return heading;
     }
 
     /// <summary>
