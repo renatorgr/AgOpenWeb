@@ -86,6 +86,19 @@ public sealed record JobSpec(
     public Func<JobRun, IReadOnlyList<string>, Task<bool>>? TypeSettings { get; init; }
     /// <summary>How the operator makes the headland from the whole boundary; null = headland.wholeBoundary with <see cref="HeadlandM"/>.</summary>
     public Func<JobRun, Task<bool>>? MakeHeadland { get; init; }
+    /// <summary>A field folder on this computer (an AgOpenWeb <c>field.geojson</c> and its sidecars), opened as it was
+    /// saved instead of a KML of <see cref="Field"/>'s outline: its obstacles keep their choices, its headland line,
+    /// hard boundary and skip mode come with it. <see cref="Field"/> is then the folder's name. Fork only: the
+    /// real-field jobs (<see cref="FarmJobs"/>), whose fields are never in the repository.</summary>
+    public string? FieldFolder { get; init; }
+    /// <summary>The operator starts on the first pass along the edge with at least this much line in the cultivated
+    /// area, m. 20 = the first pass worth driving; more on a field whose edge passes are too short to turn from
+    /// (a corner of short passes beside a hard fence), where a person starts further in. Fork only.</summary>
+    public double StartChordM { get; init; } = 20;
+    /// <summary>With more than 0: the operator starts on the first pass along the edge with at least this share of the
+    /// longest pass's line in the cultivated area (a full-length pass, as a farmer starts a field with a hard fence
+    /// whose corners have no room to turn), and at least <see cref="StartChordM"/>. Fork only.</summary>
+    public double StartChordOfLongest { get; init; }
 }
 
 /// <summary>How the operator guides a job.</summary>
@@ -333,7 +346,7 @@ public sealed class JobRun : IAsyncDisposable
         Truth = new TruthMachine(Spec.V, T, 0, Spec.Sys) { SpeedKmh = Spec.SpeedKmh };
         Rig = await FieldJobRig.StartAsync(dataRoot);
         Coverage = Rig.Services.GetRequiredService<ICoverageMapService>();
-        Field = ScenarioFields.Get(Spec.Field);
+        Field = Spec.FieldFolder != null ? ScenarioField.FromFieldFolder(Spec.FieldFolder, Spec.Field) : ScenarioFields.Get(Spec.Field);
 
         S.Step(F($"Vehicle & Tool: {Spec.V.Name}, {T.Name}, {Spec.Sys.Label}"));
         var settings = Spec.V.Settings(Spec.Sys).Concat(T.Settings()).ToList();
@@ -359,6 +372,9 @@ public sealed class JobRun : IAsyncDisposable
         for (int i = 0; i < 15; i++) { SendFixAt(o.Lat, o.Lon, 0); await Task.Delay(20); }
 
         string name = Spec.Field;
+        if (Spec.FieldFolder != null) { if (!await OpenFieldFolderAsync(name)) return false; }
+        else
+        {
         Directory.CreateDirectory(Rig.ImportDir);
         await File.WriteAllTextAsync(Path.Combine(Rig.ImportDir, name + ".kml"), Field.ToKml(Spec.Obstacles, name));
         await SendAsync("import.scan");
@@ -366,6 +382,7 @@ public sealed class JobRun : IAsyncDisposable
         await SendAsync("field.fromKml", name + ".kml\t" + name);
         if (!await Rig.WaitUntilAsync(() => Rig.Vm.IsFieldOpen && Rig.Vm.CurrentFieldName == name && !Rig.State.UI.IsBusy, 20000))
         { Harness("the field did not open from the KML"); return false; }
+        }
         Plane = await Rig.ReadAsync(() => Rig.State.Field.LocalPlane)
             ?? new LocalPlane(new Wgs84(Rig.State.Field.OriginLatitude, Rig.State.Field.OriginLongitude), new SharedFieldProperties());
         Outer = Field.Outer.Select(p => Local(p.Lat, p.Lon)).ToList();
@@ -406,7 +423,7 @@ public sealed class JobRun : IAsyncDisposable
             if (!await Rig.WaitUntilAsync(() => Rig.State.Field.HeadlandLine is { Count: > 2 }, 15000))
             { Harness("no headland line was built"); return false; }
             Work = await Rig.ReadAsync(() => Rig.State.Field.HeadlandLine!.Select(p => (p.Easting, p.Northing)).ToList());
-            S.Step(F($"headland {Spec.HeadlandM} m from the whole boundary: {Work.Count} points, {Ring.Area(Work) / 1e4:0.00} ha inside; section control in the headland {(Spec.HeadlandSections ? "on" : "off")}"));
+            S.Step(F($"headland {Spec.HeadlandM} m {(Spec.FieldFolder != null ? "(the field's own line)" : "from the whole boundary")}: {Work.Count} points, {Ring.Area(Work) / 1e4:0.00} ha inside; section control in the headland {(Spec.HeadlandSections ? "on" : "off")}"));
         }
         if (Spec.UTurns)
         {
@@ -437,6 +454,30 @@ public sealed class JobRun : IAsyncDisposable
         MapGrid = new TruthGrid(box.Min(p => p.E), box.Max(p => p.E), box.Min(p => p.N), box.Max(p => p.N));
         _scs = Rig.Services.GetRequiredService<ISectionControlService>();
         _tps = Rig.Services.GetRequiredService<IToolPositionService>();
+        return true;
+    }
+
+    /// <summary>The field folder (<see cref="JobSpec.FieldFolder"/>) copied into the rig's Fields folder as AgOpenWeb keeps
+    /// it (field.geojson and the files that change how it is worked: the headland's segments, the skip mode, tram lines;
+    /// not its jobs, background photo or AgShare link), then opened as the operator opens a field. Fork only.</summary>
+    private async Task<bool> OpenFieldFolderAsync(string name)
+    {
+        string dst = Path.Combine(Rig.FieldsDir, name);
+        Directory.CreateDirectory(dst);
+        foreach (var f in new[] { "field.geojson", "field.origin", "HeadlandSegments.json", "UTurnSkip.json", "TramConfig.json" })
+        {
+            string src = Path.Combine(Spec.FieldFolder!, f);
+            if (File.Exists(src)) File.Copy(src, Path.Combine(dst, f), overwrite: true);
+        }
+        S.Step(F($"Field > Open: '{name}' as it was saved ({Field.Inner.Count} obstacles with their choices, its headland line and skip mode)"));
+        await SendAsync("field.openOnly", name);
+        if (!await Rig.WaitUntilAsync(() => Rig.Vm.IsFieldOpen && Rig.Vm.CurrentFieldName == name && !Rig.State.UI.IsBusy, 30000))
+        { Harness("the field did not open from its folder"); return false; }
+        var (hard, mode, rows) = await Rig.ReadAsync(() => (Rig.State.Field.CurrentBoundary?.OuterBoundary?.IsHard == true, Rig.Vm.UTurnSkipMode, Rig.Vm.UTurnSkipRows));
+        TurnObstacles = await Rig.ReadAsync(() => (Rig.State.Field.CurrentBoundary?.InnerBoundaries ?? new List<BoundaryPolygon>())
+            .Where(b => b.AtObstacle == ObstacleAction.Turn && !b.IsDriveThrough)
+            .Select(b => b.Points.Select(p => (p.Easting, p.Northing)).ToList()).ToList());
+        S.Step(F($"outer boundary {(hard ? "hard" : "soft")}; {TurnObstacles.Count} U-turn obstacle(s); skip button: mode {mode}, {rows} row(s)"));
         return true;
     }
 
@@ -519,6 +560,28 @@ public sealed class JobRun : IAsyncDisposable
     /// cultivated area) that a person would not drive: shorter than 20 m inside, at either edge.</summary>
     public List<(int Pass, double ChordM)> SliverPasses = new();
 
+    /// <summary>A field opened from its folder: its U-turn obstacles (not Go around, not driven through), in AgOpenWeb's
+    /// coordinates. AutoSteer engaged with one just ahead and no turn planned goes off at once, so the operator starts
+    /// on a pass clear of them (<see cref="StartBlocked"/>). Fork only.</summary>
+    public List<List<(double E, double N)>> TurnObstacles = new();
+
+    /// <summary>Pass <paramref name="k"/>'s first 80 m from where the tractor would start (and the 15 m before it) come
+    /// within half a pass and 3 m of a U-turn obstacle.</summary>
+    private bool StartBlocked(int k, int dir)
+    {
+        if (TurnObstacles.Count == 0) return false;
+        var work = Work ?? Outer;
+        double u = (k + 0.5) * Spacing;
+        var tw = Ring.LineCrossings((A.E + Across.E * u, A.N + Across.N * u), Along, work);
+        tw.Sort();
+        if (tw.Count < 2) return false;
+        double start = tw[0], end = tw[1];
+        for (int i = 0; i + 1 < tw.Count; i += 2)
+            if (tw[i + 1] - tw[i] > end - start) { start = tw[i]; end = tw[i + 1]; }
+        double v0 = dir > 0 ? start - 15 : end - 80, v1 = dir > 0 ? start + 80 : end + 15;
+        return TurnObstacles.Any(o => o.Any(p => Math.Abs(U(p) - u) < Spacing / 2 + 3 && Vv(p) >= v0 && Vv(p) <= v1));
+    }
+
     public ((double E, double N) Pivot, double HeadingRad, int Pass) StartPose()
     {
         var work = Work ?? Outer;
@@ -540,7 +603,11 @@ public sealed class JobRun : IAsyncDisposable
         // A->B with whatever the tractor's line does.
         int dir = Spec.T.Offset > 0 && !Spec.EdgePass ? -1 : 1;
         double TractorU(int i) => (i + 0.5) * Spacing - Spec.T.Offset * dir;
-        for (k = kMin; k <= kMax && (InsideChordM(k) < 20 || (!Spec.EdgePass && Spec.T.Offset != 0 && InsideChordAtU(TractorU(k)) < 20)); k++) { }
+        double longest = Enumerable.Range(kMin, kMax - kMin + 1).Max(InsideChordM);
+        double need = Math.Max(Spec.StartChordM, Spec.StartChordOfLongest * longest);
+        for (k = kMin; k <= kMax && (InsideChordM(k) < need || StartBlocked(k, dir) || (!Spec.EdgePass && Spec.T.Offset != 0 && InsideChordAtU(TractorU(k)) < 20)); k++) { }
+        if (need > 20 || TurnObstacles.Count > 0)
+            S.Step(F($"the operator starts on pass {k}: the first from the edge with {need:0} m of line in the cultivated area (the longest has {longest:0} m) and no U-turn obstacle at its start"));
         // A run from a pass on (AGOPENWEB_SCENARIO_FROM_PASS): the tractor starts on that pass,
         // driven the way the whole job would drive it (the passes alternate), the passes before it
         // left unworked. With AGOPENWEB_SCENARIO_TURNS it reworks a few passes where a finding was.

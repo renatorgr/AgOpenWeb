@@ -44,7 +44,7 @@ public static class SkipWorkedJobs
         if (mode != 2 || rows != 1 || !worked) r.Harness(JobRun.F($"the skip button did not go to ignore worked tracks, 1 row (mode {mode}, {rows} rows, skip worked {worked})"));
     }
 
-    private sealed class SnakeWatch
+    internal sealed class SnakeWatch
     {
         private readonly bool _careless;
         private bool _arrowTapped, _rowsTapped;
