@@ -168,6 +168,59 @@ public class SnakeOpenEndTests
     }
 
     [Test]
+    public void A_pass_left_to_do_beyond_where_the_turn_lands_on_it_is_worked_at_this_end()
+    {
+        // The fence reaches 20 m further south west of x = 22 (a corner of the field), so pass 4's
+        // own end is 20 m past the turn line ahead of the tractor on pass 6. Pass 4 is covered down
+        // to n = -52 and left below that, at its end. A turn here lands on pass 4 abreast of the
+        // turn line at -48 and drives north over the covered part: the end stays as it was, and the
+        // whole pass would be driven again for nothing (a tester's field, simulator: 2R driven twice).
+        var fence = new List<Vec2> { new(-50, -70), new(22, -70), new(22, -50), new(50, -50), new(50, 50), new(-50, 50) };
+        var boundary = new Boundary
+        {
+            OuterBoundary = new BoundaryPolygon
+            {
+                Points = fence.Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(),
+            },
+        };
+        // The turn line: the fence 2 m in.
+        var turnLine = new PolygonOffsetService().CalculatePointHeadings(new List<Vec2>
+            { new(-48, -68), new(20, -68), new(20, -48), new(48, -48), new(48, 48), new(-48, 48) });
+        var covered = AllCoveredBut(n => n < -52);
+        var position = new Position { Easting = PassX(6), Northing = -20, Heading = 180, Speed = 2.78 };
+        Assert.That(_pathing.IsPassOpenAtThisEnd(_track, 0, 4, 0, boundary, turnLine, position,
+            headingSameWay: false, headlandAhead: 28, covered), Is.True, "the scenario: pass 4 is left to do at its south end");
+
+        var ctx = new YouTurnStateMachine.TickContext(position, _track, boundary, turnLine,
+            UTurnSkipRows: 1, IsSkipWorkedMode: true, HeadlandCalculatedWidth: 10.0, HeadlandDistance: 10.0,
+            IsPointCovered: covered);
+        var guidance = new GuidanceWorkingState { HowManyPathsAway = 6, IsHeadingSameWay = false };
+        var turn = new YouTurnWorkingState { IsEnabled = true };
+        _sm.Tick(ctx, guidance, turn);
+        var effects = _sm.Tick(ctx, guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null, $"no turn onto pass {turn.ReturnPassTargetPath}");
+            Assert.That(effects.StatusMessage, Is.EqualTo("Field complete — all tracks worked"));
+        });
+    }
+
+    [Test]
+    public void A_turn_that_lands_on_the_part_left_to_do_reaches_it()
+    {
+        var turnPath = Enumerable.Range(0, 30).Select(i => new Vec3(PassX(4), -38 + i, 0)).ToList();
+        Assert.Multiple(() =>
+        {
+            Assert.That(_pathing.TurnReachesUnworkedGround(turnPath, _boundary, _square, AllCoveredBut(n => n < -10)),
+                Is.True, "left below -10: the turn's last 20 m are on it");
+            Assert.That(_pathing.TurnReachesUnworkedGround(turnPath, _boundary, _square, AllCoveredBut(n => n < -40)),
+                Is.False, "left below the field's edge here: nothing of it is reached");
+            Assert.That(_pathing.TurnReachesUnworkedGround(turnPath, _boundary, _square, null), Is.True, "no map");
+        });
+    }
+
+    [Test]
     public void The_stretch_at_this_end_is_measured_from_where_the_pass_leaves_the_field()
     {
         var position = new Position { Easting = PassX(6), Northing = -25, Heading = 180 };
