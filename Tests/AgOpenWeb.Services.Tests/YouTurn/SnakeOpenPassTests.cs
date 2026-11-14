@@ -293,7 +293,9 @@ public class SnakeOpenPassTests
 
         var effects = _sm.Tick(Ctx(turnLine, PassX(2), -25, 180, crop), guidance, turn);
 
-        Assert.That(turn.SnakeSequence!.Take(2), Is.EqualTo(new[] { 2, 4 }), "the scenario: the order goes on to pass 4");
+        // The order is the crop's passes (pass 4, in the band only, was next in an order made for
+        // the turn line, and with nothing to paint it stayed "to do" for ever).
+        Assert.That(turn.SnakeSequence, Does.Not.Contain(4), "pass 4, in the band, is not in the order");
         Assert.Multiple(() =>
         {
             Assert.That(turn.TurnPath, Is.Not.Null, $"a turn, not \"{effects.StatusMessage}\"");

@@ -1111,7 +1111,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // the pass is driven, or offered with a sound (the nearest point is steered meanwhile).
         bool joinedNewLine = UpdateLineEntry(in intents, config, autoSteerEngaged, track, passNumber, nudgeOffset,
             headlandLine, boundary, contourOn || recordedPath != null, isSkipWorkedMode,
-            driftedEasting, driftedNorthing, headingRad);
+            driftedEasting, driftedNorthing, headingRad, turnLine, workHeadland);
         // AutoSteer may have chosen the pass to join (the nearest one still to do).
         passNumber = _guidanceWorking.HowManyPathsAway;
 
@@ -2949,7 +2949,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// </summary>
     private bool UpdateLineEntry(in PipelineIntentBatch intents, ConfigurationStore config, bool autoSteerEngaged,
         Models.Track.Track? track, int passNumber, double nudgeOffset, List<Vec3>? headlandLine, Boundary? boundary,
-        bool otherGuidance, bool skipWorked, double e, double n, double headingRad)
+        bool otherGuidance, bool skipWorked, double e, double n, double headingRad,
+        IReadOnlyList<Vec3>? turnLine = null, IReadOnlyList<Vec3>? workHeadland = null)
     {
         var mode = config.Guidance.LineEntryMode;
         bool trackSwitched = !ReferenceEquals(track, _lineEntryTrack);
@@ -2988,8 +2989,13 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // choice of pass and is left alone. Fork only.
         if (engagedNow && !snapped && skipWorked && canPlan && InHeadland(boundary!, headlandLine!, e, n))
         {
+            // The snake's view of the field (its tests, on the turn line and the crop as a turn has them).
+            var snakeView = new YouTurnStateMachine.TickContext(
+                new Position { Easting = e, Northing = n, Heading = headingRad * 180.0 / Math.PI },
+                track, boundary, turnLine ?? headlandLine, 0, IsSkipWorkedMode: true, 0, 0,
+                IsPointCovered: _isPointCovered, WorkHeadlandLine: workHeadland, PassEndLine: headlandLine);
             var chosen = NearestOpenPassEntry(config, track!, passNumber, nudgeOffset, headlandLine!, boundary!,
-                e, n, headingRad, out bool onWorkedPass);
+                e, n, headingRad, in snakeView, out bool onWorkedPass);
             if (chosen is { } c)
             {
                 _lineEntryOffer = null;
@@ -3069,7 +3075,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// The pass AutoSteer joins when engaged in the headland with "Ignore worked tracks" (fork only):
     /// the nearest pass to <paramref name="passNumber"/> (that one first, then one either side, two
     /// either side, up to <see cref="NearestOpenPassReach"/>) that is still to do (not worked: the
-    /// snake's test, <see cref="YouTurnStateMachine.IsPassWorked"/>), not wholly outside a hard fence,
+    /// snake's tests, <see cref="YouTurnStateMachine.IsPassToJoin"/>: worked on the whole, or its piece
+    /// from the end it is entered at done, a bay cutting it), not wholly outside a hard fence,
     /// and that the way to the start of the pass reaches straight (<see cref="PlanLineEntry"/>: on the
     /// pass before the crop, at the U-turn radius, in the headland, the implement off a hard fence),
     /// or that the tractor is on already. Of two at the same distance the shorter way. A pass the way
@@ -3078,7 +3085,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// </summary>
     private (int Pass, LineEntryPlan Plan)? NearestOpenPassEntry(ConfigurationStore config, Models.Track.Track track,
         int passNumber, double nudgeOffset, List<Vec3> headlandLine, Boundary boundary, double e, double n,
-        double headingRad, out bool onWorkedPass)
+        double headingRad, in YouTurnStateMachine.TickContext snakeView, out bool onWorkedPass)
     {
         onWorkedPass = false;
         int planned = 0;
@@ -3088,7 +3095,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             foreach (int pass in k == 0 ? new[] { passNumber } : new[] { passNumber - k, passNumber + k })
             {
                 if (PassOutsideHardFence(track, pass, nudgeOffset, boundary)) continue;
-                if (_youTurnStateMachine.IsPassWorked(track, pass, nudgeOffset, boundary, headlandLine, _isPointCovered))
+                if (!_youTurnStateMachine.IsPassToJoin(in snakeView, track, pass, nudgeOffset))
                 {
                     if (k == 0) onWorkedPass = true;
                     continue;
@@ -3104,11 +3111,31 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 _logger.LogDebug("[LineEntry] Pass {Pass} is still to do: {Outcome}{Length}", PassName(pass), plan.Outcome,
                     double.IsNaN(length) ? "" : string.Create(CultureInfo.InvariantCulture, $", way {length:F0} m"));
                 if (double.IsNaN(length)) continue;
+                // Still to do on the whole, but its piece from the end the way enters it at is done (a
+                // bay cuts the pass): the snake's turns call it worked there too.
+                var entry = plan.Outcome == LineEntryOutcome.Planned ? EntryPose(plan.Path!) : new Vec3(e, n, headingRad);
+                if (!_youTurnStateMachine.IsPassToJoin(in snakeView, track, pass, nudgeOffset, entry))
+                {
+                    _logger.LogDebug("[LineEntry] Pass {Pass}: its piece from this end is done", PassName(pass));
+                    if (k == 0) onWorkedPass = true;
+                    continue;
+                }
                 if (best == null || length < best.Value.Length) best = (pass, plan, length);
             }
             if (best is { } b) return (b.Pass, b.Plan);
         }
         return null;
+    }
+
+    /// <summary>The last point of a way and the heading (radians) it arrives at.</summary>
+    private static Vec3 EntryPose(IReadOnlyList<Vec3> path)
+    {
+        var last = path[^1];
+        int k = path.Count - 2;
+        while (k > 0 && GeometryMath.Distance(path[k], last) < 0.5) k--;
+        var before = path[Math.Max(k, 0)];
+        return new Vec3(last.Easting, last.Northing,
+            Math.Atan2(last.Easting - before.Easting, last.Northing - before.Northing));
     }
 
     private static double PolylineLength(IReadOnlyList<Vec3> path)

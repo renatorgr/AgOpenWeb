@@ -342,4 +342,85 @@ public class SnakeOpenEndTests
                 "with a map, the map: nothing is covered");
         });
     }
+
+    // The snake's area (fork only): with the operator's headland on and the sections off in it, the
+    // band between the turn line and the headland line is not painted until the headland is worked.
+    // A pass lying in it stayed "to do" for ever, and next in the order it hid the passes still to do
+    // beyond it.
+
+    /// <summary>The fence ±50, the turn line ±48, the headland line ±40: passes 10 and 11 (x 42, 46) and
+    /// -11, -12 lie in the band only. Every pass of the crop covered but <paramref name="left"/>.</summary>
+    private YouTurnStateMachine.TickContext BandField(int? left, bool bandPainted, double northing = -25)
+    {
+        ConfigurationStore.Instance.Tool.IsHeadlandSectionControl = true;
+        var offset = new PolygonOffsetService();
+        var turnLine = offset.CalculatePointHeadings(new List<Vec2> { new(-48, -48), new(48, -48), new(48, 48), new(-48, 48) });
+        var headland = offset.CalculatePointHeadings(new List<Vec2> { new(-40, -40), new(40, -40), new(40, 40), new(-40, 40) });
+        double edge = bandPainted ? 48 : 40;
+        Func<double, double, bool> covered = (e, n) => Math.Abs(e) < edge && Math.Abs(n) < edge
+            && !(left is int k && Math.Abs(e - PassX(k)) < ToolWidth / 2);
+        return new YouTurnStateMachine.TickContext(
+            new Position { Easting = PassX(8), Northing = northing, Heading = 180, Speed = 2.78 },
+            _track, _boundary, turnLine,
+            UTurnSkipRows: 1, IsSkipWorkedMode: true, HeadlandCalculatedWidth: 10.0, HeadlandDistance: 10.0,
+            IsPointCovered: covered, WorkHeadlandLine: headland, PassEndLine: headland);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void A_pass_in_the_headland_band_does_not_hide_a_pass_still_to_do(bool bandPainted)
+    {
+        // On pass 8 heading south: the order goes on to 10 (the band), 11, 9, 7, ... and pass -5,
+        // 13 passes over, is the only pass of the crop left. Before, with the band unpainted, 10 was
+        // the next pass "to do", no turn could land on it, and "End of field reached" was said.
+        var ctx = BandField(left: -5, bandPainted);
+        var guidance = new GuidanceWorkingState { HowManyPathsAway = 8, IsHeadingSameWay = false };
+        var turn = new YouTurnWorkingState { IsEnabled = true };
+
+        var effects = _sm.Tick(ctx, guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Not.Null, $"a turn, not \"{effects.StatusMessage}\"");
+            Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(-5));
+            Assert.That(turn.SnakeSequence, Does.Not.Contain(10).And.Not.Contain(-12), "the order is the crop's passes");
+        });
+    }
+
+    [Test]
+    public void With_only_the_headland_band_left_the_field_is_complete()
+    {
+        var ctx = BandField(left: null, bandPainted: false);
+        var guidance = new GuidanceWorkingState { HowManyPathsAway = 8, IsHeadingSameWay = false };
+        var turn = new YouTurnWorkingState { IsEnabled = true };
+
+        var effects = _sm.Tick(ctx, guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null);
+            Assert.That(effects.StatusMessage, Is.EqualTo("Field complete — all tracks worked"),
+                "the headland is worked by its own laps");
+        });
+    }
+
+    [Test]
+    public void A_manual_u_turn_steps_over_the_passes_the_map_says_are_worked()
+    {
+        // Pass 2 has a 10 m piece painted, so a section was on on it (marked worked), and the map says
+        // it is still to do. A manual turn to the right from pass 0 with "Ignore worked tracks" went to
+        // pass 3, stepping over it; the automatic turns go by the map.
+        _track.MarkPathWorked(2);
+        Func<double, double, bool> covered = (e, n) => Math.Abs(e - PassX(2)) < ToolWidth / 2 && n > 30;
+        var ctx = new YouTurnStateMachine.TickContext(
+            new Position { Easting = PassX(0), Northing = 0, Heading = 0, Speed = 2.78 },
+            _track, _boundary, _square, UTurnSkipRows: 1, IsSkipWorkedMode: true,
+            HeadlandCalculatedWidth: 10.0, HeadlandDistance: 10.0, IsPointCovered: covered);
+        var guidance = new GuidanceWorkingState { HowManyPathsAway = 0, IsHeadingSameWay = true };
+        var turn = new YouTurnWorkingState { IsEnabled = true };
+
+        _sm.TriggerManual(turnLeft: false, isAutoSteerEngaged: true, in ctx, guidance, turn);
+
+        Assert.That(turn.PlannedNextPath, Is.EqualTo(2), "the map says pass 2 is still to do");
+    }
 }

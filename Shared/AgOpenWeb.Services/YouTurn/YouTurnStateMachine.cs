@@ -926,8 +926,13 @@ public sealed class YouTurnStateMachine
         _logger.LogDebug("[ManualYouTurn] Triggering {Dir} turn, isHeadingSameWay={Way}",
             turnLeft ? "LEFT" : "RIGHT", guidance.IsHeadingSameWay);
 
+        // With "Ignore worked tracks" the passes stepped over are the snake's worked ones (the map),
+        // not Track.WorkedPaths, which a section on anywhere along a pass sets (fork only: the
+        // automatic turns stopped reading it, official #815, and a manual turn still stepped over
+        // a pass with only a short piece done).
         _pathing.ComputeNextTrack(track, abHeading, guidance, turn,
-            ctx.UTurnSkipRows, ctx.IsSkipWorkedMode, ctx.SelectedTrack);
+            ctx.UTurnSkipRows, ctx.IsSkipWorkedMode, ctx.SelectedTrack,
+            ctx.IsSkipWorkedMode ? WorkedPasses(in ctx, track, guidance, turn, atEndOf: null) : null);
         effects.SyncNextTrackToMap = true;
         if (turn.NextTrack is { Points.Count: < 2 })
         {
@@ -1016,13 +1021,33 @@ public sealed class YouTurnStateMachine
     }
 
     /// <summary>
-    /// Is pass <paramref name="pass"/> worked: at least half covered on the job's map inside the
-    /// cultivated area, else (no map) marked so (<see cref="YouTurnPathingService.IsPassWorked"/>,
-    /// the snake's test). For AutoSteer choosing the pass to join (fork only).
+    /// Is pass <paramref name="pass"/> one for AutoSteer to join when engaged in the headland with
+    /// "Ignore worked tracks" (fork only)? The snake's own tests, so the pass AutoSteer joins and the
+    /// passes the turns go to agree: not worked on the whole (<see cref="YouTurnPathingService.IsPassWorked"/>
+    /// on the area the snake works, <see cref="SnakeArea"/>), and, given <paramref name="entry"/> (where
+    /// the pass is entered and the way it is driven, heading in radians: the last point of the way
+    /// through the headland, or the tractor already on the pass), its piece from that end not done
+    /// (<see cref="YouTurnPathingService.IsPieceDoneAtThisEnd"/>): a bay cuts the pass and its piece on
+    /// this side is worked, so joining it drives that piece again and stops at the bay (official #815,
+    /// Baetas). A pass worked on the whole is not joined, even with its end here left: AutoSteer joins
+    /// a clean pass (Renato), and the turns come back for such an end
+    /// (<see cref="YouTurnPathingService.IsPassOpenAtThisEnd"/>).
     /// </summary>
-    public bool IsPassWorked(Models.Track.Track track, int pass, double nudgeOffset, Boundary? boundary,
-        IReadOnlyList<Vec3>? headlandLine, Func<double, double, bool>? isPointCovered) =>
-        _pathing.IsPassWorked(track, pass, nudgeOffset, boundary, headlandLine, isPointCovered);
+    public bool IsPassToJoin(in TickContext ctx, Models.Track.Track track, int pass, double nudgeOffset, Vec3? entry = null)
+    {
+        var covered = ctx.IsPointCovered;
+        if (_pathing.IsPassWorked(track, pass, nudgeOffset, ctx.Boundary, SnakeArea(in ctx), covered)) return false;
+        if (covered == null || entry is not { } at || track.Points.Count < 2) return true;
+        var position = new Position { Easting = at.Easting, Northing = at.Northing, Heading = at.Heading * 180.0 / Math.PI };
+        double abHeading = track.Points.Count > 2
+            ? LocalCurveHeading(track, position)
+            : Math.Atan2(track.Points[1].Easting - track.Points[0].Easting, track.Points[1].Northing - track.Points[0].Northing);
+        bool drivenSameWay = Math.Abs(Math.IEEERemainder(at.Heading - abHeading, 2 * Math.PI)) < Math.PI / 2;
+        // The end tests look at the end ahead of the tractor; the end a pass is entered at lies
+        // behind the way it is driven from there.
+        return !_pathing.IsPieceDoneAtThisEnd(track, abHeading, pass, nudgeOffset, ctx.Boundary, ctx.WorkEndLine, position,
+            headingSameWay: !drivenSameWay, headlandAhead: 0, covered);
+    }
 
     /// <summary>
     /// Drop a planned turn that isn't being driven yet: the path, the next track and the
@@ -1155,7 +1180,7 @@ public sealed class YouTurnStateMachine
         // headland built again with another width): the passes in it and their order are not this
         // field's. The old order sent the turn the wrong way, onto a pass by the fence where it would
         // not build (Tapada da Casa).
-        long fieldStamp = SnakeFieldStamp(ctx.Boundary, ctx.HeadlandLine);
+        long fieldStamp = SnakeFieldStamp(ctx.Boundary, SnakeArea(in ctx));
         if (!YouTurnPathingService.IsSnakeOnPass(turn, guidance.HowManyPathsAway)
             || !ReferenceEquals(turn.SnakeSequence, _snakePlan) || fieldStamp != _snakePlanFieldStamp)
         {
@@ -1172,7 +1197,7 @@ public sealed class YouTurnStateMachine
         int? nextPath = _pathing.GetNextSnakePath(turn, isWorked);
         // An order planned before the headland or boundary changed can go on to a pass that is
         // no longer in the field: plan it again for the field as it is.
-        if (nextPath is { } stale && !_pathing.IsPathInsideCultivated(track, abHeading, stale, ctx.Boundary, ctx.HeadlandLine))
+        if (nextPath is { } stale && !_pathing.IsPathInsideCultivated(track, abHeading, stale, ctx.Boundary, SnakeArea(in ctx)))
         {
             _logger.LogDebug("[YouTurn] Snake pass {Pass} is outside the field - planning the snake again", stale);
             PlanSnake(in ctx, track, abHeading, guidance, turn, fieldStamp);
@@ -1387,7 +1412,8 @@ public sealed class YouTurnStateMachine
         if (!_pathing.IsPathLandable(track, abHeading, pass, ctx.Boundary, ctx.HeadlandLine, ctx.CurrentPosition,
                 guidance.IsHeadingSameWay, turn.DistanceToHeadland, current))
             return false;
-        if (ctx.WorkHeadlandLine is not { Count: >= 3 } crop || !_configStore.Tool.IsHeadlandSectionControl)
+        var crop = SnakeArea(in ctx);
+        if (ReferenceEquals(crop, ctx.HeadlandLine))
             return true;
         if (_pathing.IsPathLandable(track, abHeading, pass, ctx.Boundary, crop, ctx.CurrentPosition,
                 guidance.IsHeadingSameWay, turn.DistanceToHeadland, current))
@@ -1395,6 +1421,19 @@ public sealed class YouTurnStateMachine
         _logger.LogDebug("[YouTurn] Snake pass {Pass} has too little crop inside the headland line at this end", pass);
         return false;
     }
+
+    /// <summary>
+    /// The area the snake order and its worked-pass test are made for (fork only): with the
+    /// operator's headland on and the sections off in it (<c>Tool.IsHeadlandSectionControl</c>), the
+    /// crop inside the headland line; else the turn line, as the turn itself. With the sections off
+    /// in the headland, the band between the turn line and the headland line is never painted until
+    /// the headland is worked: a pass lying in it stayed "to do" for ever, and next in the order it
+    /// hid the passes still to do beyond it, so the end of the field was said with crop left to do
+    /// (a review of the snake rules: a pass 13 over left, "End of field reached"). The headland is
+    /// worked by its own laps.
+    /// </summary>
+    private IReadOnlyList<Vec3>? SnakeArea(in TickContext ctx) =>
+        ctx.WorkHeadlandLine is { Count: >= 3 } crop && _configStore.Tool.IsHeadlandSectionControl ? crop : ctx.HeadlandLine;
 
     /// <summary>
     /// Pass <paramref name="pass"/>, worked on the whole and taken as still to do only at this end
@@ -1426,7 +1465,7 @@ public sealed class YouTurnStateMachine
     private void PlanSnake(in TickContext ctx, Models.Track.Track track, double abHeading,
         GuidanceWorkingState guidance, YouTurnWorkingState turn, long fieldStamp)
     {
-        _pathing.BuildSnakeSequence(track, abHeading, guidance, turn, ctx.Boundary, ctx.HeadlandLine);
+        _pathing.BuildSnakeSequence(track, abHeading, guidance, turn, ctx.Boundary, SnakeArea(in ctx));
         _snakePlan = turn.SnakeSequence;
         _snakePlanFieldStamp = fieldStamp;
     }
@@ -1479,7 +1518,9 @@ public sealed class YouTurnStateMachine
         GuidanceWorkingState guidance, YouTurnWorkingState turn, double? atEndOf)
     {
         var boundary = ctx.Boundary;
-        var headlandLine = ctx.HeadlandLine;
+        // Worked on the whole is judged on the area the order is made for (the crop, with the
+        // sections off in the headland), as the end of a pass below is.
+        var headlandLine = SnakeArea(in ctx);
         var isPointCovered = ctx.IsPointCovered;
         double nudge = guidance.NudgeOffset;
         var plan = turn.SnakeSequence;
@@ -2021,7 +2062,8 @@ public sealed class YouTurnStateMachine
             if (ctx.IsSkipWorkedMode && ctx.SelectedTrack != null)
             {
                 pathsToMove = _pathing.GetNextUnworkedPathSkip(
-                    ctx.SelectedTrack, guidance.HowManyPathsAway, positiveOffset, pathsToMove);
+                    ctx.SelectedTrack, guidance.HowManyPathsAway, positiveOffset, pathsToMove,
+                    WorkedPasses(in ctx, ctx.SelectedTrack, guidance, turn, atEndOf: null));
             }
 
             int offsetChange = positiveOffset ? pathsToMove : -pathsToMove;
