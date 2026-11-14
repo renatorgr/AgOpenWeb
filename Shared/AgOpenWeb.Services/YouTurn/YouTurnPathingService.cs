@@ -803,11 +803,15 @@ public sealed class YouTurnPathingService
     }
 
     /// <summary>
-    /// Is pass <paramref name="pass"/> worked? It is when sections were on while the tractor was
-    /// on it (<see cref="Models.Track.Track.WorkedPaths"/>), or when the job's coverage covers at
-    /// least half of it inside the cultivated area, as the map shows it: a pass worked before the
-    /// field was reopened, or while guidance was on another pass. A U-turn painted across the
-    /// end of a pass leaves the pass unworked.
+    /// Is pass <paramref name="pass"/> worked? With the job's map, when it covers at least half of
+    /// the pass inside the cultivated area: a pass worked before the field was reopened, or while
+    /// guidance was on another pass, counts, and a U-turn painted across the end of a pass leaves
+    /// it unworked. With no map, when sections were on while the tractor was on it
+    /// (<see cref="Models.Track.Track.WorkedPaths"/>). With a map that mark is not asked: it is set
+    /// by a section on anywhere along the pass, so a pass split by a bay into a short piece and the
+    /// main one counted worked once its short piece was done, and the main piece was never turned
+    /// onto (official #815, the job harness on Baetas: "End of field reached" with 53 % of the
+    /// field undone). Fork only.
     /// </summary>
     public bool IsPassWorked(
         Models.Track.Track track,
@@ -817,8 +821,7 @@ public sealed class YouTurnPathingService
         IReadOnlyList<Vec3>? headlandLine,
         Func<double, double, bool>? isPointCovered)
     {
-        if (track.IsPathWorked(pass)) return true;
-        if (isPointCovered == null || track.Points.Count < 2) return false;
+        if (isPointCovered == null || track.Points.Count < 2) return track.IsPathWorked(pass);
 
         double widthMinusOverlap = _configStore.ActualToolWidth - _configStore.Tool.Overlap;
         double distAway = PassGeometry.Offset(track, pass, widthMinusOverlap, nudgeOffset);
@@ -931,11 +934,40 @@ public sealed class YouTurnPathingService
     {
         if (isPointCovered == null || track.Points.Count < 2) return false;
         var stretch = EndStretch(track, abHeading, pathsAway, nudgeOffset, boundary, headlandLine, position, headingSameWay, headlandAhead);
-        if (stretch.Count == 0) return false;
+        return stretch.Count > 0 && CoveredCount(stretch, isPointCovered) * 2 < stretch.Count;
+    }
+
+    /// <summary>
+    /// The longest piece of a pass <see cref="IsPieceDoneAtThisEnd"/> walks, m.
+    /// </summary>
+    private const double MaxPieceLength = 2000.0;
+
+    /// <summary>
+    /// Is pass <paramref name="pathsAway"/>, still to do on the whole (<see cref="IsPassWorked"/>),
+    /// done at the end the tractor is heading for? It is when the piece of it a turn here lands on,
+    /// from that end back the way the tractor came until the pass leaves the cultivated area, is at
+    /// least half covered on the job's map: a bay or a headland band cuts the pass, and its piece on
+    /// this side of it is worked. A turn onto it here would drive that piece again and stop at the
+    /// band; the rest is done from the far end. A pass with no band across it is one piece, so the
+    /// whole pass is judged, as <see cref="IsPassWorked"/> does. False with no map, or with no piece
+    /// found near this end. Fork only (official #815).
+    /// </summary>
+    public bool IsPieceDoneAtThisEnd(Models.Track.Track track, double abHeading, int pathsAway, double nudgeOffset,
+        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead,
+        Func<double, double, bool>? isPointCovered)
+    {
+        if (isPointCovered == null || track.Points.Count < 2) return false;
+        var piece = EndStretch(track, abHeading, pathsAway, nudgeOffset, boundary, headlandLine, position, headingSameWay,
+            headlandAhead, MaxPieceLength, step: 2.0);
+        return piece.Count > 0 && CoveredCount(piece, isPointCovered) * 2 >= piece.Count;
+    }
+
+    private static int CoveredCount(List<Vec2> points, Func<double, double, bool> isPointCovered)
+    {
         int covered = 0;
-        foreach (var p in stretch)
+        foreach (var p in points)
             if (isPointCovered(p.Easting, p.Northing)) covered++;
-        return covered * 2 < stretch.Count;
+        return covered;
     }
 
     /// <summary>
@@ -993,16 +1025,18 @@ public sealed class YouTurnPathingService
     }
 
     /// <summary>
-    /// Points every metre along the first <see cref="OpenEndStretch"/> of pass
-    /// <paramref name="pathsAway"/> inside the cultivated area back from the end the tractor is
-    /// heading for: from where the pass leaves the area at that end (found from the point abreast
-    /// of the end, forward to the edge when that point is inside, back to the area when it is
-    /// past the pass's end, as <see cref="LandingLength"/>), back the way the tractor came.
+    /// Points every <paramref name="step"/> m along the first <paramref name="length"/> m
+    /// (<see cref="OpenEndStretch"/> unless given) of pass <paramref name="pathsAway"/> inside the
+    /// cultivated area back from the end the tractor is heading for: from where the pass leaves the
+    /// area at that end (found from the point abreast of the end, forward to the edge when that
+    /// point is inside, back to the area when it is past the pass's end, as
+    /// <see cref="LandingLength"/>), back the way the tractor came, as far as the pass stays inside.
     /// </summary>
     private List<Vec2> EndStretch(Models.Track.Track track, double abHeading, int pathsAway, double nudgeOffset,
-        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead)
+        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead,
+        double length = OpenEndStretch, double step = 1.0)
     {
-        const double Step = 1.0;
+        double Step = step;
         const double Search = 300.0;
         var points = new List<Vec2>();
         if (headlandLine is not { Count: >= 3 } && boundary?.OuterBoundary is not { IsValid: true }) return points;
@@ -1053,12 +1087,12 @@ public sealed class YouTurnPathingService
                 if (!found) return points;
             }
             double sinceLast = Step;
-            for (double length = 0; InRange(at) && length <= OpenEndStretch && InsideAt(at); at -= fwd)
+            for (double back = 0; InRange(at) && back <= length && InsideAt(at); at -= fwd)
             {
                 if (sinceLast >= Step) { points.Add(new Vec2(curve[at].Easting, curve[at].Northing)); sinceLast = 0; }
                 if (!InRange(at - fwd)) break;
                 double d = Dist(at, at - fwd);
-                length += d;
+                back += d;
                 sinceLast += d;
             }
             return points;
@@ -1089,7 +1123,7 @@ public sealed class YouTurnPathingService
                 if (InsideAtT(tAt - s * d)) { tAt -= s * d; found = true; break; }
             if (!found) return points;
         }
-        for (double d = Step / 2; d <= OpenEndStretch; d += Step)
+        for (double d = Step / 2; d <= length; d += Step)
         {
             double t = tAt - s * d;
             if (!InsideAtT(t)) break;
