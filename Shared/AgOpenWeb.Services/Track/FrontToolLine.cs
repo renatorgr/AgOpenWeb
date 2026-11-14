@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using AgOpenWeb.Models.Base;
 
 namespace AgOpenWeb.Services.Track;
@@ -33,7 +34,9 @@ public static class FrontToolLine
     /// <summary>
     /// The pass moved in round its bends for an implement <paramref name="reach"/> metres ahead
     /// of the pivot; null when it would move less than <see cref="MinShift"/> anywhere (straight).
-    /// The points are the pass's, one for one.
+    /// A closed pass's points are the pass's, one for one (PassUnfit lines up with them); an open
+    /// pass gets points every <see cref="StretchStep"/> near the ends of a long straight stretch
+    /// (<see cref="WithPointsNearStretchEnds"/>).
     /// </summary>
     /// <param name="pass">The pass steered, in its own order.</param>
     /// <param name="closed">The pass is a loop.</param>
@@ -41,8 +44,9 @@ public static class FrontToolLine
     /// <param name="minRadius">The tightest the tractor turns, m.</param>
     public static List<Vec3>? Steered(IReadOnlyList<Vec3> pass, bool closed, double reach, double minRadius)
     {
+        if (pass.Count < 3 || reach <= 0.05) return null;
+        if (!closed) pass = WithPointsNearStretchEnds(pass, Math.Max(reach, MinWindow) + reach / 2 + Chord + StretchStep);
         int n = pass.Count;
-        if (n < 3 || reach <= 0.05) return null;
 
         // Along the pass, and its heading on each stretch.
         var cum = new double[n];
@@ -103,6 +107,46 @@ public static class FrontToolLine
             double t = segLen > 1e-9 ? Math.Clamp((s - cum[i]) / segLen, 0, 1) : 0;
             return new Vec2(a.Easting + (b.Easting - a.Easting) * t, a.Northing + (b.Northing - a.Northing) * t);
         }
+    }
+
+    /// <summary>The spacing of the points added near the ends of a long straight stretch, m.</summary>
+    public const double StretchStep = 1.0;
+
+    /// <summary>
+    /// The pass with a point every <see cref="StretchStep"/> along the first and last
+    /// <paramref name="span"/> metres of every stretch longer than the span. A pass bent round Go
+    /// around obstacles is straight between its bends, one stretch often hundreds of metres long:
+    /// the point that starts it moved with the bend and the far one did not, so the line steered
+    /// ran slanted along the whole stretch (on a tester's field, simulator, the tractor and its
+    /// front boom 0.40 m beside the pass for 100 m after the last tree, to the end of the pass).
+    /// The span is as far as a bend moves the line past its end.
+    /// </summary>
+    internal static IReadOnlyList<Vec3> WithPointsNearStretchEnds(IReadOnlyList<Vec3> pass, double span)
+    {
+        List<Vec3>? result = null;
+        for (int i = 0; i < pass.Count - 1; i++)
+        {
+            var a = pass[i];
+            var b = pass[i + 1];
+            double len = GeometryMath.Distance(a, b);
+            if (len <= Math.Max(span, 2 * StretchStep))
+            {
+                result?.Add(a);
+                continue;
+            }
+            result ??= new List<Vec3>(pass.Take(i));
+            result.Add(a);
+            for (double d = StretchStep; d < len - StretchStep / 2; d += StretchStep)
+            {
+                if (d > span && d < len - span) d = Math.Floor((len - span) / StretchStep) * StretchStep;
+                if (d <= 0 || d >= len - StretchStep / 2) continue;
+                double t = d / len;
+                result.Add(new Vec3(a.Easting + (b.Easting - a.Easting) * t, a.Northing + (b.Northing - a.Northing) * t, a.Heading));
+            }
+        }
+        if (result == null) return pass;
+        result.Add(pass[^1]);
+        return result;
     }
 
     private static double AngleDiff(double a, double b)

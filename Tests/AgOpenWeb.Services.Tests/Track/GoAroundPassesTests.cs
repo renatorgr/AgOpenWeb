@@ -68,6 +68,33 @@ public class GoAroundPassesTests
     }
 
     [Test]
+    public void With_a_front_implement_the_bend_is_one_its_pivot_can_keep_the_implement_on()
+    {
+        // The pivot steers √(R² − h²) to keep an implement h ahead on a bend of R (FrontToolLine):
+        // the bend is never under √(r² + h²), r the tractor's turning radius.
+        var (passes, _, _) = Setup();
+        var c = ConfigurationStore.Instance;
+        c.Vehicle.Wheelbase = 3;
+        c.Vehicle.MaxSteerAngle = 35; // 4.28 m
+        c.Vehicle.FrontHitchLength = 4.5;
+        c.Tool.WorkingPointFromHitch = 0;
+        c.Tool.IsToolFrontFixed = true;
+        c.Tool.IsToolRearFixed = false;
+        c.Tool.IsToolTrailing = false;
+        c.Tool.IsToolTBT = false;
+        double r = 3 / System.Math.Tan(35 * System.Math.PI / 180);
+        c.Guidance.GoAroundRadius = 5;
+        Assert.That(passes.Radius, Is.EqualTo(System.Math.Sqrt(r * r + 4.5 * 4.5)).Within(0.01));
+        c.Guidance.GoAroundRadius = 10;
+        Assert.That(passes.Radius, Is.EqualTo(10));
+
+        c.Tool.IsToolFrontFixed = false;
+        c.Tool.IsToolRearFixed = true;
+        c.Guidance.GoAroundRadius = 5;
+        Assert.That(passes.Radius, Is.EqualTo(5), "a rear implement: the tractor's own radius only");
+    }
+
+    [Test]
     public void The_least_margin_grows_as_the_bend_tightens()
     {
         Assert.That(GoAroundPasses.MinMarginFor(6), Is.EqualTo(0.3).Within(1e-9));
