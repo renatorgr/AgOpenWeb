@@ -43,6 +43,7 @@ public class EndOfPassWithoutTurnTests
     private LocalPlane _plane = null!;
     private readonly List<(double Northing, GpsCycleResult Result)> _cycles = new();
     private double _northing;
+    private Boundary? _boundary;
 
     [SetUp]
     public void SetUp()
@@ -105,16 +106,18 @@ public class EndOfPassWithoutTurnTests
     };
 
     /// <summary>A 100 x 100 m field, the headland line at ±40 unless given, AutoSteer on pass 0 of a north AB line, U-turns off.</summary>
-    private void Field(bool hard, List<Vec3>? headlandLine = null)
+    private void Field(bool hard, List<Vec3>? headlandLine = null, double fieldHalf = 50, params BoundaryPolygon[] obstacles)
     {
         var boundary = new Boundary
         {
             OuterBoundary = new BoundaryPolygon
             {
-                Points = Square(50).Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(),
+                Points = Square(fieldHalf).Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(),
                 IsHard = hard,
             },
         };
+        boundary.InnerBoundaries.AddRange(obstacles);
+        _boundary = boundary;
         _pipeline.SetHasActiveField(true);
         _pipeline.SetBoundary(boundary);
         _pipeline.SetHeadlandLine(headlandLine ?? Square(Headland));
@@ -279,5 +282,105 @@ public class EndOfPassWithoutTurnTests
 
         var across = ctx with { CurrentPosition = new Position { Easting = PassEasting, Northing = 41, Heading = 90, Speed = 2 } };
         Assert.That(sm.EndOfPassWithoutTurn(in across, guidance, new YouTurnWorkingState()), Is.False, "turning by hand, across the line");
+    }
+    /// <summary>A tree chosen as Go around: a hard circle of <paramref name="radius"/> m.</summary>
+    private static BoundaryPolygon Tree(double e, double n, double radius)
+    {
+        var tree = new BoundaryPolygon { AtObstacle = ObstacleAction.GoRound, IsHard = true };
+        for (int i = 0; i < 24; i++)
+        {
+            double a = i * 2 * System.Math.PI / 24;
+            tree.Points.Add(new BoundaryPoint(e + radius * System.Math.Sin(a), n + radius * System.Math.Cos(a), 0));
+        }
+        return tree;
+    }
+
+    /// <summary>
+    /// Drive along <paramref name="line"/> (the tractor following it, heading along each piece)
+    /// from northing <paramref name="from"/> to <paramref name="to"/>, 0.2 m a fix, northwards.
+    /// </summary>
+    private void DriveAlong(List<Vec3> line, double from, double to)
+    {
+        var pts = line.Where(p => p.Northing >= from - 1 && p.Northing <= to + 1).OrderBy(p => p.Northing).ToList();
+        for (int i = 0; i < pts.Count - 1; i++)
+        {
+            var a = pts[i]; var b = pts[i + 1];
+            double len = System.Math.Sqrt((b.Easting - a.Easting) * (b.Easting - a.Easting) + (b.Northing - a.Northing) * (b.Northing - a.Northing));
+            if (len < 1e-6) continue;
+            double heading = System.Math.Atan2(b.Easting - a.Easting, b.Northing - a.Northing) * 180 / System.Math.PI;
+            for (double t = 0; t < len; t += 0.2)
+            {
+                double e = a.Easting + (b.Easting - a.Easting) * t / len;
+                _northing = a.Northing + (b.Northing - a.Northing) * t / len;
+                if (_northing < from || _northing > to) continue;
+                var ll = _plane.ConvertGeoCoordToWgs84(new GeoCoord(_northing, e));
+                _gps.UpdateGpsData(new GpsData
+                {
+                    CurrentPosition = new Position { Latitude = ll.Latitude, Longitude = ll.Longitude, Heading = (heading + 360) % 360, Speed = 2.0 },
+                    FixQuality = 4,
+                    SatellitesInUse = 14,
+                    Hdop = 0.7,
+                    IsValid = true,
+                });
+            }
+        }
+    }
+
+    /// <summary>Pass 0 bent round <paramref name="tree"/> as the pipeline bends it.</summary>
+    private static List<Vec3> BentPass(Boundary boundary)
+    {
+        var config = ConfigurationStore.Instance;
+        var goAround = new GoAroundPasses(config, new AgOpenWeb.Services.Geometry.PolygonOffsetService());
+        var track = Models.Track.Track.FromABLine("AB", new Vec3(0, -100, 0), new Vec3(0, 100, 0));
+        var pass = new List<Vec3>();
+        for (double n = -200; n <= 200; n += 1) pass.Add(new Vec3(PassEasting, n, 0));
+        var bend = goAround.For(track, PassEasting, pass, boundary);
+        Assert.That(bend?.GoneRound, Is.Not.Empty, "the pass goes round the tree");
+        return bend!.Points;
+    }
+
+    // Renato's report of 14 Nov (Tapada da Casa, simulator, 8 m front boom): 3R, bent round two
+    // trees in the headland, left the crop 36 degrees off the pass. Measured against the pass the
+    // tractor looked like one turning by hand, the end of the pass was not seen, and AutoSteer
+    // steered on along the bend for 40 m until the fence guard stopped it with the boom over the fence.
+
+    [Test]
+    public void On_a_bend_round_a_tree_in_the_headland_AutoSteer_still_goes_off_a_metre_past_the_line()
+    {
+        // A wide headland (the line at ±36, the fence at ±80) and a tree in it, its keep-out
+        // reaching back to 39: the pass runs on 44 m through the headland, as 3R did.
+        const double line = 36;
+        Field(hard: true, Square(line), 80, Tree(PassEasting + 0.5, 44, 1.0));
+        var bent = BentPass(_boundary!);
+
+        // Where the bend leaves the crop, and how far off the pass it runs there.
+        int i = bent.FindIndex(p => p.Northing > line);
+        var a = bent[i - 1]; var b = bent[i + 1];
+        double off = System.Math.Abs(System.Math.Atan2(b.Easting - a.Easting, b.Northing - a.Northing)) * 180 / System.Math.PI;
+        TestContext.Out.WriteLine($"bend leaves the crop at ({bent[i].Easting:F2},{bent[i].Northing:F2}), {off:F0} degrees off the pass");
+        Assert.That(off, Is.GreaterThan(25), "the bend leaves the crop well off the pass's direction");
+
+        DriveAlong(bent, 20, 60);
+
+        var offAt = WentOff();
+        Assert.That(offAt, Is.Not.Null, "AutoSteer steered on along the bend towards the fence");
+        Assert.That(offAt!.Value.Result.DisengageReason, Does.Contain("end of the pass and no U-turn"));
+        Assert.That(offAt.Value.Northing, Is.InRange(line + 0.5, line + 1.6), "a metre past the headland line");
+    }
+
+    [Test]
+    public void A_bend_through_the_headland_back_into_the_crop_is_not_the_end()
+    {
+        // A tree on the pass in a headland strip across the field (y 10 to 16, the notch of the
+        // test above), with 24 m of crop past it: the bend dips into the strip and comes back.
+        var notched = new List<Vec3>
+        {
+            new(-40, -40, 0), new(40, -40, 0), new(40, 10, 0), new(-10, 10, 0),
+            new(-10, 16, 0), new(40, 16, 0), new(40, 40, 0), new(-40, 40, 0),
+        };
+        Field(hard: true, notched, 50, Tree(PassEasting + 0.5, 13, 1.5));
+        var bent = BentPass(_boundary!);
+        DriveAlong(bent, -10, 30);
+        Assert.That(WentOff(), Is.Null, "the strip is crossed on the bend");
     }
 }
