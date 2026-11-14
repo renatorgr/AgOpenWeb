@@ -43,7 +43,9 @@ public class LineEntryPlannerTests
         _config.NumSections = 1;
         _config.Tool.SetSectionWidth(0, 600);
         _config.Tool.Overlap = 0;
-        _config.Tool.HitchLength = 2;
+        // A fixed tool's working point 2 m from the rear axle: the tractor's hitch there, the tool on it (#547).
+        _config.Vehicle.ThreePointHitchLength = _config.Vehicle.FrontHitchLength = System.Math.Abs(2);
+        _config.Tool.WorkingPointFromHitch = 0;
         _config.Tool.IsToolRearFixed = true;
         _config.Tool.IsToolTrailing = false;
         _config.Tool.IsToolTBT = false;
@@ -145,7 +147,9 @@ public class LineEntryPlannerTests
     {
         _config.Tool.IsToolRearFixed = false;
         _config.Tool.IsToolFrontFixed = true;
-        _config.Tool.HitchLength = 3;
+        // A fixed tool's working point 3 m from the rear axle: the tractor's hitch there, the tool on it (#547).
+        _config.Vehicle.ThreePointHitchLength = _config.Vehicle.FrontHitchLength = System.Math.Abs(3);
+        _config.Tool.WorkingPointFromHitch = 0;
         _config.Guidance.LineEntryStraight = 3;
         var plan = Plan(-40, -146, 90);
 

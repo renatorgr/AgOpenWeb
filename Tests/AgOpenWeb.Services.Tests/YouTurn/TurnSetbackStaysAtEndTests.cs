@@ -18,10 +18,11 @@ namespace AgOpenWeb.Services.Tests.YouTurn;
 /// <summary>
 /// A turn tried again with the turn line moved in, to keep the implement off a hard fence, is
 /// seated back from the end of the pass the first try found. Moved in, the fence's turn line also
-/// crossed the pass where the fence bulges in beside it, and the first crossing ahead was that
-/// one: on Tapada da Casa a front 8 m boom near the fence at the far end moved the turn line in
-/// 5 m, the turn was made 260 m before the end, beside the bulge, and landed on the next pass 16 m
-/// after its edge entered the crop, which was never sprayed. Fork only.
+/// crossed the pass where the fence comes in beside it, and the first crossing ahead was that
+/// one: on a real field a front 8 m boom near the fence at the far end moved the turn line in
+/// 5 m, the turn was made 260 m before the end, beside the narrowing, and landed on the next pass
+/// 16 m after its edge entered the crop, which was never sprayed. A rear-mounted implement
+/// gives the same.
 /// </summary>
 [TestFixture, NonParallelizable] // ConfigurationStore is a singleton.
 public class TurnSetbackStaysAtEndTests
@@ -29,27 +30,31 @@ public class TurnSetbackStaysAtEndTests
     private const double FenceNorth = 100;
 
     // The east fence comes in to x = 9 from y = -15 to 15, with 45° sides: the pass x = 4 runs
-    // past it, the boom's east end (x = 8) a metre inside.
+    // past it, the implement's east end (x = 8) a metre inside.
     private static List<Vec2> Fence(bool bulge) => bulge
         ? new() { new(-50, -100), new(50, -100), new(50, -56), new(9, -15), new(9, 15), new(50, 56), new(50, FenceNorth), new(-50, FenceNorth) }
         : new() { new(-50, -100), new(50, -100), new(50, FenceNorth), new(-50, FenceNorth) };
 
-    private static YouTurnCreationService NewCreation()
+    private static YouTurnCreationService NewCreation(bool front)
     {
         ConfigurationStore.SetInstance(new ConfigurationStore());
         var c = ConfigurationStore.Instance;
-        // The Puma's sprayer: an 8 m boom fixed 4.5 m ahead of the pivot.
+        // A front sprayer: an 8 m boom fixed 4.5 m ahead of the pivot; or an 8 m implement fixed
+        // 1.5 m behind it.
+        const double width = 8;
         c.Vehicle.Wheelbase = 2.9;
-        c.Tool.Width = 8;
+        c.Tool.Width = width;
         c.Tool.Overlap = 0;
         c.Tool.Offset = 0;
-        c.Tool.HitchLength = 4.5;
-        c.Tool.IsToolFrontFixed = true;
-        c.Tool.IsToolRearFixed = false;
+        // A fixed tool's working point front ? 4.5 : 1.5 m from the rear axle: the tractor's hitch there, the tool on it (#547).
+        c.Vehicle.ThreePointHitchLength = c.Vehicle.FrontHitchLength = System.Math.Abs(front ? 4.5 : 1.5);
+        c.Tool.WorkingPointFromHitch = 0;
+        c.Tool.IsToolFrontFixed = front;
+        c.Tool.IsToolRearFixed = !front;
         c.Tool.IsToolTrailing = false;
         c.Tool.IsToolTBT = false;
         c.NumSections = 1;
-        c.Tool.SetSectionWidth(0, 800);
+        c.Tool.SetSectionWidth(0, (int)(width * 100));
         c.Guidance.UTurnDistanceFromBoundary = 2.0;
         c.Guidance.UTurnRadius = 8.0;
         c.Guidance.UTurnExtension = 20.0;
@@ -97,8 +102,9 @@ public class TurnSetbackStaysAtEndTests
             uTurnSkipRows: 0, headlandCalculatedWidth: 12, headlandDistance: FenceNorth - 2 - y);
     }
 
-    [Test]
-    public void A_turn_seated_back_from_a_hard_fence_stays_at_the_end_of_the_pass()
+    [TestCase(true, TestName = "A turn seated back from a hard fence stays at the end of the pass (front boom)")]
+    [TestCase(false, TestName = "A turn seated back from a hard fence stays at the end of the pass (rear implement)")]
+    public void A_turn_seated_back_from_a_hard_fence_stays_at_the_end_of_the_pass(bool front)
     {
         Assert.Multiple(() =>
         {
@@ -107,10 +113,10 @@ public class TurnSetbackStaysAtEndTests
         });
 
         // Without the hard fence the turn is made at the end, against the turn line; with it the
-        // boom swinging round ahead of the tractor is kept off the fence by seating the turn back.
-        var soft = TurnFromTheSouth(NewCreation(), Field(bulge: true, hard: false));
-        var plain = TurnFromTheSouth(NewCreation(), Field(bulge: false, hard: true));
-        var turn = TurnFromTheSouth(NewCreation(), Field(bulge: true, hard: true));
+        // implement swinging round is kept off the fence by seating the turn back.
+        var soft = TurnFromTheSouth(NewCreation(front), Field(bulge: true, hard: false));
+        var plain = TurnFromTheSouth(NewCreation(front), Field(bulge: false, hard: true));
+        var turn = TurnFromTheSouth(NewCreation(front), Field(bulge: true, hard: true));
 
         Assert.That(soft.Path, Is.Not.Null);
         Assert.That(plain.Path, Is.Not.Null);

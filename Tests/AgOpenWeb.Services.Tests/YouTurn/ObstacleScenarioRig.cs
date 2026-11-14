@@ -89,7 +89,12 @@ public sealed class ObstacleScenarioRig : IDisposable
         c.Tool.SetToolType(toolType);
         c.Tool.TrailingHitchLength = double.IsNaN(hitchLength) ? 4 : hitchLength;
         if (RearSteer) c.Vehicle.Type = VehicleType.Harvester;
-        if (!double.IsNaN(hitchLength) || RearSteer) c.Tool.HitchLength = double.IsNaN(hitchLength) ? 4 : hitchLength;
+        if (!double.IsNaN(hitchLength) || RearSteer)
+        {
+            // A fixed tool's working point from the rear axle: the tractor's hitch there, the tool on it (#547).
+            c.Vehicle.ThreePointHitchLength = c.Vehicle.FrontHitchLength = Math.Abs(double.IsNaN(hitchLength) ? 4 : hitchLength);
+            c.Tool.WorkingPointFromHitch = 0;
+        }
         c.Guidance.UTurnRadius = 6;
         // AGOPENWEB_SCENARIO_DISTANCE overrides the U-turn distance from boundary (m) for a run.
         c.Guidance.UTurnDistanceFromBoundary = double.TryParse(Environment.GetEnvironmentVariable("AGOPENWEB_SCENARIO_DISTANCE"),

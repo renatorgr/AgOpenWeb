@@ -64,7 +64,7 @@ public sealed class YouTurnStateMachine
     // _missedSounded: a missed turn sounds once (#570). Not re-armed by a new plan, which a
     // missed turn is followed by at once: only when a turn starts or U-turn is switched off.
     private bool _creationFailSounded, _approachAlarmed, _missedSounded;
-    /// <summary>The AB line heading last logged (rad), so the debug line is written when it changes.</summary>
+    /// <summary>The AB line heading last logged (rad), so its debug line is written when it changes.</summary>
     private double _loggedAbHeading = double.NaN;
     // The way along the pass the planned turn was built for (TURNED ROUND in Tick).
     private bool? _plannedSameWay;
@@ -172,8 +172,8 @@ public sealed class YouTurnStateMachine
             double abDx = trackPointB.Easting - trackPointA.Easting;
             double abDy = trackPointB.Northing - trackPointA.Northing;
             abHeading = Math.Atan2(abDx, abDy);
-            // Only when it changes (fork only): every 30th count it filled two thirds of the 2000
-            // lines a bug report keeps, so a report held only the last 20 minutes.
+            // Only when it changes: written every 30th count, it was 1273 of the 2000 lines a bug
+            // report keeps (a simulator report), so the report reached back only 21 minutes.
             if (!(Math.Abs(abHeading - _loggedAbHeading) < 1e-3))
             {
                 _loggedAbHeading = abHeading;
@@ -1245,9 +1245,9 @@ public sealed class YouTurnStateMachine
         var g = c.Guidance;
         int settings = HashCode.Combine(
             HashCode.Combine(g.UTurnRadius, g.UTurnDistanceFromBoundary, g.UTurnExtension, g.UTurnSmoothing, g.UTurnStyle),
-            HashCode.Combine(c.ActualToolWidth, c.Tool.Width, c.Tool.Overlap, c.Tool.Offset, c.Tool.Length,
-                c.Tool.IsToolTrailing, c.Tool.IsToolRearFixed),
-            HashCode.Combine(c.Vehicle.HitchLength, ctx.HeadlandCalculatedWidth, ctx.HeadlandDistance));
+            HashCode.Combine(c.ActualToolWidth, c.Tool.Width, c.Tool.Overlap,
+                AgOpenWeb.Models.Tool.RigGeometry.Stamp(c.Vehicle, c.Tool)),
+            HashCode.Combine(ctx.HeadlandCalculatedWidth, ctx.HeadlandDistance));
         return new EndTried(track, guidance.HowManyPathsAway, guidance.IsHeadingSameWay, guidance.NudgeOffset,
             turn.SnakeSequence, fieldStamp, ctx.UTurnSkipRows, turn.NextUTurnDirectionLeftOverride, settings);
     }

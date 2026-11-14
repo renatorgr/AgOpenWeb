@@ -183,8 +183,10 @@ public class ObstacleUTurnTests
                 path.Add(new Vec3(b.Easting + (b.Easting - a.Easting) / len * d, b.Northing + (b.Northing - a.Northing) / len * d, b.Heading));
             var fence = ditch.Points.Select(p => new Vec2(p.Easting, p.Northing)).ToList();
             var swept = ImplementSweptPath.Compute(path, new ToolGeometry(
-                ToolMount.RearFixed, Width: 6, Offset: 0, VehicleHitchLength: c.Vehicle.HitchLength,
-                ToolHitchLength: c.Tool.HitchLength, TrailingHitchLength: 0, TrailingToolToPivotLength: 0,
+                ToolMount.RearFixed, Width: 6, Offset: 0,
+                AttachX: RigGeometry.AttachX(ToolMount.RearFixed, c.Vehicle.HitchLength, c.Vehicle.ThreePointHitchLength,
+                    c.Vehicle.FrontHitchLength, c.Tool.WorkingPointFromHitch),
+                TrailingHitchLength: 0, TrailingToolToPivotLength: 0,
                 TankTrailingHitchLength: 0, Length: c.Tool.Length));
             foreach (var corner in swept.FrontLeft.Concat(swept.FrontRight).Concat(swept.RearLeft).Concat(swept.RearRight))
                 Assert.That(GeometryMath.IsPointInPolygon(fence, new Vec2(corner.Easting, corner.Northing)), Is.False,
@@ -212,7 +214,9 @@ public class ObstacleUTurnTests
     {
         var c = ConfigurationStore.Instance;
         c.Tool.SetSectionWidth(0, 1200); // 12 m boom, 3-point mounted
-        c.Tool.HitchLength = 3;
+        // A fixed tool's working point 3 m from the rear axle: the tractor's hitch there, the tool on it (#547).
+        c.Vehicle.ThreePointHitchLength = c.Vehicle.FrontHitchLength = System.Math.Abs(3);
+        c.Tool.WorkingPointFromHitch = 0;
         c.Tool.IsToolRearFixed = true;
         var boundary = Field(ObstacleAction.Turn, hard: true);
 
@@ -226,8 +230,7 @@ public class ObstacleUTurnTests
         Assert.That(result.AtObstacle, Is.True);
         var fence = boundary.InnerBoundaries[0].Points.Select(p => new Vec2(p.Easting, p.Northing)).ToList();
         var swept = ImplementSweptPath.Compute(result.Path, new ToolGeometry(
-            ToolMount.RearFixed, Width: 12, Offset: 0, VehicleHitchLength: c.Vehicle.HitchLength,
-            ToolHitchLength: 3, TrailingHitchLength: 0, TrailingToolToPivotLength: 0,
+            ToolMount.RearFixed, Width: 12, Offset: 0, AttachX: -3, TrailingHitchLength: 0, TrailingToolToPivotLength: 0,
             TankTrailingHitchLength: 0, Length: c.Tool.Length));
         foreach (var corner in swept.FrontLeft.Concat(swept.FrontRight).Concat(swept.RearLeft).Concat(swept.RearRight))
             Assert.That(GeometryMath.IsPointInPolygon(fence, new Vec2(corner.Easting, corner.Northing)), Is.False,

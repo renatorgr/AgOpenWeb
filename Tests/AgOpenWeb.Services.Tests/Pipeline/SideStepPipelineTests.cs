@@ -65,7 +65,9 @@ public class SideStepPipelineTests
         config.Tool.IsToolRearFixed = false;
         config.Tool.IsToolTrailing = false;
         config.Tool.IsToolTBT = false;
-        config.Tool.HitchLength = Hitch;
+        // A fixed tool's working point Hitch m from the rear axle: the tractor's hitch there, the tool on it (#547).
+        config.Vehicle.ThreePointHitchLength = config.Vehicle.FrontHitchLength = System.Math.Abs(Hitch);
+        config.Tool.WorkingPointFromHitch = 0;
         config.Guidance.UTurnRadius = 8;
 
         _gpsService = new GpsService();

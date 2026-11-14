@@ -137,7 +137,8 @@ public partial class YouTurnCreationService
             return LineEntryPlan.NotNeeded;
 
         var config = _configStore;
-        double frontReach = config.Tool.IsToolFrontFixed ? Math.Abs(config.Tool.HitchLength) : 0.0;
+        double frontReach = Models.Tool.RigGeometry.Mount(config.Tool) == Models.Tool.ToolMount.FrontFixed
+            ? Math.Abs(Models.Tool.RigGeometry.AttachX(config.Vehicle, config.Tool)) : 0.0;
         double lead = Math.Max(0.0, config.Guidance.LineEntryStraight) + frontReach;
         double goalS = best.StartS - lead;
         var goalPt = best.PointAt(goalS);
