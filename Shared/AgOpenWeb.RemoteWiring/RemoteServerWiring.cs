@@ -339,6 +339,10 @@ public static partial class RemoteServerWiring
                                         vm.RemoteSetObstacleCircleDiameter(bcr, bcdd);
                                     return;
                                 }
+                                case "boundary.circle.diameterAll": // arg = d: every circle up to a
+                                    if (double.TryParse(arg, num, inv, out var bcda))    // tree's size
+                                        vm.RemoteSetObstacleCirclesDiameter(bcda);      // gets it
+                                    return;
                                 case "boundary.circle.move": // arg = "row:e,n": that obstacle becomes a
                                 {                            // circle centred there
                                     var bcc = arg.IndexOf(':');

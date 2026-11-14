@@ -120,6 +120,47 @@ public partial class MainViewModel
         else StatusMessage = $"{made} obstacles made round";
     }
 
+    /// <summary>
+    /// Every circle up to a tree's size (<see cref="ObstacleCircle.MaxRoundAllDiameter"/>, 10 m) gets
+    /// <paramref name="diameter"/>, round its own centre: the trees of a field put down at one size
+    /// and found to be another (a tester's field: every tree a 10 m circle, the crowns pruned so the
+    /// implement passes under all but the trunk's 1-2 m). A bigger circle (a pond, a clump made
+    /// round) keeps its size, and the diameter is a tree's too, at most 10 m, so the trees stay
+    /// within reach of the next change. Drawn obstacles are left as drawn. Fork only.
+    /// </summary>
+    public void RemoteSetObstacleCirclesDiameter(double diameter)
+    {
+        if (!CheckDiameter(diameter)) return;
+        if (diameter > ObstacleCircle.MaxRoundAllDiameter)
+        {
+            ReportFailure($"Every circle at once: up to {Metres(ObstacleCircle.MaxRoundAllDiameter)} across. Set a bigger one on its own");
+            return;
+        }
+        if (!TryLoadBoundaryForEdit(out var boundary, out var fieldPath)) return;
+        int changed = 0, trees = 0, kept = 0;
+        foreach (var inner in boundary.InnerBoundaries)
+        {
+            if (!inner.IsValid || inner.Circle is not { } circle) continue;
+            if (!(circle.Diameter <= ObstacleCircle.MaxRoundAllDiameter + 0.001))
+            {
+                kept++;
+                continue;
+            }
+            trees++;
+            if (Math.Abs(circle.Diameter - diameter) < 0.001) continue;
+            inner.SetCircle(circle with { Diameter = diameter });
+            changed++;
+        }
+        if (trees == 0)
+        {
+            ReportFailure(kept > 0 ? $"No circle up to {Metres(ObstacleCircle.MaxRoundAllDiameter)} across: {kept} bigger, kept as they are" : "The field has no circles");
+            return;
+        }
+        if (changed > 0) SaveObstacleChoice(boundary, fieldPath, SelectedBoundaryIndex);
+        if (kept > 0) ReportFailure($"{trees} circles {Metres(diameter)} across; {kept} over {Metres(ObstacleCircle.MaxRoundAllDiameter)} kept as they are");
+        else StatusMessage = $"{trees} circles {Metres(diameter)} across";
+    }
+
     private bool CheckDiameter(double diameter)
     {
         if (ObstacleCircle.IsValidDiameter(diameter)) return true;

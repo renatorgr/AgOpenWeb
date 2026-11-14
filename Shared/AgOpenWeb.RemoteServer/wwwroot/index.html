@@ -1521,10 +1521,13 @@
       <span>Hard</span></div>
     <div id="bm-list" class="bm-list"></div>
     <!-- Round obstacles (trees): the diameter is the selected circle's, else the one new circles
-         get; new circles are placed by a tap on each tree's centre on the map. -->
+         get; new circles are placed by a tap on each tree's centre on the map. "Size all" gives
+         every circle up to a tree's size the diameter in the box. -->
     <div class="bm-circ">
       <span id="bm-circ-lbl" class="bm-circlbl">New circles</span>
       <input id="bm-circ-d" class="bm-circin" data-unit="m" type="number" step="0.1" min="0.5" max="100" inputmode="decimal" title="Diameter"><span class="u" data-unit="m"></span>
+      <button id="bm-circ-size" class="bm-cbtn" title="Give every circle up to a tree's size the diameter in the box">Size all</button>
+      <span class="bm-brk"></span>
       <button id="bm-circ-add" class="bm-cbtn" title="Add circles: tap the centre of each tree on the map">+ Circles</button>
       <button id="bm-circ-move" class="bm-cbtn" title="Tap the map at the selected circle's new centre">Move</button>
       <button id="bm-circ-round" class="bm-cbtn" title="Make the selected obstacle round: the smallest circle that holds it">Round</button>

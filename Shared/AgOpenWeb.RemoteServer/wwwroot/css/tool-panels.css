@@ -96,6 +96,7 @@
 /* Round obstacles: the diameter box and the circle buttons under the list. */
 .bm-circ { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .bm-circlbl { font-size: 13px; color: var(--text-muted); min-width: 84px; }
+.bm-brk { flex-basis: 100%; height: 0; } /* the tools on a row of their own, under the size */
 .bm-circin { width: 64px; height: 40px; box-sizing: border-box; padding: 0 6px; font-size: 15px; text-align: right;
   border: 1px solid var(--border); border-radius: 6px; background: rgba(var(--ov),0.06); color: inherit; }
 .bm-cbtn { height: 40px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: transparent;

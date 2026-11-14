@@ -196,6 +196,50 @@ public class ObstacleCircleTests
     }
 
     [Test]
+    public async Task SizeAll_GivesEveryTreeCircleTheDiameter_AndLeavesTheRest()
+    {
+        // Trees put down as 10 m circles, pruned so the implement passes under all but the trunk's
+        // 1-2 m (a tester's field), a pond made round (17 m) and the two trees drawn as squares.
+        var vm = await Open();
+        vm.RemoteAddObstacleCircle(80, 150, 10);
+        vm.RemoteAddObstacleCircle(100, 150, 10);
+        vm.RemoteAddObstacleCircle(120, 150, 6);
+        vm.RemoteAddObstacleCircle(30, 120, 17);
+
+        vm.RemoteSetObstacleCirclesDiameter(3);
+
+        var inner = OnDisk(_dir).InnerBoundaries;
+        Assert.That(inner.Skip(3).Select(i => i.Circle!.Value.Diameter), Is.EqualTo(new[] { 3.0, 3.0, 3.0, 17.0 }).AsCollection,
+            "the trees, not the 17 m circle");
+        Assert.That(inner[3].Circle!.Value.CenterEasting, Is.EqualTo(80).Within(0.005), "round each one's own centre");
+        Assert.That(inner[4].IsPointInside(100 + 1.6, 150), Is.False, "the polygon shrank with it");
+        Assert.That(inner.Take(3).Select(i => i.Circle.HasValue), Is.All.False, "drawn obstacles are left as drawn");
+        Assert.That(inner[1].Points, Has.Count.EqualTo(4));
+        Assert.That(vm.StatusMessage, Does.Contain("3 circles 3.0 m across").And.Contain("1 over 10.0 m kept"));
+        Assert.That(vm.BoundaryItems[4].CircleDiameter, Is.EqualTo(3), "the list shows it");
+
+        vm.RemoteSetObstacleCirclesDiameter(4); // the trees are still trees
+        Assert.That(OnDisk(_dir).InnerBoundaries.Skip(3).Select(i => i.Circle!.Value.Diameter),
+            Is.EqualTo(new[] { 4.0, 4.0, 4.0, 17.0 }).AsCollection);
+    }
+
+    [Test]
+    public async Task SizeAll_OverATreesSize_OrWithNoCircles_ChangesNothing()
+    {
+        var vm = await Open();
+
+        vm.RemoteSetObstacleCirclesDiameter(3);
+        Assert.That(vm.StatusMessage, Does.Contain("no circles"));
+
+        vm.RemoteAddObstacleCircle(80, 150, 6);
+        vm.RemoteSetObstacleCirclesDiameter(12);
+        Assert.That(vm.StatusMessage, Does.Contain("up to 10.0 m across"));
+        vm.RemoteSetObstacleCirclesDiameter(0.2);
+        Assert.That(vm.StatusMessage, Does.Contain("across"));
+        Assert.That(OnDisk(_dir).InnerBoundaries[3].Circle!.Value.Diameter, Is.EqualTo(6));
+    }
+
+    [Test]
     public async Task TheOuterRow_CannotBeMadeRound()
     {
         var vm = await Open();
