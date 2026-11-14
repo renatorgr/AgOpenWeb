@@ -318,6 +318,19 @@ public static partial class RemoteServerWiring
                                         vm.RemoteSetObstacleAction(boi, boa);
                                     return;
                                 }
+                                case "boundary.deleteObstacles": // arg = "rows:i,j,k": the obstacles on list
+                                {                                // rows i, j, k, the list being that many rows long
+                                    var bdc = arg.IndexOf(':');
+                                    if (bdc <= 0 || !int.TryParse(arg[..bdc], out var bdn)) return;
+                                    var bdr = new List<int>();
+                                    foreach (var s in arg[(bdc + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries))
+                                    {
+                                        if (!int.TryParse(s, out var r)) return; // a bad row: nothing deleted
+                                        bdr.Add(r);
+                                    }
+                                    vm.RemoteDeleteObstacles(bdn, bdr);
+                                    return;
+                                }
                                 case "boundary.atObstacleAll": // arg = turn|goRound|driveThrough: every
                                     if (AgOpenWeb.Models.ObstacleActionNames.Parse(arg) is { } baa) // obstacle (a
                                         vm.RemoteSetAllObstacleActions(baa);                     // column title)
