@@ -407,7 +407,8 @@ for (const h of document.querySelectorAll('#boundarymenu .bm-colhdr')) h.addEven
 // the next tree gets the size of the one just placed. "+ Circles" stays armed: every tap on the
 // map puts a circle centred there, until it is tapped again or the menu closes. "Round" makes
 // the selected drawn obstacle the smallest circle that holds it, "Round all" every one up to a
-// tree's size. A tap on an obstacle already there selects it instead of adding a circle on it.
+// tree's size, "Size all" every circle up to a tree's size the diameter in the box. A tap on an
+// obstacle already there selects it instead of adding a circle on it.
 const CIRCLE_D_KEY = 'aow.newCircleDiameter';
 const ROUND_ALL_MAX_D = 10; // metres across: the host's ObstacleCircle.MaxRoundAllDiameter
 let bmNewD = 6;
@@ -481,6 +482,23 @@ document.getElementById('bm-circ-all').addEventListener('pointerdown', ev => {
   showConfirm(tr('Round obstacles'),
     tr('Make the obstacles up to {d} across round? Each becomes the smallest circle that holds it; long, thin ones and bigger ones keep their shape. This cannot be undone.', { d: fmtUnit(ROUND_ALL_MAX_D, 'm', 0) }),
     () => transport.send('boundary.circle.roundAll'));
+});
+document.getElementById('bm-circ-size').addEventListener('pointerdown', ev => {
+  ev.stopPropagation();
+  // Trees only: a bigger circle (a pond, a clump made round) keeps its size, and the diameter is
+  // a tree's too, so the trees can be changed again (the host checks both). No undo.
+  const d = readUnitInput(bmCircD);
+  if (!circleDiameterOk(d)) {
+    showToast(tr('A circle is {min} to {max} across', { min: fmtUnit(0.5, 'm', 1), max: fmtUnit(100, 'm', 0) }));
+    renderCircleBar(); return;
+  }
+  const max = fmtUnit(ROUND_ALL_MAX_D, 'm', 0);
+  if (d > ROUND_ALL_MAX_D + 0.001) { showToast(tr('Every circle at once: up to {max} across. Set a bigger one on its own', { max })); return; }
+  const n = boundary ? boundary.items.filter(i => i.isInner && i.circleD > 0 && i.circleD <= ROUND_ALL_MAX_D + 0.001).length : 0;
+  if (!n) { showToast(tr('No circle up to {max} across', { max })); return; }
+  showConfirm(tr('Circle size'),
+    tr('Give the {n} circles up to {max} across a diameter of {d}? Bigger circles and drawn obstacles keep their size. This cannot be undone.', { n, max, d: fmtUnit(d, 'm', 1) }),
+    () => transport.send('boundary.circle.diameterAll|' + d));
 });
 // The scene ring of the smallest obstacle holding the point (world metres), or -1.
 function obstacleRingAt(e, n) {
