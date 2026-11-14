@@ -507,10 +507,14 @@ public sealed class YouTurnPathingService
     /// for <see cref="MinRunAfterGap"/>? So the tractor, in the headland, is at the end of its pass
     /// heading out, not heading into the field or across a gap with more field past it. False when
     /// the fence is not met within <see cref="MaxWalkToFence"/>, the pass (a curve) ends first, or
-    /// there is no usable outer boundary. Fork only.
+    /// there is no usable outer boundary. With <paramref name="steeredLine"/> (the pass bent round
+    /// Go around obstacles, the line the tractor follows) that line is walked instead, from its
+    /// point nearest the tractor: the straight pass beside a bend can still be in the crop where
+    /// the bend has left it. Fork only.
     /// </summary>
     public bool PassLeavesFieldAhead(Models.Track.Track track, double abHeading, int pathsAway,
-        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay)
+        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay,
+        IReadOnlyList<Vec3>? steeredLine = null)
     {
         var outer = boundary?.OuterBoundary;
         if (outer == null || !outer.IsValid || track.Points.Count < 2) return false;
@@ -520,6 +524,12 @@ public sealed class YouTurnPathingService
         // The pass's points ahead, a metre apart, from abreast of the tractor.
         IEnumerable<Vec2> Ahead()
         {
+            if (steeredLine is { Count: >= 2 })
+            {
+                foreach (var p in WalkAhead(steeredLine, position, headingSameWay ? abHeading : abHeading + Math.PI, Step, MaxWalkToFence))
+                    yield return p;
+                yield break;
+            }
             if (track.Points.Count > 2)
             {
                 var curve = CurveProcessing.CreateOffsetCurve(track.Points, distAway);
@@ -572,6 +582,52 @@ public sealed class YouTurnPathingService
             else insideRun = 0;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Points of <paramref name="line"/> every <paramref name="step"/> m from its point nearest
+    /// <paramref name="position"/>, the way that runs with <paramref name="travel"/> (compass
+    /// radians), up to <paramref name="maxWalk"/> m or the line's end.
+    /// </summary>
+    private static IEnumerable<Vec2> WalkAhead(IReadOnlyList<Vec3> line, Position position, double travel,
+        double step, double maxWalk)
+    {
+        int seg = 0;
+        double bestT = 0, best = double.MaxValue;
+        for (int i = 0; i < line.Count - 1; i++)
+        {
+            double ax = line[i].Easting, ay = line[i].Northing;
+            double dx = line[i + 1].Easting - ax, dy = line[i + 1].Northing - ay;
+            double len2 = dx * dx + dy * dy;
+            if (len2 < 1e-12) continue;
+            double t = Math.Clamp(((position.Easting - ax) * dx + (position.Northing - ay) * dy) / len2, 0, 1);
+            double ex = ax + dx * t - position.Easting, ey = ay + dy * t - position.Northing;
+            double d = ex * ex + ey * ey;
+            if (d < best) { best = d; seg = i; bestT = t; }
+        }
+        double sdx = line[seg + 1].Easting - line[seg].Easting, sdy = line[seg + 1].Northing - line[seg].Northing;
+        int dir = sdx * Math.Sin(travel) + sdy * Math.Cos(travel) >= 0 ? 1 : -1;
+
+        // Walk from the nearest point, vertex to vertex, putting out a point every step.
+        double curE = line[seg].Easting + sdx * bestT, curN = line[seg].Northing + sdy * bestT;
+        int next = dir > 0 ? seg + 1 : seg;
+        double walked = 0, carry = 0;
+        while (next >= 0 && next < line.Count && walked < maxWalk)
+        {
+            double ne = line[next].Easting, nn = line[next].Northing;
+            double len = Math.Sqrt((ne - curE) * (ne - curE) + (nn - curN) * (nn - curN));
+            double along = step - carry;
+            while (along <= len && walked < maxWalk)
+            {
+                double f = along / len;
+                walked += step;
+                yield return new Vec2(curE + (ne - curE) * f, curN + (nn - curN) * f);
+                along += step;
+            }
+            carry = len - (along - step);
+            curE = ne; curN = nn;
+            next += dir;
+        }
     }
 
     private static bool InsideFence(double e, double n, Boundary? boundary)
