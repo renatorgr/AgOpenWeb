@@ -285,6 +285,8 @@ for (const b of document.querySelectorAll('#fb-tramedit [data-tmode]')) b.addEve
 for (const b of document.querySelectorAll('#fb-tramedit [data-tdir]')) b.addEventListener('pointerdown', e => { e.stopPropagation(); tramSet('dir', b.dataset.tdir); });
 document.getElementById('bm-delete').addEventListener('pointerdown', e => {
   e.stopPropagation();
+  // Obstacles ticked in the list: those, all together (one confirmation), not the selected row.
+  if (bmTickedRows().size) { deleteTickedObstacles(); return; }
   if (!boundary || boundary.selectedIndex < 0) return;
   const it = boundary.items.find(i => i.index === boundary.selectedIndex);
   showConfirm(tr('Delete Boundary'), tr('Delete the {type} boundary? This cannot be undone.', { type: it ? it.boundaryType : tr('selected', {}) }),

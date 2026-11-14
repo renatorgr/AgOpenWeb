@@ -341,13 +341,35 @@ function renderRecPath() {
 // it: a U-turn, go around, or drive through, one lit cell of three. The obstacles are listed by
 // size, smallest first, so the few big ones sit together at the end. Tap a row to select it
 // (its obstacle is outlined on the map), a cell to give that obstacle the choice, a column
-// title to give it to all of them.
+// title to give it to all of them. The box in front of an obstacle ticks it, for deleting
+// several at once (a field's trees drawn again).
 const OBSTACLE_ACTIONS = ['turn', 'goRound', 'driveThrough']; // ObstacleAction 0, 1, 2
 let bmShownSel = -1;
+// The ticked obstacles, by list row, and the list they were ticked on. The rows are numbered
+// by place, so when the list changes (a row added or deleted, an obstacle resized or made
+// round, another field) every tick goes: a tick never moves onto another obstacle. A choice or
+// the Hard flag changed keeps them. The host checks the row count again before it deletes.
+const bmTicks = new Set();
+let bmTickList = '';
+function bmListKey(items) {
+  return items.map(i => i.index + ':' + i.boundaryType + ':' + i.sizeM + ':' + i.circleD + ':' + i.areaHa).join(';');
+}
+function bmTickedRows() {
+  const key = boundary ? bmListKey(boundary.items) : '';
+  if (key !== bmTickList) { bmTicks.clear(); bmTickList = key; }
+  return bmTicks;
+}
+function bmToggleTick(index) {
+  const t = bmTickedRows();
+  if (t.has(index)) t.delete(index); else t.add(index);
+  renderBoundaryMenu();
+}
 function renderBoundaryMenu() {
   const b = boundary;
   const list = document.getElementById('bm-list'); list.innerHTML = '';
   const items = b ? b.items.slice() : [];
+  const ticks = bmTickedRows();
+  renderTickBar(items);
   if (!items.length) { list.innerHTML = '<div class="fj-empty">No boundaries yet — drive around the field to record one.</div>'; return; }
   items.sort((x, y) => (x.isInner - y.isInner) || (x.isInner ? x.sizeM - y.sizeM : 0) || x.index - y.index);
   let selRow = null;
@@ -356,10 +378,20 @@ function renderBoundaryMenu() {
     const sel = b && it.index === b.selectedIndex;
     row.className = 'bm-row' + (sel ? ' sel' : '');
     if (sel) selRow = row;
+    let tick;
+    if (it.isInner) {
+      tick = document.createElement('button');
+      tick.className = 'bm-tick' + (ticks.has(it.index) ? ' on' : '');
+      tick.title = tr('Tick to delete with the others ticked');
+      tick.innerHTML = '<span class="bm-box"></span>';
+      tick.addEventListener('pointerdown', ev => { ev.stopPropagation(); bmToggleTick(it.index); });
+    } else {
+      tick = document.createElement('span'); // the outer boundary is never deleted with the obstacles
+    }
     const name = document.createElement('span'); name.className = 'bm-name'; name.textContent = it.boundaryType;
     const size = document.createElement('span'); size.className = 'bm-area';
     size.textContent = it.circleD > 0 ? '⌀ ' + fmtUnit(it.circleD, 'm', 1) : it.isInner ? fmtUnit(it.sizeM, 'm', 1) : fmtUnit(it.areaHa, 'ha');
-    row.append(name, size);
+    row.append(tick, name, size);
     if (it.isInner) {
       OBSTACLE_ACTIONS.forEach((act, k) => {
         const c = document.createElement('button');
@@ -392,6 +424,47 @@ function renderBoundaryMenu() {
   if (selRow && selIndex !== bmShownSel) selRow.scrollIntoView({ block: 'nearest' });
   bmShownSel = selIndex;
   renderCircleBar();
+}
+// The title's box (all ticked, some, none) and the bar under the list: how many are ticked,
+// Untick all and Delete ticked, shown instead of the hint while any is ticked.
+function renderTickBar(items) {
+  const n = bmTicks.size, inner = items.filter(i => i.isInner).length;
+  const all = document.getElementById('bm-tickall');
+  all.classList.toggle('on', n > 0 && n === inner);
+  all.classList.toggle('some', n > 0 && n < inner);
+  document.getElementById('bm-tickbar').style.display = n ? 'flex' : 'none';
+  document.getElementById('bm-hint').style.display = n ? 'none' : '';
+  document.getElementById('bm-tickcount').textContent = n === 1 ? tr('1 obstacle ticked') : tr('{n} obstacles ticked', { n });
+}
+// The ticked obstacles, deleted together after one confirmation; the outer boundary stays.
+function deleteTickedObstacles() {
+  const ticks = bmTickedRows();
+  if (!ticks.size || !boundary) return;
+  const rows = [...ticks].sort((x, y) => x - y), count = boundary.items.length;
+  const msg = rows.length === 1
+    ? tr('Delete the ticked obstacle? The outer boundary stays. This cannot be undone.')
+    : tr('Delete the {n} ticked obstacles? The outer boundary stays. This cannot be undone.', { n: rows.length });
+  showConfirm(tr('Delete obstacles'), msg, () => {
+    transport.send('boundary.deleteObstacles|' + count + ':' + rows.join(','));
+    bmTicks.clear();
+    renderBoundaryMenu();
+  });
+}
+document.getElementById('bm-tickall').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  const ticks = bmTickedRows();
+  const inner = boundary ? boundary.items.filter(i => i.isInner) : [];
+  if (!inner.length) { showToast(tr('The field has no obstacles')); return; }
+  if (ticks.size === inner.length) ticks.clear();
+  else for (const i of inner) ticks.add(i.index);
+  renderBoundaryMenu();
+});
+document.getElementById('bm-untick').addEventListener('pointerdown', e => { e.stopPropagation(); bmTicks.clear(); renderBoundaryMenu(); });
+document.getElementById('bm-delticked').addEventListener('pointerdown', e => { e.stopPropagation(); deleteTickedObstacles(); });
+// The rings ticked in the open boundary menu (the list and the rings share their index), outlined
+// red on the map. Every frame: the ticks were checked against the list when it last drew.
+function boundaryMenuTickedRings() {
+  return bmTicks.size && document.getElementById('boundarymenu').classList.contains('open') ? bmTicks : null;
 }
 function choiceLabel(k) { return k === 1 ? tr('Go around') : k === 2 ? tr('Drive through') : tr('U-turn'); }
 for (const h of document.querySelectorAll('#boundarymenu .bm-colhdr')) h.addEventListener('pointerdown', e => {

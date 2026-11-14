@@ -53,7 +53,7 @@
 .rp-del { background: none; border: 0; color: #c97c7c; font-size: 15px; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
 .rp-del:hover { background: rgba(220,60,60,0.25); color: var(--text); }
 /* Boundary recording menu. */
-.bm-panel { width: 500px; font-family: system-ui, sans-serif; }
+.bm-panel { width: 542px; font-family: system-ui, sans-serif; }
 .bm-toolbar { display: flex; gap: 6px; justify-content: space-between; margin-bottom: 10px; }
 .bm-tbtn { position: relative; width: 56px; height: 48px; border: 1px solid var(--border); border-radius: 8px;
   background: rgba(var(--ov),0.06); cursor: pointer; display: flex; align-items: center; justify-content: center; }
@@ -61,17 +61,17 @@
 .bm-tbtn img { width: 32px; height: 32px; }
 .bm-tbtn:disabled { opacity: 0.35; cursor: default; }
 .bm-plus { position: absolute; right: 4px; bottom: 2px; color: #F5F54D; font-weight: 700; font-size: 15px; }
-.bm-lhdr { display: grid; grid-template-columns: 1fr 0.9fr 0.85fr 0.85fr 0.85fr 0.75fr; align-items: center; background: #1565C0; color: #fff;
+.bm-lhdr { display: grid; grid-template-columns: 40px 1fr 0.9fr 0.85fr 0.85fr 0.85fr 0.75fr; align-items: center; background: #1565C0; color: #fff;
   font-weight: 700; font-size: 12px; padding: 4px 8px; border-radius: 6px 6px 0 0; gap: 2px; }
 .bm-lhdr > span { text-align: center; }
-.bm-lhdr > span:first-child { text-align: left; }
+.bm-lhdr > span:first-of-type { text-align: left; }
 /* A choice's title: tap to give every obstacle that choice. */
 .bm-colhdr { min-height: 40px; border: 1px solid rgba(255,255,255,0.35); border-radius: 6px; background: rgba(255,255,255,0.1);
   color: #fff; font: inherit; font-size: 11px; line-height: 1.15; cursor: pointer; padding: 2px; display: flex;
   flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
 .bm-colhdr:hover { background: rgba(255,255,255,0.2); }
 .bm-list { background: rgba(var(--ov),0.03); border-radius: 0 0 6px 6px; max-height: min(46vh, 400px); overflow-y: auto; }
-.bm-row { display: grid; grid-template-columns: 1fr 0.9fr 0.85fr 0.85fr 0.85fr 0.75fr; align-items: center; padding: 4px 8px;
+.bm-row { display: grid; grid-template-columns: 40px 1fr 0.9fr 0.85fr 0.85fr 0.85fr 0.75fr; align-items: center; padding: 4px 8px;
   font-size: 13px; cursor: pointer; border-bottom: 1px solid var(--bg-raised); gap: 2px; min-height: 40px; }
 .bm-row.sel { background: var(--sel); }
 .bm-row > span { text-align: center; }
@@ -93,6 +93,21 @@
 .bm-choice.on .bm-dot.k2 { background: rgb(77,208,245); }
 .bm-choice.on .bm-dot.k3 { background: rgb(176,176,176); }
 .bm-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+/* Ticking obstacles to delete several at once: a box in front of each obstacle and in the
+   title; the ticked ones outlined red on the map (map-draw.js SKP.boundaryTicked). */
+.bm-tick { width: 40px; height: 36px; border: 0; background: transparent; cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center; }
+.bm-box { width: 22px; height: 22px; box-sizing: border-box; border: 2px solid var(--text-muted); border-radius: 4px;
+  display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; line-height: 1; color: #fff; }
+.bm-lhdr .bm-box { border-color: rgba(255,255,255,0.8); }
+.bm-tick.on .bm-box { background: rgb(229,57,53); border-color: rgb(229,57,53); }
+.bm-tick.on .bm-box::after { content: '\2713'; }
+.bm-tick.some .bm-box { background: rgba(229,57,53,0.55); border-color: rgb(229,57,53); }
+.bm-tick.some .bm-box::after { content: '\2212'; }
+.bm-tickbar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.bm-tickcount { flex: 1; font-size: 13px; font-weight: 700; color: rgb(239,83,80); }
+.bm-cbtn.bm-danger { border-color: rgb(229,57,53); color: rgb(239,83,80); }
+.bm-cbtn.bm-danger:hover { background: rgba(229,57,53,0.2); }
 /* Round obstacles: the diameter box and the circle buttons under the list. */
 .bm-circ { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .bm-circlbl { font-size: 13px; color: var(--text-muted); min-width: 84px; }

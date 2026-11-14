@@ -615,6 +615,7 @@ function updateLineWidths() {
   SKP.boundaryInner.setStrokeWidth(wb(3.0)); // boundaryInner 1 × 3
   SKP.boundaryGoRound.setStrokeWidth(wb(3.0)); SKP.boundaryDriveThru.setStrokeWidth(wb(3.0));
   SKP.boundarySel.setStrokeWidth(wb(3.0) + 5);
+  SKP.boundaryTicked.setStrokeWidth(wb(3.0) + 7);
   SKP.boundaryOut.setStrokeWidth(3 * 2 * k);  // out of bounds: AgOpenGPS ABLine.lineWidth × 3 (#494)
   SKP.headland.setStrokeWidth(w(3.0));   // headland 1 × 3
   SKP.guidance.setStrokeWidth(w(1.5));   // trackActive 0.5 × 3

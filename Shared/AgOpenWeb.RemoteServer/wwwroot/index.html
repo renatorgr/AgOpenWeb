@@ -1513,8 +1513,10 @@
       <button id="bm-accept" class="bm-tbtn" title="Accept and close"><img src="/icons/OK64.png" alt=""></button>
     </div>
     <!-- What the tractor does at each obstacle: one choice per row; a choice's column title
-         gives it to every obstacle. Coloured as the obstacles on the map. -->
-    <div class="bm-lhdr"><span>Boundary</span><span>Size</span>
+         gives it to every obstacle. Coloured as the obstacles on the map. The box in front of
+         each obstacle ticks it for deleting several at once (the outer boundary has none);
+         the one in the title ticks them all, or none. -->
+    <div class="bm-lhdr"><button id="bm-tickall" class="bm-tick" title="Tick every obstacle, or none"><span class="bm-box"></span></button><span>Boundary</span><span>Size</span>
       <button class="bm-colhdr" data-all="turn" title="Give every obstacle a U-turn"><span class="bm-dot k1"></span>U-turn</button>
       <button class="bm-colhdr" data-all="goRound" title="Go around every obstacle"><span class="bm-dot k2"></span>Go around</button>
       <button class="bm-colhdr" data-all="driveThrough" title="Drive through every obstacle"><span class="bm-dot k3"></span>Drive through</button>
@@ -1533,7 +1535,14 @@
       <button id="bm-circ-round" class="bm-cbtn" title="Make the selected obstacle round: the smallest circle that holds it">Round</button>
       <button id="bm-circ-all" class="bm-cbtn" title="Make every obstacle up to a tree's size round">Round all</button>
     </div>
-    <div class="bm-hint">Tap a column title to give every obstacle that choice, or an obstacle on the map to find its row.</div>
+    <div id="bm-hint" class="bm-hint">Tap a column title to give every obstacle that choice, or an obstacle on the map to find its row.</div>
+    <!-- Shown instead of the hint while obstacles are ticked: the ticked ones are outlined red
+         on the map and deleted together, after one confirmation (the trash button too). -->
+    <div id="bm-tickbar" class="bm-tickbar" style="display:none">
+      <span id="bm-tickcount" class="bm-tickcount"></span>
+      <button id="bm-untick" class="bm-cbtn" title="Untick every obstacle">Untick all</button>
+      <button id="bm-delticked" class="bm-cbtn bm-danger" title="Delete the ticked obstacles">Delete ticked</button>
+    </div>
   </div>
   <!-- Boundary Player ("Stop Record Pause Boundary") — GPS drive-around recording. -->
   <div id="boundaryplayer" class="ln-panel bp-panel">

@@ -17,8 +17,9 @@ function renderSkia(canvas, rp) {
   drawGridSk(canvas);
   const outOfBounds = !!(tick && tick.op && tick.op.outOfBounds); // #494
   if (scene) {
-    const selRing = boundaryMenuSelectedRing();
+    const selRing = boundaryMenuSelectedRing(), ticked = boundaryMenuTickedRings();
     for (let bi = 0; bi < scene.boundaries.length; bi++) {
+      if (ticked && ticked.has(bi)) strokeFixedPtsSk(canvas, scene.boundaries[bi], true, SKP.boundaryTicked);
       if (bi === selRing) strokeFixedPtsSk(canvas, scene.boundaries[bi], true, SKP.boundarySel);
       strokeFixedPtsSk(canvas, scene.boundaries[bi], true, outOfBounds ? SKP.boundaryOut : boundaryRingPaint(bi));
     }
