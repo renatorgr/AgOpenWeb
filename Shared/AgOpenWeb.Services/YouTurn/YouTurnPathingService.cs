@@ -53,7 +53,8 @@ public sealed class YouTurnPathingService
         YouTurnWorkingState turn,
         int uTurnSkipRows,
         bool isSkipWorkedMode,
-        Models.Track.Track? selectedTrack)
+        Models.Track.Track? selectedTrack,
+        Func<int, bool>? isWorked = null)
     {
         if (referenceTrack.Points.Count < 2) return;
 
@@ -72,7 +73,7 @@ public sealed class YouTurnPathingService
         // Skip-worked mode: find next unworked path instead of fixed skip.
         if (isSkipWorkedMode && selectedTrack != null)
         {
-            pathsToMove = GetNextUnworkedPathSkip(selectedTrack, guidance.HowManyPathsAway, positiveOffset, pathsToMove);
+            pathsToMove = GetNextUnworkedPathSkip(selectedTrack, guidance.HowManyPathsAway, positiveOffset, pathsToMove, isWorked);
         }
 
         int offsetChange = positiveOffset ? pathsToMove : -pathsToMove;

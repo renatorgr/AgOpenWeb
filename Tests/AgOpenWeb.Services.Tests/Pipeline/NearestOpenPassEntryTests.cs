@@ -356,4 +356,35 @@ public class NearestOpenPassEntryTests
             Assert.That(first.LineEntryPath, Is.Not.Null);
         });
     }
+
+    [Test]
+    public void A_pass_whose_piece_on_this_side_of_a_bay_is_done_is_passed_over()
+    {
+        // The snake's rule for a pass a bay cuts (official #815, Baetas): its piece on this side is
+        // worked, though the pass is still to do on the whole. Joining it drove that piece again and
+        // stopped at the bay. A bay in from the east fence between 40 and 60 m north, its tip just
+        // west of 3R: 3R and the passes east of it have a 30 m piece in the south.
+        OpenField(skipWorked: true);
+        double tip = PassCentre(2) - 2;
+        _pipeline.SetHeadlandLine(new List<Vec3>
+        {
+            new(-80, 10, 0), new(80, 10, 0), new(80, 40, 0), new(tip, 40, 0), new(tip, 60, 0), new(80, 60, 0),
+            new(80, 270, 0), new(-80, 270, 0),
+        });
+        Paint(-1, 0, 1);
+        double c2 = PassCentre(2);
+        _coverage.StartMapping(0, new Vec2(c2 - Width / 2, 10), new Vec2(c2 + Width / 2, 10));
+        for (double n = 11; n <= 40; n += 1)
+            _coverage.AddCoveragePoint(0, new Vec2(c2 - Width / 2, n), new Vec2(c2 + Width / 2, n));
+        _coverage.StopMapping(0);
+
+        var first = Engage(PassCentre(0), 0, 90); // in the south headland on 1R, heading east
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.Guidance!.HowManyPathsAway, Is.Not.AnyOf(-1, 0, 1, 2),
+                "not 3R: its piece south of the bay is done");
+            Assert.That(first.LineEntryPath, Is.Not.Null);
+        });
+    }
 }
