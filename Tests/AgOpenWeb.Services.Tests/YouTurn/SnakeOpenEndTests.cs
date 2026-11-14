@@ -244,4 +244,102 @@ public class SnakeOpenEndTests
                 headingSameWay: false, headlandAhead: 15, null), Is.False, "no map");
         });
     }
+
+    // Official #815 (the job harness on Baetas): a bay cuts the passes, and a section on anywhere on
+    // a pass marked it worked (Track.WorkedPaths), so once its short piece was done its main piece
+    // was never turned onto. With the map the snake asks the map, and at each end the piece of the
+    // pass a turn there lands on.
+
+    /// <summary>
+    /// The cultivated area with a bay in from the east fence between n = -18 and -10, to x = 12: the
+    /// passes from 3 (x = 14) east are cut into a 22 m piece in the south and a 50 m piece north of it.
+    /// </summary>
+    private static List<Vec3> AreaWithABay() => new PolygonOffsetService().CalculatePointHeadings(new List<Vec2>
+        { new(-40, -40), new(40, -40), new(40, -18), new(12, -18), new(12, -10), new(40, -10), new(40, 40), new(-40, 40) });
+
+    private (YouTurnEffects Effects, YouTurnWorkingState Turn) OnPass6(List<Vec3> area, Func<double, double, bool> covered,
+        bool north, double northing)
+    {
+        var ctx = new YouTurnStateMachine.TickContext(
+            new Position { Easting = PassX(6), Northing = northing, Heading = north ? 0 : 180, Speed = 2.78 },
+            _track, _boundary, area,
+            UTurnSkipRows: 1, IsSkipWorkedMode: true,
+            HeadlandCalculatedWidth: 10.0, HeadlandDistance: 10.0,
+            IsPointCovered: covered);
+        var guidance = new GuidanceWorkingState { HowManyPathsAway = 6, IsHeadingSameWay = north };
+        var turn = new YouTurnWorkingState { IsEnabled = true };
+        var effects = _sm.Tick(ctx, guidance, turn);
+        return (effects, turn);
+    }
+
+    [Test]
+    public void A_pass_cut_by_a_bay_with_only_its_short_piece_done_gets_the_turn_at_the_other_end()
+    {
+        var area = AreaWithABay();
+        var covered = AllCoveredBut(n => n > -18); // pass 4: only its short piece south of the bay
+        for (int k = -10; k <= 9; k++) _track.MarkPathWorked(k); // sections were on on every pass
+        Assert.That(_pathing.IsPassWorked(_track, 4, 0, _boundary, area, covered), Is.False,
+            "the scenario: 22 m of pass 4's 72 m in the field are covered");
+
+        var (effects, turn) = OnPass6(area, covered, north: true, northing: 25);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Not.Null, $"a turn, not \"{effects.StatusMessage}\"");
+            Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4), "onto pass 4's main piece, at its north end");
+        });
+    }
+
+    [Test]
+    public void A_pass_cut_by_a_bay_is_not_turned_onto_where_its_piece_is_done()
+    {
+        // The same field at the south end: a turn onto pass 4 there drives its 22 m piece again and
+        // stops at the bay. Its main piece is turned onto from the north.
+        var area = AreaWithABay();
+        var covered = AllCoveredBut(n => n > -18);
+        var position = new Position { Easting = PassX(6), Northing = -25, Heading = 180 };
+        Assert.That(_pathing.IsPieceDoneAtThisEnd(_track, 0, 4, 0, _boundary, area, position,
+            headingSameWay: false, headlandAhead: 15, covered), Is.True, "the scenario: the piece at the south end is done");
+
+        var (effects, turn) = OnPass6(area, covered, north: false, northing: -25);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null, $"no turn onto pass {turn.ReturnPassTargetPath}");
+            Assert.That(effects.StatusMessage, Is.EqualTo("Field complete — all tracks worked"));
+        });
+    }
+
+    [Test]
+    public void A_pass_with_no_bay_done_only_at_this_end_still_gets_the_turn_here()
+    {
+        // No bay: pass 4 is one piece, done only in its south 20 m (sections on there, so marked
+        // worked). A turn onto it at the south end drives on over the rest.
+        var covered = AllCoveredBut(n => n > -20);
+        for (int k = -10; k <= 9; k++) _track.MarkPathWorked(k);
+        var position = new Position { Easting = PassX(6), Northing = -25, Heading = 180 };
+        Assert.That(_pathing.IsPieceDoneAtThisEnd(_track, 0, 4, 0, _boundary, _square, position,
+            headingSameWay: false, headlandAhead: 15, covered), Is.False, "the piece at this end is the whole pass, 25 % done");
+
+        var (effects, turn) = DriveSouthOnPass6(covered);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Not.Null, $"a turn, not \"{effects.StatusMessage}\"");
+            Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4));
+        });
+    }
+
+    [Test]
+    public void With_no_map_the_mark_says_which_passes_are_worked()
+    {
+        _track.MarkPathWorked(4);
+        Assert.Multiple(() =>
+        {
+            Assert.That(_pathing.IsPassWorked(_track, 4, 0, _boundary, _square, null), Is.True);
+            Assert.That(_pathing.IsPassWorked(_track, 5, 0, _boundary, _square, null), Is.False);
+            Assert.That(_pathing.IsPassWorked(_track, 4, 0, _boundary, _square, (e, n) => false), Is.False,
+                "with a map, the map: nothing is covered");
+        });
+    }
 }

@@ -86,6 +86,11 @@ public sealed class YouTurnStateMachine
     private readonly Dictionary<int, bool> _openAtEnd = new();
     private (int Pass, bool SameWay) _openAtEndKey;
 
+    // Of the passes still to do on the whole, the ones whose piece at the end ahead is done
+    // (YouTurnPathingService.IsPieceDoneAtThisEnd: a bay cuts the pass), decided once per end and
+    // cleared with _openAtEnd. Fork only.
+    private readonly Dictionary<int, bool> _doneAtEnd = new();
+
     // Which way the last turn stepped across the field (+1 to a higher pass, -1 lower) and on
     // which track (by name: a nudge or edit makes a new Track). A normal turn keeps stepping that
     // way, as AgOpenGPS does by flipping isTurnLeft after each turn, so the work goes on across
@@ -962,6 +967,7 @@ public sealed class YouTurnStateMachine
         turn.AltSign = 0;
         _coveredPasses.Clear();
         _openAtEnd.Clear();
+        _doneAtEnd.Clear();
         _failedEnd = null;
     }
 
@@ -977,13 +983,14 @@ public sealed class YouTurnStateMachine
         turn.SnakeIndex = -1;
         _coveredPasses.Clear();
         _openAtEnd.Clear();
+        _doneAtEnd.Clear();
         _failedEnd = null;
     }
 
     /// <summary>
-    /// Is pass <paramref name="pass"/> worked: marked so, or at least half covered on the job's map
-    /// inside the cultivated area (<see cref="YouTurnPathingService.IsPassWorked"/>, the snake's
-    /// test). For AutoSteer choosing the pass to join (fork only).
+    /// Is pass <paramref name="pass"/> worked: at least half covered on the job's map inside the
+    /// cultivated area, else (no map) marked so (<see cref="YouTurnPathingService.IsPassWorked"/>,
+    /// the snake's test). For AutoSteer choosing the pass to join (fork only).
     /// </summary>
     public bool IsPassWorked(Models.Track.Track track, int pass, double nudgeOffset, Boundary? boundary,
         IReadOnlyList<Vec3>? headlandLine, Func<double, double, bool>? isPointCovered) =>
@@ -1375,7 +1382,7 @@ public sealed class YouTurnStateMachine
         YouTurnEffects effects, string? messageBefore)
     {
         if (turn.TurnPath is not { } path || !_openAtEnd.TryGetValue(pass, out bool open) || !open) return false;
-        if (!track.IsPathWorked(pass) && !(_coveredPasses.TryGetValue(pass, out bool covered) && covered)) return false;
+        if (!(_coveredPasses.TryGetValue(pass, out bool covered) && covered)) return false;
         if (_pathing.TurnReachesUnworkedGround(path, ctx.Boundary, ctx.WorkEndLine, ctx.IsPointCovered)) return false;
         _logger.LogDebug("[YouTurn] Snake pass {Pass} is left to do only beyond where a turn here lands on it - worked at this end", pass);
         _openAtEnd[pass] = false;
@@ -1430,13 +1437,15 @@ public sealed class YouTurnStateMachine
     private static long Cm(double metres) => (long)Math.Round(metres * 100);
 
     /// <summary>
-    /// The worked-pass test for the snake: marked worked, or covered on the job's map
+    /// The worked-pass test for the snake: covered on the job's map, else marked worked
     /// (<see cref="YouTurnPathingService.IsPassWorked"/>). The map test is remembered for the
     /// plan in hand (see <see cref="_coveredPasses"/>); the tractor's own pass, the only one
     /// being covered as it drives, is never the next pass of the plan. With
     /// <paramref name="atEndOf"/> (the track's heading, radians) for a turn at the end ahead, a
     /// pass worked on the whole but still to do at that end is not worked
-    /// (<see cref="YouTurnPathingService.IsPassOpenAtThisEnd"/>; fork only).
+    /// (<see cref="YouTurnPathingService.IsPassOpenAtThisEnd"/>), and a pass still to do on the
+    /// whole whose piece at that end is done (a bay cuts it) is worked there
+    /// (<see cref="YouTurnPathingService.IsPieceDoneAtThisEnd"/>; fork only).
     /// </summary>
     private Func<int, bool> WorkedPasses(in TickContext ctx, Models.Track.Track track,
         GuidanceWorkingState guidance, YouTurnWorkingState turn, double? atEndOf)
@@ -1452,6 +1461,7 @@ public sealed class YouTurnStateMachine
         {
             _coveredPasses.Clear();
             _openAtEnd.Clear();
+            _doneAtEnd.Clear();
             _coveredPassesKey = (plan, track, nudge, boundary, headlandLine);
         }
         int current = guidance.HowManyPathsAway;
@@ -1459,6 +1469,7 @@ public sealed class YouTurnStateMachine
         if (_openAtEndKey != (current, sameWay))
         {
             _openAtEnd.Clear();
+            _doneAtEnd.Clear();
             _openAtEndKey = (current, sameWay);
         }
         var position = ctx.CurrentPosition;
@@ -1466,16 +1477,26 @@ public sealed class YouTurnStateMachine
         var workEndLine = ctx.WorkEndLine;
         return pass =>
         {
-            bool worked = track.IsPathWorked(pass);
-            if (!worked && !_coveredPasses.TryGetValue(pass, out worked))
+            // No map: the mark set while sections were on on the pass.
+            if (isPointCovered == null) return track.IsPathWorked(pass);
+            if (!_coveredPasses.TryGetValue(pass, out bool worked))
                 _coveredPasses[pass] = worked = _pathing.IsPassWorked(track, pass, nudge, boundary, headlandLine, isPointCovered);
-            if (!worked || atEndOf is not { } abHeading || pass == current || isPointCovered == null) return worked;
-            // Worked on the whole but left to do at this end: open here, so a turn can be made
-            // onto it (Tapada da Casa: 27R, its last 100 m at the end ahead, was turned past).
-            if (!_openAtEnd.TryGetValue(pass, out bool open))
-                _openAtEnd[pass] = open = _pathing.IsPassOpenAtThisEnd(track, abHeading, pass, nudge, boundary, workEndLine,
+            if (atEndOf is not { } abHeading || pass == current) return worked;
+            if (worked)
+            {
+                // Worked on the whole but left to do at this end: open here, so a turn can be made
+                // onto it (Tapada da Casa: 27R, its last 100 m at the end ahead, was turned past).
+                if (!_openAtEnd.TryGetValue(pass, out bool open))
+                    _openAtEnd[pass] = open = _pathing.IsPassOpenAtThisEnd(track, abHeading, pass, nudge, boundary, workEndLine,
+                        position, sameWay, headlandAhead, isPointCovered);
+                return !open;
+            }
+            // Still to do on the whole, but its piece on this side of a bay is done: a turn onto it
+            // here drives that piece again and stops at the bay (official #815, Baetas).
+            if (!_doneAtEnd.TryGetValue(pass, out bool done))
+                _doneAtEnd[pass] = done = _pathing.IsPieceDoneAtThisEnd(track, abHeading, pass, nudge, boundary, workEndLine,
                     position, sameWay, headlandAhead, isPointCovered);
-            return !open;
+            return done;
         };
     }
 
@@ -1946,6 +1967,7 @@ public sealed class YouTurnStateMachine
                     WorkedPasses(in ctx, ctx.SelectedTrack, guidance, turn, atEndOf: null));
                 _coveredPasses.Clear(); // decided again for the next turn
                 _openAtEnd.Clear();
+                _doneAtEnd.Clear();
             }
         }
         else if (turn.PlannedNextPath is { } planned)
