@@ -402,6 +402,11 @@ public sealed class JobRun : IAsyncDisposable
         var tr = Field.Tracks.FirstOrDefault(t => t.Name == Spec.Track);
         if (tr.Points == null || tr.Points.Count < 2) { Harness($"no track '{Spec.Track}' in field '{Spec.Field}'"); return false; }
         var pa = tr.Points[0]; var pb = tr.Points[^1];
+        // An A+ line imported from AgOpenGPS keeps its B under 1 m from A, which "A and B" refuses: B is taken
+        // 100 m along the same heading (fork only, the farm jobs' own fields).
+        double abM = Math.Sqrt(Math.Pow((pb.Lat - pa.Lat) * 111320, 2) + Math.Pow((pb.Lon - pa.Lon) * 111320 * Math.Cos(pa.Lat * Math.PI / 180), 2));
+        if (abM is > 0.01 and < 50)
+            pb = (pa.Lat + (pb.Lat - pa.Lat) * 100 / abM, pa.Lon + (pb.Lon - pa.Lon) * 100 / abM);
         await SendAsync("track.latLonAB", F($"{pa.Lat:F9},{pa.Lon:F9},{pb.Lat:F9},{pb.Lon:F9}"));
         if (!await Rig.ReadAsync(() => Rig.Vm.IsAutoSteerAvailable)) await SendAsync("track.activate", "0");
         if (!await Rig.ReadAsync(() => Rig.Vm.IsAutoSteerAvailable)) { Harness("no active AB line"); return false; }
