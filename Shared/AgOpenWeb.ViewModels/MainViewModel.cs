@@ -4034,6 +4034,7 @@ public partial class MainViewModel : ObservableObject
             OnPropertyChanged();
             _mapService.SetHeadlandLine(value);
             SaveHeadlandToFile(value);
+            DropHeadlandPolygon();
 
             // Set HasHeadland based on whether we have a valid headland line
             HasHeadland = value != null && value.Count >= 3;
