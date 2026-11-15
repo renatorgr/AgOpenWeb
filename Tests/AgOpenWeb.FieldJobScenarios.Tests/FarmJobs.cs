@@ -73,10 +73,15 @@ public static class FarmJobs
                     // A corner of short passes beside the hard fence has no room to turn: start on a full-length pass.
                     StartChordM = 100,
                     StartChordOfLongest = 0.8,
-                    // The snake check needs a turn with the implement's pass known (a job that ends on its first pass has none).
-                    ExtraJudge = watch == null ? null : (sc, r, flag) =>
+                    DriveOnPastStartWarnings = true,
+                    ExtraJudge = (sc, r, flag) =>
                     {
-                        if (r.Turns.Any(t => t.TruthPassBefore != int.MinValue)) watch.Judge(sc, r, flag);
+                        // AutoSteer engaged in the headland facing the field: a turn planned at the crossing the
+                        // tractor is about to enter fails, and with a hard boundary the operator is told to take over.
+                        if (r.StartWarnings.Count > 0)
+                            flag(Severity.Bug, "TAKE-OVER-AT-START", JobRun.F($"AgOpenWeb told the operator to take over before the implement had reached the cultivated area on the first pass ({string.Join("; ", r.StartWarnings)}); the operator drove on, {(r.Turns.Count > 0 ? "and the turn at the far end was made" : "and no turn was made")}."));
+                        // The snake check needs a turn with the implement's pass known (a job that ends on its first pass has none).
+                        if (watch != null && r.Turns.Any(t => t.TruthPassBefore != int.MinValue)) watch.Judge(sc, r, flag);
                     },
                 };
             }

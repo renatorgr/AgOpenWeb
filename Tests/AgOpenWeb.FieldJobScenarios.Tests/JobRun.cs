@@ -99,6 +99,10 @@ public sealed record JobSpec(
     /// longest pass's line in the cultivated area (a full-length pass, as a farmer starts a field with a hard fence
     /// whose corners have no room to turn), and at least <see cref="StartChordM"/>. Fork only.</summary>
     public double StartChordOfLongest { get; init; }
+    /// <summary>A "take over manually" said before the implement first reaches the cultivated area (AutoSteer engaged in
+    /// the headland, facing the field) is kept in <see cref="JobRun.StartWarnings"/> and the operator drives on, so the
+    /// job goes on and the jobs' own check reports it. Fork only: the farm jobs.</summary>
+    public bool DriveOnPastStartWarnings { get; init; }
 }
 
 /// <summary>How the operator guides a job.</summary>
@@ -273,6 +277,9 @@ public sealed class JobRun : IAsyncDisposable
     public (int Pass, double ChordM)? ArrowAtEdge;
     public readonly List<TurnRecord> Turns = new();
     public readonly List<string> Said = new();
+    /// <summary>"Take over manually" warnings the operator drove on past at the start (<see cref="JobSpec.DriveOnPastStartWarnings"/>).</summary>
+    public readonly List<string> StartWarnings = new();
+    private bool _reachedWork;
     public readonly List<string> Problems = new();
     public readonly List<string> Notes = new();
     /// <summary>"End of field reached" said by AgOpenWeb, then a U-turn it made after all: when and where.</summary>
@@ -956,6 +963,11 @@ public sealed class JobRun : IAsyncDisposable
                     // warning is AgOpenGPS behaviour too (leaving the field does not switch AutoSteer
                     // off, #494); RAN-OFF is for a run-off with no such warning. The ground left from
                     // there is the consequence (EndedEarly), reported once through the warning's own finding.
+                    if (Spec.DriveOnPastStartWarnings && !_reachedWork && TurnsStarted == 0 && e.Contains("take over manually", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (StartWarnings.Count < 5) StartWarnings.Add(F($"{Seconds:0.0} s: {e}"));
+                        continue;
+                    }
                     if (TookOverAt < 0 && _takeOverAtEnd == null && e.Contains("take over manually", StringComparison.OrdinalIgnoreCase))
                     {
                         if (e.Contains("at the end of the field", StringComparison.OrdinalIgnoreCase))
@@ -969,6 +981,7 @@ public sealed class JobRun : IAsyncDisposable
             }
             var tc = ToolCentre();
             bool inWork = Ring.Inside((tc.E, tc.N), Work ?? Outer);
+            if (inWork) _reachedWork = true;
             if (_takeOverAtEnd is { } nrg && nrg.Text.Contains("no room on the next pass at this end", StringComparison.Ordinal) && !InTurn)
             {
                 if (!inWork) _noRoomLeftWork = true;

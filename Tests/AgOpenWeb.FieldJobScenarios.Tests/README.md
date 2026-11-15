@@ -253,7 +253,11 @@ The rigs (the code's last digit): 1 the Puma with the 8 m front boom (2/1/2/1/2 
 same boom, 3 and 4 the two tractors with the semi-mounted 3 m no-till drill, 5 and 6 the Puma with a
 mounted fertiliser spreader at 12 and 20 m in two sections. The operator starts on the first pass from the edge with 80 % of the longest
 pass's line in the cultivated area and no U-turn obstacle at its start (`JobSpec.StartChordOfLongest`,
-`JobRun.TurnObstacles`), not on a corner of short passes beside a hard fence. With the skip mode *ignore worked tracks* the snake check of W1/W2 runs too.
+`JobRun.TurnObstacles`), not on a corner of short passes beside a hard fence. A "take over manually" before the implement first reaches the cultivated
+area (AutoSteer engaged in the headland, facing the field) is reported as `TAKE-OVER-AT-START` and the operator
+drives on (`JobSpec.DriveOnPastStartWarnings`): on a hard boundary it ended the job before its first turn. With
+the skip mode *ignore worked tracks* the snake check of W1/W2 runs too. An A+ line whose B is under 1 m from A
+(imported from AgOpenGPS) is made with B 100 m along its heading.
 
 ```bash
 AGOPENWEB_JOB_FIELDS=~/AgOpenWeb/Fields AGOPENWEB_JOB_FIELD_LIST="Field A;Field B" AGOPENWEB_SCENARIO_ONLY=R11,R21 \
