@@ -1153,7 +1153,7 @@ namespace AgOpenWeb.Services.YouTurn
                 j = -1; // no search
             }
             else
-                j = input.CurrentLocationIndex;
+                j = SearchStart(input, count);
 
             for (; j > 0 && j < input.GuidancePoints.Count; j += count)
             {
@@ -1268,6 +1268,34 @@ namespace AgOpenWeb.Services.YouTurn
             }
 
             return closestTurnPt.TurnLineIndex != -1 && closestTurnPt.CurveIndex != -1;
+        }
+
+        /// <summary>
+        /// Where the search for the end of the pass starts: the pass point nearest the pivot
+        /// (<see cref="YouTurnCreationInput.CurrentLocationIndex"/>), or the next one ahead when the
+        /// nearest lies behind the pivot outside the turn area and the next one inside it: the tractor
+        /// has just driven into the turn area there, so that crossing is where the pass comes in, not
+        /// where it ends. An AB line's points are about 2 m apart, so the nearest can be a metre
+        /// behind the tractor. With AutoSteer engaged in the headland facing the field, the first
+        /// turn was planned as the pivot crossed the turn line, from that crossing behind it: the
+        /// turn built there failed, and beside a hard fence the operator was told "U-turn blocked:
+        /// implement would swing into a hard boundary - take over manually", with the sound, at the
+        /// start of the first pass (an 8 m front boom and a 20 m spreader on testers' fields, the
+        /// farm job harness). Driven on, the turn at the far end was planned and made. Fork only.
+        /// </summary>
+        internal static int SearchStart(YouTurnCreationInput input, int count)
+        {
+            var pts = input.GuidancePoints;
+            int j = input.CurrentLocationIndex;
+            int next = j + count;
+            if (j < 0 || j >= pts.Count || next < 0 || next >= pts.Count) return j;
+            var p = pts[j];
+            var q = pts[next];
+            var pivot = input.PivotPosition;
+            // Along the pass from the nearest point towards the next one ahead: > 0, the pivot is past it.
+            double along = (pivot.Easting - p.Easting) * (q.Easting - p.Easting) + (pivot.Northing - p.Northing) * (q.Northing - p.Northing);
+            if (along <= 0) return j;
+            return input.IsPointInsideTurnArea(p) != 0 && input.IsPointInsideTurnArea(q) == 0 ? next : j;
         }
 
         /// <summary>
