@@ -126,7 +126,7 @@ addEventListener('pointerup', e => {
   // A clean tap while a map-tap capture mode is armed → unproject and dispatch.
   if (gestureOnMap && !moved && mapTap) {
     const w = s2w(e.clientX - mapL, e.clientY);
-    if (w) mapTap.onTap(w.e, w.n);
+    if (w) mapTap.onTap(w.e, w.n, e.timeStamp); // when the tap was, for a double tap
   } else if (gestureOnMap && !moved && !editSession) {
     // With the boundary menu open a tap on an obstacle picks its row (hud-tools.js).
     if (!boundaryMenuTap(e.clientX - mapL, e.clientY)) vehicleTap(e.clientX - mapL, e.clientY);
@@ -167,8 +167,9 @@ addEventListener('pointermove', e => {
 });
 // ---- map-tap capture mode — the reusable on-map point-picking primitive ----
 // A feature arms capture with startMapTap({hint, onTap}); the next clean tap unprojects via
-// s2w and calls onTap(e,n) (field metres). One mode at a time; the map stays pan/zoomable
-// (only a tap captures) so the operator can frame the view first. Esc / endMapTap() exits.
+// s2w and calls onTap(e,n,t) (field metres; t the release's event time, on performance.now()'s
+// clock). One mode at a time; the map stays pan/zoomable (only a tap captures) so the operator
+// can frame the view first. Esc / endMapTap() exits.
 let mapTap = null;
 function startMapTap(cfg) {
   mapTap = cfg;

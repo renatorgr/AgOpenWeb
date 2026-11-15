@@ -528,30 +528,67 @@ document.getElementById('bm-circ-add').addEventListener('pointerdown', ev => {
   renderCircleBar();
 });
 // A drawn obstacle ("+ Polygon"): like the boundary drawn on the imagery, the corners are
-// tapped on the map and shown as they go; Finish on the draw toolbar sends them, the host adds
-// the obstacle (Hard, U-turn) and selects its row. Client-side point buffer for the preview
-// only; no geometry in JS.
-let polyDraw = false;    // drawing an obstacle on the map
+// tapped on the map and shown as they go; a double tap on the last corner (or Finish on the
+// draw toolbar) closes the polygon and sends it, the host adds the obstacle (Hard, U-turn) and
+// selects its row. Drawing then goes on with the next obstacle, as AgOpenGPS's field editor,
+// until Finish with no corners tapped (or Cancel, Esc), which reopens the boundary menu.
+// Client-side point buffer for the preview only; no geometry in JS.
+const POLY_DOUBLE_TAP_MS = 500, POLY_DOUBLE_TAP_PX = 32;
+let polyDraw = false;    // drawing obstacles on the map
 let polyPts = [];        // [{e,n}] corners tapped so far (preview only)
+let polySent = 0;        // obstacles closed since "+ Polygon" was tapped
+let polyLastTap = null;  // { t, e, n } of the last tap, to see a double tap
 function startPolyDraw() {
-  polyDraw = true; polyPts = [];
+  polyDraw = true; polyPts = []; polySent = 0; polyLastTap = null;
   lnCloseAll();                           // close the boundary menu
   showAbBar(false, true, true);           // Undo + Finish + Cancel
-  startMapTap({ hint: tr('Tap the corners of the obstacle — Finish when done'), onTap: polyTap });
+  startMapTap({ hint: tr('Tap the corners of the obstacle — double-tap the last one to close it'), onTap: polyTap });
 }
-function polyTap(e, n) { polyPts.push({ e, n }); setPolyHint(); }
-function setPolyHint() { hintEl.textContent = polyPts.length === 1 ? tr('Obstacle: 1 corner — Finish when done') : tr('Obstacle: {n} corners — Finish when done', { n: polyPts.length }); }
-function polyUndo() { if (polyPts.length) { polyPts.pop(); setPolyHint(); } }
-function polyFinish() {
-  if (polyPts.length >= 3)
-    transport.send('boundary.obstacle.fromMapPoints|' + polyPts.map(p => p.e.toFixed(3) + ',' + p.n.toFixed(3)).join(';'));
-  else showToast(tr('An obstacle needs at least three corners'));
-  endPolyDraw();
+// Two map positions this close on the screen are one place for a double tap.
+function polyNear(a, b) {
+  const p = w2s(a.e, a.n), q = w2s(b.e, b.n);
+  return !!p && !!q && Math.hypot(p[0] - q[0], p[1] - q[1]) <= POLY_DOUBLE_TAP_PX;
 }
+// t: when the finger lifted (the event's time), not when this runs: on a slow tablet a frame
+// being drawn can hold back one of the two taps.
+function polyTap(e, n, t) {
+  const now = t > 0 ? t : performance.now(), tap = { t: now, e, n };
+  const prev = polyLastTap;
+  polyLastTap = tap;
+  if (prev && now - prev.t <= POLY_DOUBLE_TAP_MS && polyNear(prev, tap) && polyPts.length) {
+    // The double tap's first tap placed the last corner; the second closes the polygon. A double
+    // tap on a corner already there (the last one, or the first to close the ring) placed a copy
+    // of it with its first tap: that copy goes.
+    const n0 = polyPts.length;
+    if (n0 >= 2 && (polyNear(polyPts[n0 - 1], polyPts[n0 - 2]) || (n0 >= 4 && polyNear(polyPts[n0 - 1], polyPts[0])))) polyPts.pop();
+    polyLastTap = null;                   // a third tap starts again
+    polyClose();
+    return;
+  }
+  polyPts.push({ e, n });
+  setPolyHint();
+}
+function setPolyHint() {
+  hintEl.textContent = polyPts.length === 0
+    ? (polySent ? tr('Tap the corners of the next obstacle, or Finish when done') : tr('Tap the corners of the obstacle — double-tap the last one to close it'))
+    : polyPts.length === 1 ? tr('Obstacle: 1 corner — double-tap or Finish to close it')
+    : tr('Obstacle: {n} corners — double-tap or Finish to close it', { n: polyPts.length });
+}
+function polyUndo() { if (polyPts.length) { polyPts.pop(); polyLastTap = null; setPolyHint(); } }
+// Sends the polygon drawn and starts the next one; under three corners it stays open to go on.
+function polyClose() {
+  if (polyPts.length < 3) { showToast(tr('An obstacle needs at least three corners')); setPolyHint(); return; }
+  transport.send('boundary.obstacle.fromMapPoints|' + polyPts.map(p => p.e.toFixed(3) + ',' + p.n.toFixed(3)).join(';'));
+  polyPts = []; polySent++;
+  setPolyHint();
+}
+// Finish closes the polygon being drawn; with none being drawn it ends the drawing.
+function polyFinish() { if (polyPts.length) polyClose(); else endPolyDraw(); }
 function polyCancel() { endPolyDraw(); }
 function endPolyDraw() {
-  polyDraw = false; polyPts = [];
+  polyDraw = false; polyPts = []; polyLastTap = null;
   drawBar.classList.remove('show'); endMapTap(); hintEl.classList.remove('show');
+  lnOpen('boundarymenu', 'ln-fieldtools', renderBoundaryMenu); // back where "+ Polygon" was tapped
 }
 document.getElementById('bm-poly-add').addEventListener('pointerdown', ev => {
   ev.stopPropagation();
