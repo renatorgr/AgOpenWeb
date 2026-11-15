@@ -1690,9 +1690,21 @@ public sealed class GpsPipelineService : IGpsPipelineService
                     isYouTurnTriggered, boundary);
                 if (guidanceResult is { hasLine: false } noLine)
                 {
-                    // No pass where the tractor is (#694): steer straight and tell the module
-                    // there is no line (PGN 254's no-line distance), as AgOpenGPS does.
+                    // No pass where the tractor is (#694): tell the module there is no line (PGN
+                    // 254's no-line distance), as AgOpenGPS does. With AutoSteer on, it goes off
+                    // with the alarm: left on, it held the wheels straight with nothing said, and
+                    // the fence guard, which needs a line, never fired (the beta robot on Couto da
+                    // Ribeira: an AB line from AgOpenGPS with no passes, the tractor driven
+                    // straight through the hard fence, 24 times). Fork only.
                     statusMessage = noLine.statusMessage;
+                    if (autoSteerEngaged)
+                    {
+                        autoSteerEngaged = false;
+                        autoSteerDisengaged = true;
+                        disengageReason = NoLineReason;
+                        lock (_stateLock) _autoSteerEngaged = false;
+                        _audioService.Play(SoundEffect.UTurnTooClose);
+                    }
                     _autoSteerService.UpdateGuidanceResults(0, NoLineDistance);
                 }
                 else if (guidanceResult is { atEnd: true } && !(youTurnEnabled && youTurnPath is { Count: > 0 }))
@@ -2203,6 +2215,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// <summary>Why AutoSteer went off before a stretch of a closed track's pass that does not fit
     /// (<see cref="CurveProcessing.PassUnfit"/>). Fork only.</summary>
     public const string PassDoesNotFitReason = "AutoSteer off: the field ahead is too narrow for this pass. Take another pass or steer by hand.";
+    /// <summary>Why AutoSteer went off on a pass with no line (the offset left nothing of it). Fork only.</summary>
+    public const string NoLineReason = "AutoSteer off: this pass has no line to steer on. Take another pass or steer by hand.";
 
     private (double steerAngle, double xte, double goalE, double goalN, string? statusMessage, bool hasLine, bool atEnd, bool unfitAhead)?
         CalculateTrackGuidance(
