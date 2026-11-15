@@ -91,6 +91,20 @@ public sealed class YouTurnStateMachine
     // cleared with _openAtEnd. Fork only.
     private readonly Dictionary<int, bool> _doneAtEnd = new();
 
+    // Where the last turns driven landed (fork only): the pass, the way the tractor then went on it
+    // and the turn's last point. A turn the snake builds that lands there again, on ground already
+    // worked, is dropped (TurnRepeatsLanding). Forgotten with the track or when its line moves.
+    private readonly List<Landing> _landings = new();
+    private readonly record struct Landing(Models.Track.Track Track, int Pass, bool SameWay, double East, double North);
+    private const int LandingsKept = 8;
+
+    /// <summary>A turn ending this close to where one ended before lands at the same place, m.</summary>
+    private const double SameLandingDistance = 30.0;
+
+    // The passes whose turn at the end ahead would land where a turn landed before, on worked
+    // ground: worked at this end. Decided once per end, cleared with _openAtEnd. Fork only.
+    private readonly HashSet<int> _repeatAtEnd = new();
+
     // Which way the last turn stepped across the field (+1 to a higher pass, -1 lower) and on
     // which track (by name: a nudge or edit makes a new Track). A normal turn keeps stepping that
     // way, as AgOpenGPS does by flipping isTurnLeft after each turn, so the work goes on across
@@ -1023,6 +1037,8 @@ public sealed class YouTurnStateMachine
         _coveredPasses.Clear();
         _openAtEnd.Clear();
         _doneAtEnd.Clear();
+        _repeatAtEnd.Clear();
+        _landings.Clear();
         _failedEnd = null;
     }
 
@@ -1039,6 +1055,8 @@ public sealed class YouTurnStateMachine
         _coveredPasses.Clear();
         _openAtEnd.Clear();
         _doneAtEnd.Clear();
+        _repeatAtEnd.Clear();
+        _landings.Clear();
         _failedEnd = null;
     }
 
@@ -1277,7 +1295,12 @@ public sealed class YouTurnStateMachine
             var built = BuildTurnPath(in ctx, track, headingRadians, abHeading, guidance, turn, effects);
             // Taken for its end left to do, and the turn lands short of it: worked at this end, and
             // the next pass of the order is looked for on the next cycle.
-            if (built.Path != null) { TurnMissesOpenEnd(in ctx, track, target, turn, effects, message); return; }
+            if (built.Path != null)
+            {
+                if (!TurnMissesOpenEnd(in ctx, track, target, turn, effects, message))
+                    TurnRepeatsLanding(in ctx, track, target, turn, effects, message);
+                return;
+            }
             refused = built;
         }
         else
@@ -1432,6 +1455,8 @@ public sealed class YouTurnStateMachine
                 {
                     // Taken for its end left to do, and the turn lands short of it: the next one.
                     if (TurnMissesOpenEnd(in ctx, track, pass, turn, effects, message)) continue;
+                    // Lands where a turn landed before, on worked ground: the next one.
+                    if (TurnRepeatsLanding(in ctx, track, pass, turn, effects, message)) continue;
                     if (orderPassFar)
                         _logger.LogDebug("[YouTurn] Snake pass {Order} is {Count} passes over - turning onto pass {Pass}, the nearest still to do",
                             orderPass, Math.Abs(orderPass - current), pass);
@@ -1503,6 +1528,43 @@ public sealed class YouTurnStateMachine
         if (_pathing.TurnReachesUnworkedGround(path, ctx.Boundary, ctx.WorkEndLine, ctx.IsPointCovered)) return false;
         _logger.LogDebug("[YouTurn] Snake pass {Pass} is left to do only beyond where a turn here lands on it - worked at this end", pass);
         _openAtEnd[pass] = false;
+        DiscardPlannedTurn(turn);
+        effects.StatusMessage = messageBefore; // not "YouTurn path created"
+        return true;
+    }
+
+    /// <summary>
+    /// The turn just built onto pass <paramref name="pass"/> lands where a turn landed before in
+    /// this job (the same pass, going the same way, its last point within
+    /// <see cref="SameLandingDistance"/>) and on ground already worked
+    /// (<see cref="YouTurnPathingService.TurnReachesUnworkedGround"/> finds less than
+    /// <see cref="YouTurnPathingService.MinNewGround"/> of unworked crop where it ends): the turn is
+    /// dropped and the pass counts worked at this end. The tractor drove that piece from there before
+    /// and would drive it again to the same turn. The worked-pass tests judge a pass from its end back
+    /// to the headland line and do not stop at an obstacle the pass turns at, so a pass whose piece
+    /// before the obstacle was worked still looked to do, and the snake went back and forth between two
+    /// passes for the rest of the job: the beta robot, in the simulator, drove 280 turns between 4R and
+    /// 6R on one field and 689 between 8R and 10R on another, each pass turning at an obstacle at one
+    /// end. Ground with the sections off is not worked, so a pass driven before with them off is
+    /// turned onto again. False with no map. Fork only.
+    /// </summary>
+    private bool TurnRepeatsLanding(in TickContext ctx, Models.Track.Track track, int pass, YouTurnWorkingState turn,
+        YouTurnEffects effects, string? messageBefore)
+    {
+        if (ctx.IsPointCovered == null || turn.TurnPath is not { Count: > 1 } path || _landings.Count == 0) return false;
+        var end = path[^1];
+        bool sameWay = !turn.WasHeadingSameWayAtTurnStart;
+        bool landedHere = false;
+        foreach (var landing in _landings)
+        {
+            if (!ReferenceEquals(landing.Track, track) || landing.Pass != pass || landing.SameWay != sameWay) continue;
+            double de = landing.East - end.Easting, dn = landing.North - end.Northing;
+            if (de * de + dn * dn <= SameLandingDistance * SameLandingDistance) { landedHere = true; break; }
+        }
+        if (!landedHere) return false;
+        if (_pathing.TurnReachesUnworkedGround(path, ctx.Boundary, ctx.WorkEndLine, ctx.IsPointCovered)) return false;
+        _logger.LogDebug("[YouTurn] Snake pass {Pass}: a turn landed here before and the ground is worked - worked at this end", pass);
+        _repeatAtEnd.Add(pass);
         DiscardPlannedTurn(turn);
         effects.StatusMessage = messageBefore; // not "YouTurn path created"
         return true;
@@ -1581,6 +1643,7 @@ public sealed class YouTurnStateMachine
             _coveredPasses.Clear();
             _openAtEnd.Clear();
             _doneAtEnd.Clear();
+            _repeatAtEnd.Clear();
             _coveredPassesKey = (plan, track, nudge, boundary, headlandLine);
         }
         int current = guidance.HowManyPathsAway;
@@ -1589,6 +1652,7 @@ public sealed class YouTurnStateMachine
         {
             _openAtEnd.Clear();
             _doneAtEnd.Clear();
+            _repeatAtEnd.Clear();
             _openAtEndKey = (current, sameWay);
         }
         var position = ctx.CurrentPosition;
@@ -1601,6 +1665,8 @@ public sealed class YouTurnStateMachine
             if (!_coveredPasses.TryGetValue(pass, out bool worked))
                 _coveredPasses[pass] = worked = _pathing.IsPassWorked(track, pass, nudge, boundary, headlandLine, isPointCovered);
             if (atEndOf is not { } abHeading || pass == current) return worked;
+            // A turn here onto it lands where one landed before, on ground already worked.
+            if (_repeatAtEnd.Contains(pass)) return true;
             if (worked)
             {
                 // Worked on the whole but left to do at this end: open here, so a turn can be made
@@ -2087,6 +2153,7 @@ public sealed class YouTurnStateMachine
                 _coveredPasses.Clear(); // decided again for the next turn
                 _openAtEnd.Clear();
                 _doneAtEnd.Clear();
+                _repeatAtEnd.Clear();
             }
         }
         else if (turn.PlannedNextPath is { } planned)
@@ -2126,6 +2193,16 @@ public sealed class YouTurnStateMachine
         _lastStep = Math.Sign(guidance.HowManyPathsAway - passBefore);
         _lastStepTrack = ctx.SelectedTrack?.Name;
         _lastStepPass = guidance.HowManyPathsAway;
+
+        // Where this turn landed, for the snake not to land there again on ground already worked
+        // (TurnRepeatsLanding). A U-turn ends going the other way along the track.
+        if (ctx.SelectedTrack is { } landedTrack && turn.TurnPath is { Count: > 1 } landedPath
+            && guidance.HowManyPathsAway != passBefore)
+        {
+            if (_landings.Count >= LandingsKept) _landings.RemoveAt(0);
+            _landings.Add(new Landing(landedTrack, guidance.HowManyPathsAway, !turn.WasHeadingSameWayAtTurnStart,
+                landedPath[^1].Easting, landedPath[^1].Northing));
+        }
 
         double widthMinusOverlap = config.ActualToolWidth - config.Tool.Overlap;
         _logger.LogDebug("[YouTurn] Now on path {Path} ({Off:F1}m from reference)",
