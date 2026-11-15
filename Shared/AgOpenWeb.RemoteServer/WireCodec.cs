@@ -600,12 +600,13 @@ public static class WireCodec
         {
             w.Write(hs.Index);
             WriteStr(w, hs.Name);
-            WriteStr(w, hs.Type); // Line / Curve / Boundary
+            WriteStr(w, hs.Type); // Line / Curve / Boundary / AlongPasses
             w.Write(hs.Offset);   // f64, metres
             w.Write((byte)(hs.Effective ? 1 : 0));
             WritePts(w, hs.EditLine); // offset line + overshoots, for the on-map editor view
             w.Write((float)hs.EndA.E); w.Write((float)hs.EndA.N); // boundary drag handles
             w.Write((float)hs.EndB.E); w.Write((float)hs.EndB.N);
+            w.Write(hs.Sides);    // f64, metres: AlongPasses' side distance, else 0
         }
 
         // Field Builder Tram-tab systems + generated tram lines (appended at the end).

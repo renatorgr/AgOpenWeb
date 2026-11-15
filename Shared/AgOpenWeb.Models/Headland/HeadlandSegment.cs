@@ -21,7 +21,13 @@ public enum HeadlandSegmentType
     Curve,
 
     /// <summary>Full boundary offset (entire boundary polygon offset inward).</summary>
-    Boundary
+    Boundary,
+
+    /// <summary>The whole boundary, wide where the passes end and narrow at the sides
+    /// (<see cref="HeadlandAlongPasses"/>): <see cref="HeadlandSegment.Offset"/> is the room
+    /// along the passes at their ends, <see cref="HeadlandSegment.SideOffset"/> the distance
+    /// from the boundary elsewhere. Fork only.</summary>
+    AlongPasses
 }
 
 /// <summary>
@@ -67,6 +73,23 @@ public class HeadlandSegment : INotifyPropertyChanged
         get => _offset;
         set { if (_offset != value) { _offset = value; OnPropertyChanged(); } }
     }
+
+    private double _sideOffset;
+    /// <summary>
+    /// <see cref="HeadlandSegmentType.AlongPasses"/> only: the least distance (m) from the
+    /// boundary, at the sides of the passes. <see cref="Offset"/> is the room along the passes.
+    /// </summary>
+    public double SideOffset
+    {
+        get => _sideOffset;
+        set { if (_sideOffset != value) { _sideOffset = value; OnPropertyChanged(); } }
+    }
+
+    /// <summary>
+    /// <see cref="HeadlandSegmentType.AlongPasses"/> only: the passes' heading (radians,
+    /// clockwise from north) when the segment was made, from the line chosen then.
+    /// </summary>
+    public double PassHeading { get; set; }
 
     private bool _isSelected;
     public bool IsSelected

@@ -32,6 +32,15 @@ public partial class MainViewModel
 
         double offset = segment.Offset;
 
+        // Wide where the passes end, narrow at the sides: worked out on its own (fork only).
+        if (segment.Type == Models.Headland.HeadlandSegmentType.AlongPasses)
+        {
+            segment.OffsetPoints = segment.BoundaryPoints.Count >= 3
+                ? Models.Headland.HeadlandAlongPasses.Build(segment.BoundaryPoints, segment.PassHeading, offset, segment.SideOffset)
+                : new List<Vec3>();
+            return;
+        }
+
         // For closed polygons (Boundary type or closed curves), use Clipper2 for proper
         // concave handling instead of edge-based offset
         bool isClosed = segment.BoundaryPoints.Count >= 3 &&
@@ -926,7 +935,7 @@ public partial class MainViewModel
     /// The operator redrew, re-recorded, rebuilt or deleted the outer boundary. The headland and
     /// the tram lines were built on the old one and would stay where it was: a headland outside
     /// the new field, tram lines along the old edge, a headland with no boundary at all. A
-    /// whole-boundary headland segment is rebuilt on the new boundary at its distance; a line or
+    /// whole-boundary headland segment (and one along the passes) is rebuilt on the new boundary at its distance; a line or
     /// curve segment named points of the old boundary and is dropped; the tram systems are
     /// rebuilt (a boundary system follows the new boundary, a track system is clipped to it).
     /// Returns what was done, for the status line; empty when there was nothing to do.
@@ -951,7 +960,8 @@ public partial class MainViewModel
             {
                 for (int i = HeadlandSegments.Count - 1; i >= 0; i--)
                 {
-                    if (HeadlandSegments[i].Type == Models.Headland.HeadlandSegmentType.Boundary) continue;
+                    if (HeadlandSegments[i].Type is Models.Headland.HeadlandSegmentType.Boundary
+                        or Models.Headland.HeadlandSegmentType.AlongPasses) continue;
                     if (ReferenceEquals(SelectedHeadlandSegment, HeadlandSegments[i])) SelectedHeadlandSegment = null;
                     droppedNames.Insert(0, HeadlandSegments[i].Name);
                     HeadlandSegments.RemoveAt(i);

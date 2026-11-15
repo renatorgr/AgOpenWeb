@@ -1050,6 +1050,7 @@ public sealed class SceneProjector : System.IDisposable
             {
                 h = h * 31 + (sg.Name?.GetHashCode() ?? 0);
                 h = h * 31 + sg.Offset.GetHashCode();
+                h = h * 31 + sg.Sides.GetHashCode();
                 h = h * 31 + (sg.Effective ? 1 : 0);
                 // Endpoints (rounded) so on-map endpoint edits re-broadcast the Scene.
                 h = h * 31 + (long)(sg.EndA.E * 10) * 31 + (long)(sg.EndA.N * 10);

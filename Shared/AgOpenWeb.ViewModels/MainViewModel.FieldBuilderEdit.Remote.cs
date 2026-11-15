@@ -67,12 +67,12 @@ public partial class MainViewModel
 
     /// <summary>Re-point a Line/Curve headland segment from two dragged endpoints (snapped to
     /// the boundary), re-extracting the boundary arc for curves, then re-offset + rebuild.
-    /// Whole-boundary segments aren't point-edited.</summary>
+    /// Whole-boundary and along-the-passes segments aren't point-edited.</summary>
     public void RemoteSaveHeadlandEdit(int index, double e1, double n1, double e2, double n2)
     {
         if (index < 0 || index >= HeadlandSegments.Count) return;
         var seg = HeadlandSegments[index];
-        if (seg.Type == HeadlandSegmentType.Boundary) return;
+        if (seg.Type is HeadlandSegmentType.Boundary or HeadlandSegmentType.AlongPasses) return;
 
         var boundary = State.Field.CurrentBoundary?.OuterBoundary;
         if (boundary?.Points == null || boundary.Points.Count < 3) return;

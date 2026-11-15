@@ -1366,7 +1366,8 @@
         <button id="fb-hl-deleteall" class="fb-act fb-del">Delete All</button>
       </div>
       <div id="fb-hl-offrow" class="fb-offrow" hidden>
-        <label>Offset</label><input id="fb-hl-off" class="cfg-num" data-unit="m" type="number" step="0.5" min="0.5"><span class="u" data-unit="m"></span>
+        <label id="fb-hl-offlbl">Offset</label><label id="fb-hl-endslbl" hidden>Ends</label><input id="fb-hl-off" class="cfg-num" data-unit="m" type="number" step="0.5" min="0.5"><span class="u" data-unit="m"></span>
+        <label class="fb-hl-sidesedit" hidden>Sides</label><input id="fb-hl-sidesoff" class="cfg-num fb-hl-sidesedit" data-unit="m" type="number" step="0.5" min="0.5" hidden><span class="u fb-hl-sidesedit" data-unit="m" hidden></span>
       </div>
     </div>
     <!-- Add Headland sub-view (replaces the tab content) -->
@@ -1389,6 +1390,15 @@
       <div class="fb-sublbl">From Boundary</div>
       <div class="fb-addrow">
         <button class="fb-addbtn" data-fbhl="whole"><span class="fb-bigtxt">◯</span><span>Whole Boundary</span></button>
+      </div>
+      <!-- Fork only: wide where the active line's passes end, narrow at the sides. -->
+      <div class="fb-sublbl">Along the Passes — wide where the passes end, for the U-turns, narrow at the sides</div>
+      <div class="fb-offrow">
+        <label>Ends</label><input id="fb-hl-ends" class="cfg-num" data-unit="m" type="number" step="0.5" min="0.5"><span class="u" data-unit="m"></span>
+        <label>Sides</label><input id="fb-hl-sides" class="cfg-num" data-unit="m" type="number" step="0.5" min="0.5"><span class="u" data-unit="m"></span>
+      </div>
+      <div class="fb-addrow">
+        <button id="fb-hl-alongpasses" class="fb-addbtn"><span class="fb-bigtxt">⇅</span><span>Along the Passes</span></button>
       </div>
     </div>
     <!-- Tram tab (stage 3): system list + per-system editor -->
