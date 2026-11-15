@@ -127,7 +127,8 @@ public class SnakeOpenPassTests
         Assert.Multiple(() =>
         {
             Assert.That(turn.TurnPath, Is.Null);
-            Assert.That(effects.StatusMessage, Is.EqualTo("End of field reached - no room on the next pass at this end"));
+            // Passes 7, 8 and 9 are still to do: not "End of field reached" (Fork only).
+            Assert.That(effects.StatusMessage, Is.EqualTo("3 passes still to do, but no room on the next pass at this end"));
             Assert.That(effects.TurnCreationFailedSound, Is.True);
         });
     }
@@ -148,7 +149,8 @@ public class SnakeOpenPassTests
         Assert.Multiple(() =>
         {
             Assert.That(turn.TurnPath, Is.Null, $"no turn ten passes over (aimed at {turn.ReturnPassTargetPath})");
-            Assert.That(effects.StatusMessage, Is.EqualTo("End of field reached - no room on the next pass at this end"));
+            // -10 to -4 west and 7 to 9 east are still to do (Fork only).
+            Assert.That(effects.StatusMessage, Is.EqualTo("10 passes still to do, but no room on the next pass at this end"));
         });
     }
 
