@@ -719,6 +719,17 @@ the fence, the width or the nudge change. On a tester's field the simulator drov
 AutoSteer went off, and the lap outside the fence of the boundary curve was shown. A soft boundary changes
 nothing. Tests: `HardFencePassesTests`.
 
+## A short AB line, and a pass with no line
+AgOpenGPS's A+ line keeps B about 1 m from A, and an offset pass leaves out every point within 1 m of the one
+before it, so every pass of such a line but the line itself had one point and no line to steer: on Couto da
+Ribeira (the beta robot, simulator) AutoSteer held the wheels straight through the hard fence 24 times,
+since the pipeline steered 0 with AutoSteer left on and the hard fence guard needs a line. An AB line under 10 m
+is read with A where it was and B 100 m out along its heading (the stored one when it agrees with A to B within
+5°, as AgOpenGPS keeps it more exactly than the rounded points; `Track.LengthenShortABLine`, from `field.geojson`,
+`TrackLines.txt` and `ABLines.txt`), and AutoSteer on a pass with no line goes off with the alarm
+(`GpsPipelineService.NoLineReason`). Tests: `ShortABLineTests` (Models), `ShortABLineLoadTests`,
+`NoLineAutoSteerOffTests`. Fork only.
+
 ## Steer wizard: tuning the wheels
 The Steer Wizard's *Tune steering* step (`TuneSteeringStepViewModel`, after the Ackermann circle and before the
 gains page; arithmetic in `SteerTuneMath`; fork only) finds the three settings of the module's own loop,
