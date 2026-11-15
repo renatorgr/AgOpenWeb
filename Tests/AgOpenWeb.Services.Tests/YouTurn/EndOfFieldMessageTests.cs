@@ -130,4 +130,16 @@ public class EndOfFieldMessageTests
 
         Assert.That(effects.StatusMessage, Is.EqualTo("End of field reached"));
     }
+
+    // The snake with no turn at this end onto a pass it still has to do says how many are left: the
+    // plain "End of field reached" was read as the field done with 23 passes left (Fork only).
+    [TestCase(0, "End of field reached - no room on the next pass at this end")]
+    [TestCase(1, "1 pass still to do, but no room on the next pass at this end")]
+    [TestCase(23, "23 passes still to do, but no room on the next pass at this end")]
+    public void The_snake_s_no_room_message_says_how_many_passes_are_left(int left, string expected)
+    {
+        Assert.That(YouTurnStateMachine.SnakeNoRoomMessage(left), Is.EqualTo(expected));
+        // The field job harness reads these words as "take over here", not as the end of the field.
+        Assert.That(YouTurnStateMachine.SnakeNoRoomMessage(left), Does.Contain("no room on the next pass at this end"));
+    }
 }

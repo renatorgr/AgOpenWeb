@@ -1305,10 +1305,38 @@ public sealed class YouTurnStateMachine
             _failedEnd = EndKey(in ctx, track, guidance, turn, fieldStamp);
             return;
         }
-        effects.StatusMessage = "End of field reached - no room on the next pass at this end";
+        effects.StatusMessage = SnakeNoRoomMessage(PassesStillToDo(turn, guidance, isWorked));
         SoundCreationFailed(effects);
         _failedEnd = EndKey(in ctx, track, guidance, turn, fieldStamp);
     }
+
+    /// <summary>
+    /// The passes of the snake's order still to do, the one the tractor is on left out: told with
+    /// the no-room message (<see cref="SnakeNoRoomMessage"/>).
+    /// </summary>
+    private static int PassesStillToDo(YouTurnWorkingState turn, GuidanceWorkingState guidance, Func<int, bool> isWorked)
+    {
+        if (turn.SnakeSequence is not { } seq) return 0;
+        var left = new HashSet<int>();
+        foreach (int pass in seq)
+            if (pass != guidance.HowManyPathsAway && !isWorked(pass)) left.Add(pass);
+        return left.Count;
+    }
+
+    /// <summary>
+    /// No turn at this end onto any pass the snake still has to do. With passes left the message
+    /// says how many: "End of field reached" was read as the field done with 23 passes left (the beta
+    /// robot on Tapada da Casa: the order did the west side first, and its last pass there ended in a
+    /// corner by the fence with no pass to turn onto). The operator drives over to them by hand. The
+    /// words "no room on the next pass at this end" stay: the field job harness reads them as "take
+    /// over here", not as the end of the field. Fork only.
+    /// </summary>
+    public static string SnakeNoRoomMessage(int passesLeft) => passesLeft switch
+    {
+        <= 0 => "End of field reached - no room on the next pass at this end",
+        1 => "1 pass still to do, but no room on the next pass at this end",
+        _ => string.Format(CultureInfo.InvariantCulture, "{0} passes still to do, but no room on the next pass at this end", passesLeft),
+    };
 
     // An end where no turn was made onto the order's pass or the nearest open passes (a hard fence
     // the turns don't clear: each build moves the turn back 0.5 m at a time, up to 30 m). Tick
