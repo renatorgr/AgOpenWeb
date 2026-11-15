@@ -555,6 +555,7 @@ function startHeadlandEdit() {
   const hs = scene && scene.headlandSegs; if (fbHlSel < 0 || !hs || !hs[fbHlSel]) return;
   const s = hs[fbHlSel];
   if (s.type === 'Boundary') { flashHint(tr('Whole-boundary headland is not point-edited')); return; }
+  if (s.type === 'AlongPasses') { flashHint(tr('Headland along the passes is not point-edited')); return; }
   editSession = { kind: 'headland', index: s.index, points: [{ e: s.endA.e, n: s.endA.n }, { e: s.endB.e, n: s.endB.n }] };
   beginEdit(tr('Drag the two endpoints (snap to boundary), then Save'));
 }

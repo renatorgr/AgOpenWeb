@@ -468,6 +468,22 @@ public static partial class RemoteServerWiring
                                     if (double.TryParse(arg, num, inv, out var hwb)) // offset inward.
                                         vm.RemoteCreateHeadlandWholeBoundary(hwb);
                                     return;
+                                case "headland.alongPasses": // arg = "ends,sides" (m): wide where the
+                                {                            // active line's passes end (fork only).
+                                    var ap = arg.Split(',');
+                                    if (ap.Length == 2 && double.TryParse(ap[0], num, inv, out var hape)
+                                        && double.TryParse(ap[1], num, inv, out var haps))
+                                        vm.RemoteCreateHeadlandAlongPasses(hape, haps);
+                                    return;
+                                }
+                                case "headland.setSides": // arg = "index,sides" (m), along the passes only.
+                                {
+                                    var ss = arg.Split(',');
+                                    if (ss.Length == 2 && int.TryParse(ss[0], out var hssi)
+                                        && double.TryParse(ss[1], num, inv, out var hsss))
+                                        vm.RemoteSetHeadlandSidesAt(hssi, hsss);
+                                    return;
+                                }
                                 case "headland.setOffset": // arg = "index,offset" (m).
                                 {
                                     var so = arg.Split(',');
@@ -1240,7 +1256,8 @@ public static partial class RemoteServerWiring
                             var endA = bp.Count > 0 ? new AgOpenWeb.RemoteServer.Vec2Dto(bp[0].Easting, bp[0].Northing) : new AgOpenWeb.RemoteServer.Vec2Dto(0, 0);
                             var endB = bp.Count > 0 ? new AgOpenWeb.RemoteServer.Vec2Dto(bp[^1].Easting, bp[^1].Northing) : new AgOpenWeb.RemoteServer.Vec2Dto(0, 0);
                             list.Add(new AgOpenWeb.RemoteServer.HeadlandSegInfoDto(
-                                i, s.Name, s.Type.ToString(), s.Offset, s.IsEffective, editPts, endA, endB));
+                                i, s.Name, s.Type.ToString(), s.Offset, s.IsEffective, editPts, endA, endB,
+                                s.Type == AgOpenWeb.Models.Headland.HeadlandSegmentType.AlongPasses ? s.SideOffset : 0));
                         }
                         return list;
                     };

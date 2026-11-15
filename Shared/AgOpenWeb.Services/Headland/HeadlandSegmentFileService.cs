@@ -33,6 +33,8 @@ public static class HeadlandSegmentFileService
                 Name = seg.Name,
                 Type = seg.Type.ToString(),
                 Offset = seg.Offset,
+                SideOffset = seg.Type == HeadlandSegmentType.AlongPasses ? seg.SideOffset : null,
+                PassHeading = seg.Type == HeadlandSegmentType.AlongPasses ? seg.PassHeading : null,
                 StartExtension = seg.StartExtension,
                 EndExtension = seg.EndExtension,
                 BoundaryIndex = seg.BoundaryIndex,
@@ -67,6 +69,8 @@ public static class HeadlandSegmentFileService
                     Name = dto.Name ?? "",
                     Type = Enum.TryParse<HeadlandSegmentType>(dto.Type, out var t) ? t : HeadlandSegmentType.Line,
                     Offset = dto.Offset,
+                    SideOffset = dto.SideOffset ?? 0,
+                    PassHeading = dto.PassHeading ?? 0,
                     StartExtension = dto.StartExtension,
                     EndExtension = dto.EndExtension,
                     BoundaryIndex = dto.BoundaryIndex,
@@ -110,6 +114,11 @@ public static class HeadlandSegmentFileService
         public string? Name { get; set; }
         public string? Type { get; set; }
         public double Offset { get; set; }
+        // AlongPasses only (left out of the file for the other types).
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public double? SideOffset { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public double? PassHeading { get; set; }
         public double StartExtension { get; set; } = 50;
         public double EndExtension { get; set; } = 50;
         public int BoundaryIndex { get; set; }

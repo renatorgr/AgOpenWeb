@@ -121,7 +121,9 @@ function renderFbHeadland() {
     row.className = 'fb-hlrow' + (s.effective ? '' : ' noeffect') + (i === fbHlSel ? ' sel' : '');
     row.innerHTML = '<span class="fb-dot"></span><span class="fb-hlname"></span><span class="fb-hlmeta"></span>';
     row.querySelector('.fb-hlname').textContent = s.name;
-    row.querySelector('.fb-hlmeta').textContent = s.type + ' · ' + fmtUnit(+s.offset, 'm', 1);
+    row.querySelector('.fb-hlmeta').textContent = s.type === 'AlongPasses'
+      ? tr('Ends {ends} · Sides {sides}', { ends: fmtUnit(+s.offset, 'm', 1), sides: fmtUnit(+s.sides, 'm', 1) })
+      : s.type + ' · ' + fmtUnit(+s.offset, 'm', 1);
     row.addEventListener('pointerdown', ev => { ev.stopPropagation(); fbHlSel = i; renderFbHeadland(); });
     list.appendChild(row);
   });
@@ -130,8 +132,21 @@ function renderFbHeadland() {
     offrow.hidden = false;
     const off = document.getElementById('fb-hl-off');
     if (document.activeElement !== off) writeUnitInput(off, +hs[fbHlSel].offset);
+    // Along the passes: the offset is the ends' width, and the sides' has a box of its own.
+    const along = hs[fbHlSel].type === 'AlongPasses';
+    document.getElementById('fb-hl-offlbl').hidden = along;
+    document.getElementById('fb-hl-endslbl').hidden = !along;
+    for (const el of offrow.querySelectorAll('.fb-hl-sidesedit')) el.hidden = !along;
+    const sides = document.getElementById('fb-hl-sidesoff');
+    if (along && document.activeElement !== sides) writeUnitInput(sides, +hs[fbHlSel].sides);
   } else offrow.hidden = true;
 }
+document.getElementById('fb-hl-sidesoff').addEventListener('change', e => {
+  e.stopPropagation();
+  const hs = scene && scene.headlandSegs; if (fbHlSel < 0 || !hs || !hs[fbHlSel]) return;
+  const v = readUnitInput(e.target);
+  if (Number.isFinite(v) && v > 0) transport.send('headland.setSides|' + hs[fbHlSel].index + ',' + v);
+});
 document.getElementById('fb-hl-off').addEventListener('change', e => {
   e.stopPropagation();
   const hs = scene && scene.headlandSegs; if (fbHlSel < 0 || !hs || !hs[fbHlSel]) return;
@@ -157,14 +172,34 @@ function fbApplyTw() {
 }
 fbTwSel.addEventListener('change', e => { e.stopPropagation(); fbApplyTw(); });
 fbNewOff.addEventListener('input', e => { e.stopPropagation(); fbTwSel.value = '0'; });
+// Along the passes (fork only): the ends 3 tool widths (room for a U-turn), the sides 1.
+function fbApplyAlongPasses() {
+  const tw = toolWidthM();
+  const ends = document.getElementById('fb-hl-ends'), sides = document.getElementById('fb-hl-sides');
+  if (tw > 0) { writeUnitInput(ends, 3 * tw); writeUnitInput(sides, tw); }
+  else { ends.value = ''; sides.value = ''; }
+}
+for (const id of ['fb-hl-ends', 'fb-hl-sides'])
+  document.getElementById(id).addEventListener('input', e => e.stopPropagation());
+document.getElementById('fb-hl-alongpasses').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  const ends = readUnitInput(document.getElementById('fb-hl-ends'));
+  const sides = readUnitInput(document.getElementById('fb-hl-sides'));
+  if (!(Number.isFinite(ends) && ends > 0 && Number.isFinite(sides) && sides > 0)) {
+    showToast(tr('Enter the headland width at the ends and at the sides')); return;
+  }
+  showFbTab('headland');
+  transport.send('headland.alongPasses|' + ends + ',' + sides);
+});
 document.getElementById('fb-hl-add').addEventListener('pointerdown', e => {
   e.stopPropagation();
   fbTwSel.value = '2'; fbApplyTw();   // default 2 tool widths
+  fbApplyAlongPasses();
   for (const p of document.querySelectorAll('#fieldbuilder .fb-pane[data-fbpane]')) p.hidden = true;
   document.getElementById('fb-addhl').hidden = false;
 });
 document.getElementById('fb-hl-addback').addEventListener('pointerdown', e => { e.stopPropagation(); showFbTab('headland'); });
-for (const b of document.querySelectorAll('#fb-addhl .fb-addbtn'))
+for (const b of document.querySelectorAll('#fb-addhl .fb-addbtn[data-fbhl]'))
   b.addEventListener('pointerdown', e => {
     e.stopPropagation();
     const off = readUnitInput(document.getElementById('fb-hl-newoff'));

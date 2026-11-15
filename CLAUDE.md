@@ -293,6 +293,23 @@ closed (saved), moved on disk and opened again with its job, the simulator put b
 with AutoSteer on, a boundary being recorded, or more than 50 m. The Offset Fix itself is not saved: a
 restart puts it back to 0.
 
+### A headland along the passes
+Field Builder › Headland › Add › *Along the Passes* (`headland.alongPasses|ends,sides`,
+`MainViewModel.RemoteCreateHeadlandAlongPasses`, `HeadlandAlongPasses` in `Models/Headland`; fork only): a headland
+wide only where the passes end. The crop is every point with at least *Ends* m of field ahead and behind along the
+active line's passes and at least *Sides* m from the boundary any way, so an end square to the passes gets the ends'
+width, a side along them the sides', a slanted edge the ends' times the sine of its angle to the passes, and a spike
+too narrow for a turn is all headland. Worked out on a grid in the passes' frame (0.25 m, coarser past 8 million
+cells; marching squares, the largest ring, thinned to 5 cm; under 0.1 s on a tester's 2 km boundary). A segment of type
+`AlongPasses`: `Offset` is the ends, `SideOffset` the sides, `PassHeading` the line's when it was made (an AB line, or
+an open curve from its first point to its last; with none active, the field's only open line; refused with none). Saved
+in `HeadlandSegments.json`, recomputed when the field opens and rebuilt when the boundary changes, as Whole Boundary; it
+takes the place of a whole-boundary or along-the-passes segment, and lines drawn per edge stay. The list shows both
+widths and changes them (`headland.setOffset` the ends, `headland.setSides`); not point-edited. The pane starts at 3
+tool widths for the ends and 1 for the sides. Made because one width all round lost crop at the sides of a tester's
+irregular fields, and lines drawn per edge (run straight on past their ends) cut half a field off at a step in its
+boundary. Tests: `HeadlandAlongPassesTests` (Models), `HeadlandAlongPassesVmTests`.
+
 ## Technology Stack
 
 - **.NET 10.0** - Target framework

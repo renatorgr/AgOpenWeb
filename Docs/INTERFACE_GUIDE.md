@@ -243,7 +243,8 @@ Opened from **Field Tools** on the left bar.
 
 - **Field Builder** — on-map editor with tabs for **Tracks**, **Headland**, and **Tram** lines.
   Each tab lets you add, edit (draw on the map), rename, and delete items. Headland can be drawn as
-  a line, a curve, or set to the whole boundary; Tram offers Wheel-Track / Edge modes and
+  a line, a curve, set to the whole boundary, or made along the passes of the active line (wide where
+  the passes end, for the U-turns, and narrow at the sides); Tram offers Wheel-Track / Edge modes and
   Left / Both / Right direction.
 - **Boundary** — build a field boundary by driving around it, importing a KML, drawing on satellite
   imagery, or building from driven tracks. While recording you can add/remove points, switch

@@ -140,6 +140,128 @@ public partial class MainViewModel
         BuildHeadlandFromSegments();
     }
 
+    /// <summary>
+    /// Create a headland along the passes (fork only): the whole outer boundary, with at least
+    /// <paramref name="ends"/> m of room along the passes where they end (for the U-turns) and
+    /// <paramref name="sides"/> m from the boundary elsewhere (<see cref="HeadlandAlongPasses"/>).
+    /// The passes are the active line's (an AB line, or an open curve from its first point to
+    /// its last), else the field's only open line. It takes the place of a whole-boundary or
+    /// along-the-passes headland already there (two closed rings can't both be the headland);
+    /// lines and curves drawn per edge stay and still cut it.
+    /// </summary>
+    public void RemoteCreateHeadlandAlongPasses(double ends, double sides)
+    {
+        var boundary = State.Field.CurrentBoundary?.OuterBoundary;
+        if (boundary?.Points == null || boundary.Points.Count < 3)
+        {
+            ReportFailure("No boundary available");
+            return;
+        }
+        if (!IsHeadlandOffsetANumber(ends) || !IsHeadlandOffsetANumber(sides)) return;
+        if (ends <= 0 || sides <= 0)
+        {
+            ReportFailure("Headland distance must be more than 0 m");
+            return;
+        }
+        var track = PassTrackForHeadland();
+        if (track == null)
+        {
+            ReportFailure("Choose the AB line first: the headland is made along its passes");
+            return;
+        }
+        var a = track.Points[0];
+        var b = track.Points[^1];
+        double heading = Math.Atan2(b.Easting - a.Easting, b.Northing - a.Northing);
+
+        var bndPoints = new List<Vec3>(boundary.Points.Count + 1);
+        foreach (var pt in boundary.Points)
+            bndPoints.Add(new Vec3(pt.Easting, pt.Northing, pt.Heading));
+        var f = boundary.Points[0];
+        bndPoints.Add(new Vec3(f.Easting, f.Northing, f.Heading));
+
+        var segment = new HeadlandSegment
+        {
+            Name = $"Along {track.Name}",
+            Type = HeadlandSegmentType.AlongPasses,
+            Offset = ends,
+            SideOffset = sides,
+            PassHeading = heading,
+            BoundaryStartIndex = 0,
+            BoundaryEndIndex = boundary.Points.Count - 1,
+            BoundaryIndex = 0,
+            BoundaryPoints = bndPoints,
+            StartExtension = 0,
+            EndExtension = 0,
+        };
+        ComputeSegmentOffset(segment);
+        if (!AlongPassesFits(segment)) return;
+
+        for (int i = HeadlandSegments.Count - 1; i >= 0; i--)
+        {
+            if (HeadlandSegments[i].Type is not (HeadlandSegmentType.Boundary or HeadlandSegmentType.AlongPasses)) continue;
+            if (ReferenceEquals(SelectedHeadlandSegment, HeadlandSegments[i])) SelectedHeadlandSegment = null;
+            HeadlandSegments.RemoveAt(i);
+        }
+        HeadlandSegments.Add(segment);
+        SelectedHeadlandSegment = segment;
+        BuildHeadlandFromSegments();
+        _logger.LogInformation(FormattableString.Invariant(
+            $"[Headland] Along the passes of '{track.Name}' ({heading * 180 / Math.PI:0.0} deg): {ends:0.##} m at the ends, {sides:0.##} m at the sides, {segment.OffsetPoints.Count} points"));
+    }
+
+    /// <summary>The line a headland along the passes follows: the active line if it is open (an
+    /// AB line or a curve, not a loop or a pivot), else the field's only open line; null when
+    /// there is none, or its ends are under 10 m apart.</summary>
+    private Models.Track.Track? PassTrackForHeadland()
+    {
+        static bool Open(Models.Track.Track? t) =>
+            t != null && !t.IsClosed && !t.IsPivot && t.Points.Count >= 2
+            && Math.Sqrt(Math.Pow(t.Points[^1].Easting - t.Points[0].Easting, 2)
+                         + Math.Pow(t.Points[^1].Northing - t.Points[0].Northing, 2)) >= 10;
+        if (Open(SelectedTrack)) return SelectedTrack;
+        Models.Track.Track? only = null;
+        foreach (var t in SavedTracks)
+        {
+            if (!Open(t)) continue;
+            if (only != null) return null;
+            only = t;
+        }
+        return only;
+    }
+
+    /// <summary>False, and the operator told, when the headland along the passes leaves nothing of the field.</summary>
+    private bool AlongPassesFits(HeadlandSegment segment)
+    {
+        if (segment.OffsetPoints.Count >= 4) return true;
+        ReportFailure($"A headland of {segment.Offset:0.#} m at the ends and {segment.SideOffset:0.#} m at the sides leaves nothing of this field");
+        return false;
+    }
+
+    /// <summary>Change the side distance of a headland along the passes (fork only) and rebuild the headland.</summary>
+    public void RemoteSetHeadlandSidesAt(int index, double sides)
+    {
+        if (index < 0 || index >= HeadlandSegments.Count) return;
+        var seg = HeadlandSegments[index];
+        if (seg.Type != HeadlandSegmentType.AlongPasses) return;
+        if (!IsHeadlandOffsetANumber(sides)) return;
+        if (sides <= 0)
+        {
+            ReportFailure("Headland distance must be more than 0 m");
+            return;
+        }
+        double previous = seg.SideOffset;
+        var previousPoints = seg.OffsetPoints;
+        seg.SideOffset = sides;
+        ComputeSegmentOffset(seg);
+        if (!AlongPassesFits(seg))
+        {
+            seg.SideOffset = previous; // the headland stays as it was
+            seg.OffsetPoints = previousPoints;
+            return;
+        }
+        BuildHeadlandFromSegments();
+    }
+
     /// <summary>Change a segment's inward offset and rebuild the headland.</summary>
     public void RemoteSetHeadlandOffsetAt(int index, double offset)
     {
@@ -155,7 +277,8 @@ public partial class MainViewModel
         var previousPoints = seg.OffsetPoints;
         seg.Offset = offset;
         ComputeSegmentOffset(seg);
-        if (seg.Type == HeadlandSegmentType.Boundary && !WholeBoundaryOffsetFits(seg))
+        if ((seg.Type == HeadlandSegmentType.Boundary && !WholeBoundaryOffsetFits(seg))
+            || (seg.Type == HeadlandSegmentType.AlongPasses && !AlongPassesFits(seg)))
         {
             seg.Offset = previousOffset; // the headland stays as it was
             seg.OffsetPoints = previousPoints;

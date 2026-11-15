@@ -20,13 +20,14 @@ public record TrackDto(string Id, string Name, int Type, IReadOnlyList<Vec2Dto> 
 public record TrackInfoDto(int Index, string Name, string Type, bool Active, bool Visible);
 
 /// <summary>One row in the Field Builder Headland tab: index into the VM's HeadlandSegments
-/// list, name, a type label (Line/Curve/Boundary), the inward offset (m), and Effective
+/// list, name, a type label (Line/Curve/Boundary/AlongPasses), the inward offset (m), and Effective
 /// (false = the segment doesn't reach the boundary on both ends so it has no effect on the
 /// built headland → shown red, mirroring native). Carries NO points; the built headland
 /// polygon rides SceneDto.Headland.</summary>
 public record HeadlandSegInfoDto(int Index, string Name, string Type, double Offset, bool Effective,
     IReadOnlyList<Vec2Dto> EditLine, // offset line + overshoot extensions, drawn while editing
-    Vec2Dto EndA, Vec2Dto EndB);     // the two boundary endpoints (drag handles for on-map edit)
+    Vec2Dto EndA, Vec2Dto EndB,      // the two boundary endpoints (drag handles for on-map edit)
+    double Sides = 0);               // AlongPasses: the distance from the boundary at the sides (m); Offset is the ends'
 
 /// <summary>One Field Builder tram system (ConfigStore.Tram.Systems). RefLabel = the
 /// reference track name or "(Boundary)"; IsBoundary hides direction/offset client-side
