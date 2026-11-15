@@ -75,6 +75,51 @@ public sealed class ScenarioField
         return sb.ToString();
     }
 
+    /// <summary>
+    /// A field as AgOpenWeb saved it, read where it lies (a field folder's <c>field.geojson</c>): the outer
+    /// ring, the obstacles (driven through or not) and the tracks. For the real-field jobs
+    /// (<see cref="FarmJobs"/>), whose fields are never copied into the repository. Fork only.
+    /// </summary>
+    public static ScenarioField FromFieldFolder(string folder, string name)
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "field.geojson")));
+        // GeoJSON positions are [lon, lat, ...]; a ring repeats its first point at the end.
+        static List<(double Lat, double Lon)> Ring(JsonElement c)
+        {
+            var l = c.EnumerateArray().Select(q => (q[1].GetDouble(), q[0].GetDouble())).ToList();
+            if (l.Count > 2 && l[0] == l[^1]) l.RemoveAt(l.Count - 1);
+            return l;
+        }
+        static string Str(JsonElement p, string k) => p.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+        static bool Bool(JsonElement p, string k) => p.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.True;
+        (double, double) origin = default;
+        var outer = new List<(double Lat, double Lon)>();
+        var inner = new List<(bool DriveThrough, List<(double Lat, double Lon)> Ring)>();
+        var tracks = new List<(string Name, List<(double Lat, double Lon)> Points)>();
+        foreach (var f in doc.RootElement.GetProperty("features").EnumerateArray())
+        {
+            if (!f.TryGetProperty("properties", out var p) || p.ValueKind != JsonValueKind.Object) continue;
+            var g = f.GetProperty("geometry");
+            string type = Str(g, "type");
+            switch (Str(p, "role"))
+            {
+                case "metadata":
+                    origin = (p.GetProperty("originLatitude").GetDouble(), p.GetProperty("originLongitude").GetDouble());
+                    break;
+                case "outer-boundary" when type == "Polygon":
+                    outer = Ring(g.GetProperty("coordinates")[0]);
+                    break;
+                case "inner-boundary" when type == "Polygon":
+                    inner.Add((Bool(p, "isDriveThrough"), Ring(g.GetProperty("coordinates")[0])));
+                    break;
+                case "track" when type == "LineString":
+                    tracks.Add((Str(p, "name"), g.GetProperty("coordinates").EnumerateArray().Select(q => (q[1].GetDouble(), q[0].GetDouble())).ToList()));
+                    break;
+            }
+        }
+        return new ScenarioField { Name = name, Origin = origin, Outer = outer, Inner = inner, Tracks = tracks };
+    }
+
     public static IReadOnlyList<ScenarioField> LoadAll()
     {
         var path = Path.Combine(TestContext.CurrentContext.TestDirectory, "TestData", "fields.json");
