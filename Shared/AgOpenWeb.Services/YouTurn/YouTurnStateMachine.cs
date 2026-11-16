@@ -335,10 +335,22 @@ public sealed class YouTurnStateMachine
         {
             if (ctx.IsSkipWorkedMode)
                 HandleSnakeCreation(in ctx, track, abHeading, currentPosition, headingRadians, guidance, turn, effects);
-            else if (ctx.IsAlternateSkipMode)
-                HandleAlternateCreation(in ctx, track, abHeading, headingRadians, guidance, turn, effects);
-            else
-                HandleNormalCreation(in ctx, track, abHeading, currentPosition, headingRadians, guidance, turn, effects);
+            else if (!TriedJustNow(in ctx, track, guidance, turn))
+            {
+                if (ctx.IsAlternateSkipMode)
+                    HandleAlternateCreation(in ctx, track, abHeading, headingRadians, guidance, turn, effects);
+                else
+                    HandleNormalCreation(in ctx, track, abHeading, currentPosition, headingRadians, guidance, turn, effects);
+                // No turn here: tried again in 1.5 s, or at once when something that can change the answer
+                // does (see _failedEnd). Rebuilt on every cycle, a turn that can't be made (a parked tractor
+                // with AutoSteer on, a turn that fits nowhere) filled the 2000 lines of a bug report's log in
+                // 13 s (Renato, 16 Nov: 95 builds). Fork only.
+                if (turn.TurnPath == null)
+                {
+                    _failedEnd = EndKey(in ctx, track, guidance, turn, EndFieldStamp(in ctx));
+                    _failedEndCycles = 0;
+                }
+            }
         }
         else
         {
@@ -1372,7 +1384,8 @@ public sealed class YouTurnStateMachine
     };
 
     // An end where no turn was made onto the order's pass or the nearest open passes (a hard fence
-    // the turns don't clear: each build moves the turn back 0.5 m at a time, up to 30 m). Tick
+    // the turns don't clear: each build moves the turn back 0.5 m at a time, up to 30 m), and in the
+    // normal and alternative modes an end where no turn was made (TriedJustNow; fork only). Tick
     // looks for a turn on every GPS cycle while the end is ahead, and the passes tried here
     // tripled the builds of each look, so the end is remembered and tried again every 1.5 s
     // (FailedEndRetryCycles: AgOpenGPS waits that long, makeUTurnCounter, before it builds again
@@ -1388,6 +1401,32 @@ public sealed class YouTurnStateMachine
 
     private readonly record struct EndTried(Models.Track.Track Track, int Pass, bool HeadingSameWay, double Nudge,
         List<int>? Snake, long FieldStamp, int SkipRows, bool? Arrow, int Settings);
+
+    /// <summary>
+    /// The normal and alternative modes: this end was tried a moment ago and no turn was made, so it
+    /// is not tried again this cycle (<see cref="_failedEnd"/>, as the snake order's ends). Fork only.
+    /// </summary>
+    private bool TriedJustNow(in TickContext ctx, Models.Track.Track track, GuidanceWorkingState guidance, YouTurnWorkingState turn)
+    {
+        if (_failedEnd is { } failedEnd && failedEnd == EndKey(in ctx, track, guidance, turn, EndFieldStamp(in ctx)))
+        {
+            if (++_failedEndCycles < FailedEndRetryCycles) return true;
+            _logger.LogDebug("[YouTurn] Trying the end again (no turn built here {Seconds:F1} s ago)", FailedEndRetryCycles / 10.0);
+        }
+        _failedEnd = null;
+        _failedEndCycles = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// The field an end was tried on, for the normal and alternative modes: the turn line, the
+    /// operator's headland (the side of the first turn), the fence made hard or soft and the obstacles
+    /// (a turn at one, or blocked by one), so an edit of any of them tries the end again at once.
+    /// </summary>
+    private static long EndFieldStamp(in TickContext ctx) =>
+        ((SnakeFieldStamp(ctx.Boundary, ctx.HeadlandLine) * 31 + SnakeFieldStamp(null, ctx.WorkHeadlandLine)) * 31
+            + (ctx.Boundary?.OuterBoundary?.IsHard == true ? 1 : 0)) * 31
+        + YouTurnCreationService.ObstacleStamp(ctx.Boundary);
 
     private EndTried EndKey(in TickContext ctx, Models.Track.Track track, GuidanceWorkingState guidance,
         YouTurnWorkingState turn, long fieldStamp)
