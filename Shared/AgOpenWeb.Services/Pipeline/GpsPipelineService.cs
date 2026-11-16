@@ -254,6 +254,14 @@ public sealed class GpsPipelineService : IGpsPipelineService
     public const string SideStepNoRoomReason =
         "AutoSteer off: no room to move onto this line here without the implement crossing the fence. Move over by hand.";
 
+    /// <summary>Why AutoSteer went off with the tractor outside a hard fence on a line that stays outside.</summary>
+    internal const string OutsideFenceReason =
+        "AutoSteer off: the tractor is outside the field and the line does not lead into it. Drive into the field by hand.";
+
+    /// <summary>How far outside a hard fence the pivot and the implement must both be before
+    /// <see cref="OutsideFenceReason"/> is looked at: driving along the fence a little over it is not outside.</summary>
+    internal const double OutsideFenceMargin = 1.0;
+
     // ── Headland proximity ──────────────────────────────────────────────
     private readonly HeadlandDetectionService _headlandDetector = new();
     private readonly PolygonIndexCache _headlandIndex = new(); // the hydraulic lift's test
@@ -1426,6 +1434,31 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 lock (_stateLock) _autoSteerEngaged = false;
                 _audioService.Play(SoundEffect.UTurnTooClose);
             }
+        }
+
+        // (5b'''') AutoSteer on with the tractor and its implement outside a hard outer boundary
+        // (engaged there, or after rolling out of the field): every guard above works inside the
+        // fence, so the line steered it on along a pass lying outside the field (the beta robot on
+        // Baetas, simulator: engaged just past the fence, it drove up a pass outside the field to
+        // 34 m from the fence). AutoSteer off with the alarm unless the line ahead comes into the
+        // field within OutsideFenceReach (engaged just outside and steered in, as the farm job
+        // harness starts). The implement's centre (its offset to the side too) must be outside as
+        // well: a side-shifted implement can work along the inside of the fence with the tractor
+        // beyond it. Fork only.
+        if (autoSteerEngaged && !_isReverse && hasTickableTrack
+            && boundary?.OuterBoundary is { IsHard: true, IsValid: true } fenceAround
+            && _toolPositionService.HasPosition
+            && HardFenceGuard.OutsideBy(fenceAround, driftedEasting, driftedNorthing) > OutsideFenceMargin
+            && HardFenceGuard.OutsideBy(fenceAround,
+                toolPos.Easting + Math.Cos(toolHeading) * config.Tool.Offset,
+                toolPos.Northing - Math.Sin(toolHeading) * config.Tool.Offset) > OutsideFenceMargin
+            && !_youTurnStateMachine.LineComesIntoFieldAhead(in tickCtx, _guidanceWorking, YouTurnPathingService.OutsideFenceReach))
+        {
+            autoSteerEngaged = false;
+            autoSteerDisengaged = true;
+            disengageReason = OutsideFenceReason;
+            lock (_stateLock) _autoSteerEngaged = false;
+            _audioService.Play(SoundEffect.UTurnTooClose);
         }
 
         // (5c) Reverse (#125), like AgOpenGPS: with Steer in reverse off, steering

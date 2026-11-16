@@ -877,6 +877,24 @@ public sealed class YouTurnStateMachine
     }
 
     /// <summary>
+    /// The line AutoSteer steers, driven the way the tractor faces, comes inside the outer
+    /// boundary within <paramref name="reach"/> metres. Asked with the tractor and its implement
+    /// outside a hard fence. Fork only.
+    /// </summary>
+    public bool LineComesIntoFieldAhead(in TickContext ctx, GuidanceWorkingState guidance, double reach)
+    {
+        var track = ctx.SelectedTrack;
+        if (track == null || track.Points.Count < 2) return true;
+        var p = ctx.CurrentPosition;
+        double heading = p.Heading * Math.PI / 180.0;
+        double abHeading = track.Points.Count > 2
+            ? LocalCurveHeading(track, p)
+            : Math.Atan2(track.Points[1].Easting - track.Points[0].Easting, track.Points[1].Northing - track.Points[0].Northing);
+        bool sameWay = Math.Abs(Math.IEEERemainder(heading - abHeading, 2 * Math.PI)) < Math.PI / 2;
+        return _pathing.PassComesIntoFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, p, sameWay, reach);
+    }
+
+    /// <summary>
     /// Manually trigger a U-turn in the specified direction. Used for tracks along boundaries
     /// where automatic headland detection doesn't fire.
     /// </summary>
