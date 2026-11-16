@@ -1301,14 +1301,15 @@ public sealed class YouTurnStateMachine
             string? message = effects.StatusMessage;
             var built = BuildTurnPath(in ctx, track, headingRadians, abHeading, guidance, turn, effects);
             // Taken for its end left to do, and the turn lands short of it: worked at this end, and
-            // the next pass of the order is looked for on the next cycle.
-            if (built.Path != null)
+            // the next pass of the order is looked for on the next cycle. One across the crop of the
+            // passes between is not made: the nearest pass still to do is looked for, else the end.
+            if (built.Path != null && !TurnCrossesCrop(in ctx, track, target, guidance, turn, effects, message))
             {
                 if (!TurnMissesOpenEnd(in ctx, track, target, turn, effects, message))
                     TurnRepeatsLanding(in ctx, track, target, turn, effects, message);
                 return;
             }
-            refused = built;
+            if (built.Path == null) refused = built;
         }
         else
         {
@@ -1471,6 +1472,8 @@ public sealed class YouTurnStateMachine
                     if (TurnMissesOpenEnd(in ctx, track, pass, turn, effects, message)) continue;
                     // Lands where a turn landed before, on worked ground: the next one.
                     if (TurnRepeatsLanding(in ctx, track, pass, turn, effects, message)) continue;
+                    // Drives across the crop of the passes between: the next one.
+                    if (TurnCrossesCrop(in ctx, track, pass, guidance, turn, effects, message)) continue;
                     if (orderPassFar)
                         _logger.LogDebug("[YouTurn] Snake pass {Order} is {Count} passes over - turning onto pass {Pass}, the nearest still to do",
                             orderPass, Math.Abs(orderPass - current), pass);
@@ -1542,6 +1545,30 @@ public sealed class YouTurnStateMachine
         if (_pathing.TurnReachesUnworkedGround(path, ctx.Boundary, ctx.WorkEndLine, ctx.IsPointCovered)) return false;
         _logger.LogDebug("[YouTurn] Snake pass {Pass} is left to do only beyond where a turn here lands on it - worked at this end", pass);
         _openAtEnd[pass] = false;
+        DiscardPlannedTurn(turn);
+        effects.StatusMessage = messageBefore; // not "YouTurn path created"
+        return true;
+    }
+
+    /// <summary>
+    /// The turn just built onto <paramref name="pass"/> at the field's edge drives over more than
+    /// <see cref="YouTurnPathingService.MaxCropCrossed"/> of the crop of the passes between the two it
+    /// joins (<see cref="YouTurnPathingService.CropCrossed"/>): the turn is dropped, and the snake looks
+    /// at the next pass still to do, else says the end of the pass and the operator turns by hand. The
+    /// omega, one shape square to the passes touching the turn line at one point, runs into the crop
+    /// where the turn line bends away beside it: out of a pocket under a spike of the fence, onto a
+    /// pass 13 over (the wide turn did not build there), it crossed 40-57 m of worked crop beyond the
+    /// spike's tip and landed in the middle of the pass (the beta robot on a tester's field,
+    /// simulator). A turn at an obstacle in the field is made in the crop and is left alone. Fork only.
+    /// </summary>
+    private bool TurnCrossesCrop(in TickContext ctx, Models.Track.Track track, int pass, GuidanceWorkingState guidance,
+        YouTurnWorkingState turn, YouTurnEffects effects, string? messageBefore)
+    {
+        if (turn.TurnPath is not { } path || turn.TurnAtObstacle) return false;
+        double crossed = _pathing.CropCrossed(path, track, guidance.HowManyPathsAway, pass, guidance.NudgeOffset, ctx.WorkHeadlandLine);
+        if (crossed <= YouTurnPathingService.MaxCropCrossed) return false;
+        _logger.LogDebug("[YouTurn] Snake pass {Pass}: the turn there drives {Crossed:F0} m across the crop of the passes between - not made",
+            pass, crossed);
         DiscardPlannedTurn(turn);
         effects.StatusMessage = messageBefore; // not "YouTurn path created"
         return true;

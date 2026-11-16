@@ -35,6 +35,7 @@ public sealed class YouTurnPathingService
     private readonly ILogger<YouTurnPathingService> _logger;
     private readonly ConfigurationStore _configStore;
     private readonly PolygonIndexCache _headlandIndex = new(); // the cultivated-area test of every offset point
+    private readonly PolygonIndexCache _cropIndex = new(); // the operator's headland line, for CropCrossed
 
     public YouTurnPathingService(ILogger<YouTurnPathingService> logger, ConfigurationStore configStore)
     {
@@ -1169,6 +1170,87 @@ public sealed class YouTurnPathingService
             if (!isPointCovered(p.Easting, p.Northing)) unworked++;
         }
         return inside == 0 || unworked * Step >= MinNewGround;
+    }
+
+    /// <summary>
+    /// The most of the crop of the passes between the two it joins that a snake turn at the field's
+    /// edge may drive over, m (<see cref="CropCrossed"/>). Fork only.
+    /// </summary>
+    public const double MaxCropCrossed = 10.0;
+
+    /// <summary>
+    /// Metres of <paramref name="turnPath"/> over the crop of the passes between the two it joins
+    /// (<paramref name="fromPass"/> and <paramref name="toPass"/>): points every metre inside the
+    /// operator's headland line (<paramref name="cropLine"/>), between the two passes and more than a
+    /// pass from both. A turn keeps to the headland band, where the crop's passes end; its legs on
+    /// the two passes and a loop out past them do not count, and two passes apart nothing does. 0
+    /// with no headland line. The omega, one shape square to the passes touching the turn line at
+    /// one point, runs into the crop where the turn line bends away beside it: out of a pocket under
+    /// a spike of the fence, onto a pass far over, it crossed 40-57 m of worked crop beyond the
+    /// spike's tip (the beta robot on a tester's field, simulator). Fork only.
+    /// </summary>
+    public double CropCrossed(IReadOnlyList<Vec3> turnPath, Models.Track.Track track, int fromPass, int toPass,
+        double nudgeOffset, IReadOnlyList<Vec3>? cropLine)
+    {
+        const double Step = 1.0;
+        if (cropLine is not { Count: >= 3 } || turnPath.Count < 2 || track.Points.Count < 2) return 0;
+        double w = _configStore.ActualToolWidth - _configStore.Tool.Overlap;
+        if (w <= 0) return 0;
+        double uFrom = PassGeometry.Offset(track, fromPass, w, nudgeOffset);
+        double uTo = PassGeometry.Offset(track, toPass, w, nudgeOffset);
+        double apart = Math.Abs(uTo - uFrom);
+        if (apart <= 2 * w) return 0;
+        var crop = _cropIndex.For(cropLine);
+        if (crop == null) return 0;
+
+        // The point's distance from each of the two passes.
+        Func<double, double, (double From, double To)> distances;
+        if (track.Points.Count > 2)
+        {
+            var from = CurveProcessing.CreateOffsetCurve(track.Points, uFrom);
+            var to = CurveProcessing.CreateOffsetCurve(track.Points, uTo);
+            if (from.Count < 2 || to.Count < 2) return 0;
+            distances = (e, n) => (DistanceToLine(from, e, n), DistanceToLine(to, e, n));
+        }
+        else
+        {
+            var a = track.Points[0];
+            var b = track.Points[^1];
+            double dx = b.Easting - a.Easting, dy = b.Northing - a.Northing, len = Math.Sqrt(dx * dx + dy * dy);
+            if (len < 0.01) return 0;
+            double rx = dy / len, ry = -dx / len; // right of A to B, the way PassGeometry counts
+            distances = (e, n) =>
+            {
+                double u = (e - a.Easting) * rx + (n - a.Northing) * ry;
+                return (Math.Abs(u - uFrom), Math.Abs(u - uTo));
+            };
+        }
+
+        double crossed = 0;
+        for (int i = 1; i < turnPath.Count; i++)
+        {
+            var p = turnPath[i - 1];
+            var q = turnPath[i];
+            double d = GeometryMath.Distance(p, q);
+            for (double t = 0; t < d; t += Step)
+            {
+                double f = t / d;
+                double e = p.Easting + (q.Easting - p.Easting) * f, n = p.Northing + (q.Northing - p.Northing) * f;
+                var (dFrom, dTo) = distances(e, n);
+                if (Math.Min(dFrom, dTo) <= w || dFrom + dTo > apart + w / 2) continue;
+                if (crop.Contains(e, n)) crossed += Math.Min(Step, d - t);
+            }
+        }
+        return crossed;
+    }
+
+    private static double DistanceToLine(IReadOnlyList<Vec3> line, double e, double n)
+    {
+        double best = double.MaxValue;
+        for (int i = 1; i < line.Count; i++)
+            best = Math.Min(best, GeometryMath.PointToSegmentDistance(e, n,
+                line[i - 1].Easting, line[i - 1].Northing, line[i].Easting, line[i].Northing));
+        return best;
     }
 
     /// <summary>
