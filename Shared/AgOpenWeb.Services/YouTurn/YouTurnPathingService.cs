@@ -1149,6 +1149,8 @@ public sealed class YouTurnPathingService
     /// area at that end (found from the point abreast of the end, forward to the edge when that
     /// point is inside, back to the area when it is past the pass's end, as
     /// <see cref="LandingLength"/>), back the way the tractor came, as far as the pass stays inside.
+    /// A U-turn obstacle cuts the pass as the headland line does (<see cref="TurnObstacleCuts"/>): the
+    /// pass is turned at it, so the piece on each side of it is worked from its own end.
     /// </summary>
     private List<Vec2> EndStretch(Models.Track.Track track, double abHeading, int pathsAway, double nudgeOffset,
         Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead,
@@ -1162,6 +1164,8 @@ public sealed class YouTurnPathingService
         double widthMinusOverlap = config.ActualToolWidth - config.Tool.Overlap;
         double distAway = PassGeometry.Offset(track, pathsAway, widthMinusOverlap, nudgeOffset);
         double ahead = Math.Clamp(double.IsFinite(headlandAhead) ? headlandAhead : 0, 0, 2000);
+        var cuts = TurnObstacleCuts(boundary);
+        bool Inside(double e, double n) => IsPointInsideCultivatedArea(e, n, boundary, headlandLine) && !InTurnObstacleCut(e, n, cuts);
 
         if (track.Points.Count > 2)
         {
@@ -1179,7 +1183,7 @@ public sealed class YouTurnPathingService
             double tdx = curve[i1].Easting - curve[i0].Easting, tdy = curve[i1].Northing - curve[i0].Northing;
             double travel = headingSameWay ? abHeading : abHeading + Math.PI;
             int fwd = tdx * Math.Sin(travel) + tdy * Math.Cos(travel) >= 0 ? 1 : -1;
-            bool InsideAt(int i) => IsPointInsideCultivatedArea(curve[i].Easting, curve[i].Northing, boundary, headlandLine);
+            bool InsideAt(int i) => Inside(curve[i].Easting, curve[i].Northing);
             bool InRange(int i) => i >= 0 && i < curve.Count;
             double Dist(int a, int b)
             {
@@ -1227,7 +1231,7 @@ public sealed class YouTurnPathingService
         double midN = (pointA.Northing + pointB.Northing) / 2 + Math.Cos(perpAngle) * distAway;
         double s = headingSameWay ? 1 : -1;
         double t0 = (position.Easting - midE) * abNx + (position.Northing - midN) * abNy;
-        bool InsideAtT(double t) => IsPointInsideCultivatedArea(midE + abNx * t, midN + abNy * t, boundary, headlandLine);
+        bool InsideAtT(double t) => Inside(midE + abNx * t, midN + abNy * t);
 
         double tAt = t0 + s * ahead;
         if (InsideAtT(tAt))
@@ -1248,6 +1252,54 @@ public sealed class YouTurnPathingService
             points.Add(new Vec2(midE + abNx * t, midN + abNy * t));
         }
         return points;
+    }
+
+    /// <summary>
+    /// The U-turn obstacles (<see cref="ObstacleAction.Turn"/>), each with how far out from it a pass
+    /// is turned (its turn line: the distance from boundary, and the implement's reach for a hard one,
+    /// as <see cref="YouTurnCreationService"/> builds it). A pass is cut there as at the headland line,
+    /// so the snake's tests of the end of a pass judge the piece on this side of the obstacle. Judged
+    /// through the obstacle, a pass whose piece between an obstacle and the headland was worked still
+    /// looked to do at the obstacle, and the snake turned round and round six such pieces for the rest
+    /// of the job (the beta robot on a tester's field, simulator: 13R-19R between two hard obstacles
+    /// and the headland, about 150 turns painting nothing). Fork only.
+    /// </summary>
+    private List<(BoundaryPolygon Poly, double Grow, double MinE, double MinN, double MaxE, double MaxN)> TurnObstacleCuts(
+        Boundary? boundary)
+    {
+        var cuts = new List<(BoundaryPolygon, double, double, double, double, double)>();
+        if (boundary?.InnerBoundaries is not { Count: > 0 } inners) return cuts;
+        double distance = _configStore.Guidance.UTurnDistanceFromBoundary;
+        double hardReach = YouTurnCreationService.HardReach(_configStore);
+        foreach (var inner in inners)
+        {
+            if (inner.AtObstacle != ObstacleAction.Turn || !inner.IsValid) continue;
+            double grow = Math.Max(0, distance) + (inner.IsHard ? hardReach : 0);
+            double minE = double.MaxValue, minN = double.MaxValue, maxE = double.MinValue, maxN = double.MinValue;
+            foreach (var p in inner.Points)
+            {
+                minE = Math.Min(minE, p.Easting); maxE = Math.Max(maxE, p.Easting);
+                minN = Math.Min(minN, p.Northing); maxN = Math.Max(maxN, p.Northing);
+            }
+            cuts.Add((inner, grow, minE - grow, minN - grow, maxE + grow, maxN + grow));
+        }
+        return cuts;
+    }
+
+    /// <summary>Is the point inside a U-turn obstacle's turn line (<see cref="TurnObstacleCuts"/>)?</summary>
+    private static bool InTurnObstacleCut(double e, double n,
+        List<(BoundaryPolygon Poly, double Grow, double MinE, double MinN, double MaxE, double MaxN)> cuts)
+    {
+        foreach (var c in cuts)
+        {
+            if (e < c.MinE || e > c.MaxE || n < c.MinN || n > c.MaxN) continue;
+            if (c.Poly.IsPointInside(e, n)) return true;
+            var pts = c.Poly.Points;
+            for (int i = 0, j = pts.Count - 1; i < pts.Count; j = i++)
+                if (GeometryMath.PointToSegmentDistance(e, n, pts[j].Easting, pts[j].Northing, pts[i].Easting, pts[i].Northing) < c.Grow)
+                    return true;
+        }
+        return false;
     }
 
     /// <summary>The cultivated area's edge: the headland line, else the outer boundary; null when there is neither.</summary>
