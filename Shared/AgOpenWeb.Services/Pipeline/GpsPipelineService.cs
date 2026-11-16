@@ -1409,19 +1409,27 @@ public sealed class GpsPipelineService : IGpsPipelineService
             _audioService.Play(SoundEffect.UTurnTooClose);
         }
 
-        // (5b'''') A hard outer boundary and no U-turn planned or driven (a turn keeps the implement
-        // off the fence itself): an end of the implement heading out across the fence within 2 s of
-        // travel takes AutoSteer off with the alarm (HardFenceGuard). Only with the tractor inside
-        // the fence, going forward. Along the curve steered (the last cycle's steer angle, the one
-        // the line asked for when AutoSteer has just gone on), not straight ahead, which leaves a
-        // bend; a cycle with no line steered before it waits for the next. Fork only.
-        if (autoSteerEngaged && !_isReverse && _youTurn.TurnPath == null && !_youTurn.IsExecuting
+        // (5b'''') A hard outer boundary and no U-turn driven (a turn keeps the implement off the
+        // fence itself): an end of the implement heading out across the fence within 2 s of travel
+        // takes AutoSteer off with the alarm (HardFenceGuard). Only with the tractor inside the
+        // fence, going forward. Along the curve steered (the last cycle's steer angle, the one the
+        // line asked for when AutoSteer has just gone on), not straight ahead, which leaves a bend;
+        // a cycle with no line steered before it waits for the next. A turn planned ahead keeps the
+        // implement off the fence from where it starts, so the look-ahead stops there; the pass up
+        // to it is the guard's: with a turn planned at the far end the guard was off for the whole
+        // pass, and the pass, driven through a stretch outside the turn line (PassEnds.Find), took
+        // a 12 m boom's end 1.1 m over a spike of the fence (the beta robot on Quinta Torta,
+        // simulator). Fork only.
+        if (autoSteerEngaged && !_isReverse && !_youTurn.IsExecuting
             && _lastLineSteerAngle is double lastSteer
             && boundary?.OuterBoundary is { IsHard: true, IsValid: true } hardOuter
             && _toolPositionService.HasPosition
             && hardOuter.IsPointInside(driftedEasting, driftedNorthing))
         {
             double lookAhead = HardFenceGuard.LookAheadSeconds * Math.Abs(pos.Speed);
+            if (_youTurn.TurnPath is { Count: > 0 } plannedTurn)
+                lookAhead = Math.Min(lookAhead, Math.Max(0, HardFenceGuard.AheadOf(plannedTurn[0],
+                    driftedEasting, driftedNorthing, headingRad)));
             double reach = toolWidth / 2 + Math.Abs(config.Tool.Offset);
             double curvature = HardFenceGuard.Curvature(lastSteer, config.Vehicle.Wheelbase, config.Vehicle.MaxSteerAngle);
             double outBy = HardFenceGuard.HeadingOut(hardOuter, toolPos, toolHeading, reach, lookAhead,
