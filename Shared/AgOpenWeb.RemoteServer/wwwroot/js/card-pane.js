@@ -189,6 +189,8 @@ const CardPane = (() => {
   const [speedB, speedU, arrow, dist, dot, secs, bar] = ['.cp-speed b', '.cp-speed small', '.cp-arrow', '.cp-dist', '.cp-dot', '.cp-secs', '.cp-bar']
     .map(s => strip.querySelector(s));
   const LB_SIDE = 7;
+  // n empty <i> cells (section squares, light bar cells), built as elements, not HTML text.
+  const cpCells = n => Array.from({ length: n }, () => document.createElement('i'));
   let secCount = -1, barKind = '', titled = false;
   function renderStrip() {
     if (!titled) { titled = true; strip.querySelector('.cp-steer').title = tr('AutoSteer'); }
@@ -208,7 +210,7 @@ const CardPane = (() => {
     const sec = tick && tick.sections, master = !!(op && (op.sectionAuto || op.sectionManual) && sec && sec.length);
     secs.style.display = master ? '' : 'none';
     if (master) {
-      if (sec.length !== secCount) { secCount = sec.length; secs.innerHTML = '<i></i>'.repeat(sec.length); }
+      if (sec.length !== secCount) { secCount = sec.length; secs.replaceChildren(...cpCells(sec.length)); }
       const cells = secs.children;
       for (let i = 0; i < cells.length; i++) cells[i].style.background = SECTION_COLORS[sec[i]] || SECTION_COLORS[0];
     }
@@ -218,8 +220,14 @@ const CardPane = (() => {
     const kind = cfg.steerBarEnabled ? 'steer' : 'light';
     if (kind !== barKind) {
       barKind = kind;
-      bar.innerHTML = kind === 'light' ? '<i></i>'.repeat(LB_SIDE) + '<span class="cp-mid"></span>' + '<i></i>'.repeat(LB_SIDE)
-        : '<div class="cp-sbar"><i></i></div>';
+      if (kind === 'light') {
+        const mid = document.createElement('span'); mid.className = 'cp-mid';
+        bar.replaceChildren(...cpCells(LB_SIDE), mid, ...cpCells(LB_SIDE));
+      } else {
+        const sbar = document.createElement('div'); sbar.className = 'cp-sbar';
+        sbar.append(...cpCells(1));
+        bar.replaceChildren(sbar);
+      }
     }
     if (kind === 'light') {
       const cpp = Math.max(1, (cfg.cmPerPixel | 0) || 5), val = tick.crossTrackError || 0;
