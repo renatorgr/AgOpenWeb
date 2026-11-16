@@ -396,7 +396,8 @@ function renderBoundaryMenu() {
       OBSTACLE_ACTIONS.forEach((act, k) => {
         const c = document.createElement('button');
         c.className = 'bm-choice' + (it.atObstacle === k ? ' on' : '');
-        c.innerHTML = '<span class="bm-dot k' + (k + 1) + '"></span>';
+        const dot = document.createElement('span'); dot.className = 'bm-dot k' + (k + 1);
+        c.appendChild(dot);
         c.title = choiceLabel(k);
         c.addEventListener('pointerdown', ev => {
           ev.stopPropagation();

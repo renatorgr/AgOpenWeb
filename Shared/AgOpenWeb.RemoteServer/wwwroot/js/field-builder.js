@@ -296,7 +296,7 @@ function populateTramEdit() {
   const ref = document.getElementById('fb-tram-ref');
   const opts = [tr('(Boundary)')];
   for (const t of (scene.trackList || [])) if (t.type !== 'Path' && t.type !== 'Contour') opts.push(t.name);
-  ref.innerHTML = opts.map(o => { const e = document.createElement('option'); e.textContent = o; return e.outerHTML; }).join('');
+  ref.replaceChildren(...opts.map(o => { const e = document.createElement('option'); e.textContent = o; return e; }));
   ref.value = s.refLabel;
   const wEl = document.getElementById('fb-tram-w'); if (document.activeElement !== wEl) writeUnitInput(wEl, s.width);
   const offEl = document.getElementById('fb-tram-off'); if (document.activeElement !== offEl) writeUnitInput(offEl, s.offset);
