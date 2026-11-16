@@ -547,6 +547,9 @@ public sealed class YouTurnPathingService
     /// <summary>How far ahead <see cref="PassLeavesFieldAhead"/> walks the pass for the fence.</summary>
     public const double MaxWalkToFence = 300.0;
 
+    /// <summary>The step of the walks along a pass ahead of the tractor.</summary>
+    private const double WalkStep = 1.0;
+
     /// <summary>
     /// Does pass <paramref name="pathsAway"/>, walked from <paramref name="position"/> the way the
     /// tractor is heading, leave the outer boundary before it is inside the cultivated area again
@@ -564,70 +567,96 @@ public sealed class YouTurnPathingService
     {
         var outer = boundary?.OuterBoundary;
         if (outer == null || !outer.IsValid || track.Points.Count < 2) return false;
-        double distAway = PassGeometry.Offset(track, pathsAway, _configStore.ActualToolWidth - _configStore.Tool.Overlap);
-        const double Step = 1.0;
-
-        // The pass's points ahead, a metre apart, from abreast of the tractor.
-        IEnumerable<Vec2> Ahead()
-        {
-            if (steeredLine is { Count: >= 2 })
-            {
-                foreach (var p in WalkAhead(steeredLine, position, headingSameWay ? abHeading : abHeading + Math.PI, Step, MaxWalkToFence))
-                    yield return p;
-                yield break;
-            }
-            if (track.Points.Count > 2)
-            {
-                var curve = CurveProcessing.CreateOffsetCurve(track.Points, distAway);
-                if (curve.Count < 2) yield break;
-                int near = 0;
-                double best = double.MaxValue;
-                for (int i = 0; i < curve.Count; i++)
-                {
-                    double de = curve[i].Easting - position.Easting, dn = curve[i].Northing - position.Northing;
-                    double d = de * de + dn * dn;
-                    if (d < best) { best = d; near = i; }
-                }
-                int i1 = Math.Min(near + 1, curve.Count - 1), i0 = Math.Max(near - 1, 0);
-                double tdx = curve[i1].Easting - curve[i0].Easting, tdy = curve[i1].Northing - curve[i0].Northing;
-                double travel = headingSameWay ? abHeading : abHeading + Math.PI;
-                int fwd = tdx * Math.Sin(travel) + tdy * Math.Cos(travel) >= 0 ? 1 : -1;
-                double walked = 0;
-                for (int i = near; i + fwd >= 0 && i + fwd < curve.Count && walked <= MaxWalkToFence; i += fwd)
-                {
-                    double de = curve[i + fwd].Easting - curve[i].Easting, dn = curve[i + fwd].Northing - curve[i].Northing;
-                    walked += Math.Sqrt(de * de + dn * dn);
-                    yield return new Vec2(curve[i + fwd].Easting, curve[i + fwd].Northing);
-                }
-                yield break;
-            }
-            var a = track.Points[0];
-            var b = track.Points[^1];
-            double abDx = b.Easting - a.Easting, abDy = b.Northing - a.Northing;
-            double abLen = Math.Sqrt(abDx * abDx + abDy * abDy);
-            if (abLen < 0.01) yield break;
-            double nx = abDx / abLen, ny = abDy / abLen;
-            double perp = abHeading + Math.PI / 2;
-            double midE = (a.Easting + b.Easting) / 2 + Math.Sin(perp) * distAway;
-            double midN = (a.Northing + b.Northing) / 2 + Math.Cos(perp) * distAway;
-            double s = headingSameWay ? 1 : -1;
-            double t0 = (position.Easting - midE) * nx + (position.Northing - midN) * ny;
-            for (double d = Step; d <= MaxWalkToFence; d += Step)
-                yield return new Vec2(midE + nx * (t0 + s * d), midN + ny * (t0 + s * d));
-        }
 
         double insideRun = 0;
-        foreach (var p in Ahead())
+        foreach (var p in PassPointsAhead(track, abHeading, pathsAway, position, headingSameWay, steeredLine, MaxWalkToFence))
         {
             if (!outer.IsPointInside(p.Easting, p.Northing)) return true;
             if (IsPointInsideCultivatedArea(p.Easting, p.Northing, boundary, headlandLine))
             {
-                insideRun += Step;
+                insideRun += WalkStep;
                 if (insideRun >= MinRunAfterGap) return false;
             }
             else insideRun = 0;
         }
         return false;
+    }
+
+    /// <summary>How far ahead <see cref="PassComesIntoFieldAhead"/> looks for the field from a tractor outside it.</summary>
+    public const double OutsideFenceReach = 30.0;
+
+    /// <summary>
+    /// Does pass <paramref name="pathsAway"/>, walked from abreast of <paramref name="position"/>
+    /// the way the tractor is heading, come inside the outer boundary within
+    /// <paramref name="reach"/> metres? Asked with the tractor outside a hard fence: AutoSteer
+    /// steering it into the field from just outside (12 m before the fence, as the farm job
+    /// harness starts) is the operator's choice, but one steering it on along a pass that stays
+    /// outside is not. True with no usable outer boundary or track. Fork only.
+    /// </summary>
+    public bool PassComesIntoFieldAhead(Models.Track.Track track, double abHeading, int pathsAway,
+        Boundary? boundary, Position position, bool headingSameWay, double reach)
+    {
+        var outer = boundary?.OuterBoundary;
+        if (outer == null || !outer.IsValid || track.Points.Count < 2) return true;
+        foreach (var p in PassPointsAhead(track, abHeading, pathsAway, position, headingSameWay, null, reach))
+            if (outer.IsPointInside(p.Easting, p.Northing)) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// The points of pass <paramref name="pathsAway"/> ahead of <paramref name="position"/>, a
+    /// metre apart, from abreast of the tractor, the way it travels, up to
+    /// <paramref name="maxWalk"/> m (or <paramref name="steeredLine"/>'s, when given).
+    /// </summary>
+    private IEnumerable<Vec2> PassPointsAhead(Models.Track.Track track, double abHeading, int pathsAway,
+        Position position, bool headingSameWay, IReadOnlyList<Vec3>? steeredLine, double maxWalk)
+    {
+        double distAway = PassGeometry.Offset(track, pathsAway, _configStore.ActualToolWidth - _configStore.Tool.Overlap);
+        const double Step = WalkStep;
+        if (steeredLine is { Count: >= 2 })
+        {
+            foreach (var p in WalkAhead(steeredLine, position, headingSameWay ? abHeading : abHeading + Math.PI, Step, maxWalk))
+                yield return p;
+            yield break;
+        }
+        if (track.Points.Count > 2)
+        {
+            var curve = CurveProcessing.CreateOffsetCurve(track.Points, distAway);
+            if (curve.Count < 2) yield break;
+            int near = 0;
+            double best = double.MaxValue;
+            for (int i = 0; i < curve.Count; i++)
+            {
+                double de = curve[i].Easting - position.Easting, dn = curve[i].Northing - position.Northing;
+                double d = de * de + dn * dn;
+                if (d < best) { best = d; near = i; }
+            }
+            int i1 = Math.Min(near + 1, curve.Count - 1), i0 = Math.Max(near - 1, 0);
+            double tdx = curve[i1].Easting - curve[i0].Easting, tdy = curve[i1].Northing - curve[i0].Northing;
+            double travel = headingSameWay ? abHeading : abHeading + Math.PI;
+            int fwd = tdx * Math.Sin(travel) + tdy * Math.Cos(travel) >= 0 ? 1 : -1;
+            double walked = 0;
+            for (int i = near; i + fwd >= 0 && i + fwd < curve.Count && walked <= maxWalk; i += fwd)
+            {
+                double de = curve[i + fwd].Easting - curve[i].Easting, dn = curve[i + fwd].Northing - curve[i].Northing;
+                walked += Math.Sqrt(de * de + dn * dn);
+                yield return new Vec2(curve[i + fwd].Easting, curve[i + fwd].Northing);
+            }
+            yield break;
+        }
+        var a = track.Points[0];
+        var b = track.Points[^1];
+        double abDx = b.Easting - a.Easting, abDy = b.Northing - a.Northing;
+        double abLen = Math.Sqrt(abDx * abDx + abDy * abDy);
+        if (abLen < 0.01) yield break;
+        double nx = abDx / abLen, ny = abDy / abLen;
+        double perp = abHeading + Math.PI / 2;
+        double midE = (a.Easting + b.Easting) / 2 + Math.Sin(perp) * distAway;
+        double midN = (a.Northing + b.Northing) / 2 + Math.Cos(perp) * distAway;
+        double s = headingSameWay ? 1 : -1;
+        double t0 = (position.Easting - midE) * nx + (position.Northing - midN) * ny;
+        for (double d = Step; d <= maxWalk; d += Step)
+            yield return new Vec2(midE + nx * (t0 + s * d), midN + ny * (t0 + s * d));
     }
 
     /// <summary>
