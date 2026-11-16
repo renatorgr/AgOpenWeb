@@ -12,10 +12,9 @@ using TrackModel = AgOpenWeb.Models.Track.Track;
 namespace AgOpenWeb.Services.Tests;
 
 /// <summary>
-/// An AB line whose B is about 1 m from A (AgOpenGPS's A+ line) is read with B 100 m out along
-/// it, from field.geojson and from AgOpenGPS's TrackLines.txt, so its passes can be offset (the
-/// beta robot on Couto da Ribeira: no pass, AutoSteer held the wheels straight through the hard
-/// fence). Fork only.
+/// An AB line whose B is about 1 m from A (AgOpenGPS's A+ line) is read with B 100 m out along it,
+/// from field.geojson and from AgOpenGPS's TrackLines.txt, so its passes can be offset (a tester's
+/// field: no pass, AutoSteer held the wheels straight).
 /// </summary>
 [TestFixture]
 public class ShortABLineLoadTests
@@ -42,7 +41,7 @@ public class ShortABLineLoadTests
     [Test]
     public void A_1_m_line_in_field_geojson_loads_100_m_long_on_its_stored_heading()
     {
-        // Couto da Ribeira's line: B 0.961 m from A at 301.01°, its heading stored as 300.91°.
+        // The tester's line: B 0.961 m from A at 301.01°, its heading stored as 300.91°.
         double stored = Rad(300.913);
         var a = new Vec3(-239.30, 53.00, stored);
         var b = new Vec3(a.Easting + Math.Sin(Rad(301.013)) * 0.961, a.Northing + Math.Cos(Rad(301.013)) * 0.961, stored);

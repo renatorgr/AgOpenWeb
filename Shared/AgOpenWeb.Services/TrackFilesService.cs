@@ -170,8 +170,8 @@ namespace AgOpenWeb.Services
                     }
                     else
                     {
-                        // AgOpenGPS's A+ line keeps B about 1 m from A: moved out along the
-                        // line's heading, or AgOpenWeb has no pass on it (fork only).
+                        // AgOpenGPS's A+ line puts B 1 m from A: moved out along the
+                        // line's heading, or AgOpenWeb has no pass on it.
                         track.Points = TrackModel.LengthenShortABLine(new List<Vec3>
                         {
                             new Vec3(aEasting, aNorthing, headingRadians),

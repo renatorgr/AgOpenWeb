@@ -18,7 +18,7 @@ namespace AgOpenWeb.ViewModels.Tests;
 /// boundary (an import, a field from a test rig), and no headland segments: the Field Builder lists
 /// no headland. Delete All took the line off the map, but the polygon stayed in the boundary, and
 /// the next change of the boundary (the outer boundary made hard) put it back as the headland and
-/// wrote it to the file again (a tester's Baetas and Olival, 11-15). A headland made in the Field
+/// wrote it to the file again (seen on a tester's fields). A headland made in the Field
 /// Builder was replaced by the old polygon the same way. The headland the operator makes, or
 /// removes, is the field's headland now: the polygon goes.
 /// </summary>
@@ -89,7 +89,7 @@ public class HeadlandPolygonFromFileTests
     {
         vm.RefreshBoundaryList();
         vm.SelectedBoundaryIndex = 0;
-        Assume.That(vm.BoundaryItems[0].IsInner, Is.False);
+        Assume.That(vm.BoundaryItems[0].BoundaryType, Is.EqualTo("Outer"));
         vm.ToggleHardCommand!.Execute(null);
         Assume.That(vm.BoundaryItems[0].IsHard, Is.EqualTo(hard));
     }

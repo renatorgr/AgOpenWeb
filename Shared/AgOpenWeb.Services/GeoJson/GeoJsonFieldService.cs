@@ -658,7 +658,7 @@ public partial class GeoJsonFieldService
             : TrackType.ABLine;
 
         // An AB line from AgOpenGPS (its A+ line) can have B 1 m from A: no pass could be offset
-        // from it. B is moved out along the line, its stored heading kept where it agrees (fork only).
+        // from it. B is moved out along the line, its stored heading kept where it agrees.
         if (trackType == TrackType.ABLine && points.Count == 2)
             points = Models.Track.Track.LengthenShortABLine(points, storedHeading);
 
