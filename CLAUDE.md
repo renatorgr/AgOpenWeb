@@ -522,7 +522,9 @@ both ways is listed once);
 loads from the add-on on its own origin, never through AgOpenWeb; observers get a cover over it.
 Which cards are open, where, and each page's zoom are the browser's (`localStorage`); the zoom lays
 the page out at 1/zoom of the card and scales it to fit, so a page shows more or bigger with nothing
-done by the add-on. `WebCards` in `js/web-cards.js`; plan: `Plans/ADD_ON_CARDS_PLAN.md`.
+done by the add-on. Where CSS zoom reaches a frame's page (Chromium) the frame is zoomed, not scaled
+by a transform: Chromium runs a page from another site in a process of its own and opened a scaled
+page's `<select>` lists where the control would be unscaled, off the card. Fork only. `WebCards` in `js/web-cards.js`; plan: `Plans/ADD_ON_CARDS_PLAN.md`.
 
 **Card pane** (#456): Screen & Alerts › VT & Web Cards sets Floating (the default), Left or Right,
 per browser. In a split layout the open VT and web cards sit in a pane on that side, two to a

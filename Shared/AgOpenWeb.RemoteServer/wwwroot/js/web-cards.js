@@ -19,6 +19,24 @@ const WebCards = (() => {
   let bookmarks = [], cards = [], shown = false, zooms = {};
   try { zooms = JSON.parse(localStorage.getItem(ZKEY) || '{}') || {}; } catch (_) {}
   const zoomOf = url => (ZOOMS.includes(zooms[url]) ? zooms[url] : 100);
+  // Whether CSS zoom on a frame reaches its page (Chromium: the page's devicePixelRatio follows
+  // it). Then the frame is zoomed rather than scaled, so the page's own pop-ups (a <select>'s list)
+  // open at the control: a scaled frame from another site opened them off the card. Asked once,
+  // of a hidden blank frame, after a layout (the zoom reaches it there).
+  let zoomReaches = null;
+  function zoomReachesPage() {
+    if (zoomReaches !== null) return zoomReaches;
+    zoomReaches = false;
+    try {
+      const f = document.createElement('iframe');
+      f.style.cssText = 'position: fixed; left: 0; top: 0; width: 10px; height: 10px; border: 0; visibility: hidden; zoom: 0.5';
+      document.body.appendChild(f);
+      f.getBoundingClientRect();
+      zoomReaches = Math.abs(f.contentWindow.devicePixelRatio - window.devicePixelRatio / 2) < 0.01;
+      f.remove();
+    } catch (_) {}
+    return zoomReaches;
+  }
 
   const resolve = url => url.split('{host}').join(location.hostname);
   function save() {
@@ -76,6 +94,7 @@ const WebCards = (() => {
       zoomBtn.style.display = state.url ? '' : 'none';
       zoomBtn.textContent = z + '%';
       body.classList.toggle('zoomed', z !== 100);
+      body.classList.toggle('zoom-css', z !== 100 && zoomReachesPage());
       body.style.setProperty('--wz', String(z / 100));
       q('.web-hint').hidden = !state.url;
       if (c.editing && !iHoldControl) c.editing = false;
