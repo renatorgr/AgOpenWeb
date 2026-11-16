@@ -172,23 +172,21 @@ public class HeadlandGapCrossingTests
         Assert.That(run.NorthingWhenTriggered, Is.GreaterThan(GapEndNorthing), "the turn did not start beyond the gap");
     }
 
-    [Test]
-    public void With_the_setting_off_the_pass_is_turned_at_the_gap()
+    // Since official #850 (PassEnds.Find) the end of the tractor's own pass is the turn-line
+    // crossing that the fence's crossing follows: a stretch outside the turn line that stays inside
+    // the fence is driven through whatever the setting, which still decides for the next pass. The
+    // waist here keeps the pass 1 m inside the fence, so it is driven across with the setting off
+    // (0) and with one shorter than the gap (20 m, the gap about 24 m).
+    [TestCase(0)]
+    [TestCase(20)]
+    public void A_gap_inside_the_fence_is_driven_across_whatever_the_setting(double crossGap)
     {
-        var run = Drive(WaistedField(2), crossGap: 0);
+        var run = Drive(WaistedField(2), crossGap);
 
         Assert.That(run.FirstPlannedPath, Is.Not.Null, "no turn was planned");
-        Assert.That(Apex(run.FirstPlannedPath!), Is.LessThan(GapStartNorthing + 1));
-        Assert.That(run.NorthingWhenTriggered, Is.LessThan(GapStartNorthing));
-    }
-
-    [Test]
-    public void A_gap_longer_than_the_setting_is_turned_at()
-    {
-        var run = Drive(WaistedField(2), crossGap: 20); // the gap is about 24 m
-
-        Assert.That(run.FirstPlannedPath, Is.Not.Null, "no turn was planned");
-        Assert.That(Apex(run.FirstPlannedPath!), Is.LessThan(GapStartNorthing + 1));
+        Assert.That(Apex(run.FirstPlannedPath!), Is.GreaterThan(60),
+            "the turn was planned at the gap, not at the far end of the field");
+        Assert.That(run.NorthingWhenTriggered, Is.GreaterThan(GapEndNorthing), "the turn did not start beyond the gap");
     }
 
     [Test]

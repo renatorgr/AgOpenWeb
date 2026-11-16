@@ -12,11 +12,10 @@ using TrackModel = AgOpenWeb.Models.Track.Track;
 namespace AgOpenWeb.Models.Tests;
 
 /// <summary>
-/// AgOpenGPS's A+ line keeps B about 1 m from A. Read as it was, an offset pass of it left out B
-/// (within 1 m of A) and had one point: no pass to steer anywhere but on the line itself (the beta
-/// robot on Couto da Ribeira: A and B 0.96 m apart, AutoSteer held the wheels straight through the
-/// hard fence). Such a line is read with B 100 m out along it, A and the heading as they were.
-/// Fork only.
+/// AgOpenGPS's A+ line puts B 1 m from A (FormQuickAB.btnAPlus_Click). Read as it was, an offset pass
+/// of it left out B (within 1 m of A) and had one point: no pass to steer anywhere but on the line
+/// itself (a tester's field: A and B 0.96 m apart, AutoSteer held the wheels straight). Such a line is
+/// read with B 100 m out along it, A and the heading as they were.
 /// </summary>
 [TestFixture]
 public class ShortABLineTests
@@ -24,8 +23,8 @@ public class ShortABLineTests
     private static double Deg(double rad) => (rad * 180.0 / Math.PI + 360.0) % 360.0;
     private static double Rad(double deg) => deg * Math.PI / 180.0;
 
-    // Couto da Ribeira's line, as the field file has it: 0.961 m from A at 301.01°, its own heading 300.91°.
-    private static List<Vec3> Couto(double storedHeading) => new()
+    // The tester's line, as the field file has it: 0.961 m from A at 301.01°, its own heading 300.91°.
+    private static List<Vec3> TestersLine(double storedHeading) => new()
     {
         new Vec3(-239.30, 53.00, storedHeading),
         new Vec3(-239.30 + Math.Sin(Rad(301.013)) * 0.961, 53.00 + Math.Cos(Rad(301.013)) * 0.961, storedHeading),
@@ -35,14 +34,14 @@ public class ShortABLineTests
     public void A_1_m_line_offsets_to_no_pass()
     {
         // What went wrong: the pass 300 m over has one point.
-        var pass = CurveProcessing.CurvePass(Couto(Rad(300.913)), 300.0);
+        var pass = CurveProcessing.CurvePass(TestersLine(Rad(300.913)), 300.0);
         Assert.That(pass.Points.Count, Is.LessThan(2));
     }
 
     [Test]
     public void A_short_line_gets_B_100_m_out_along_its_own_heading()
     {
-        var line = TrackModel.LengthenShortABLine(Couto(Rad(300.913)), Rad(300.913));
+        var line = TrackModel.LengthenShortABLine(TestersLine(Rad(300.913)), Rad(300.913));
         var a = line[0];
         var b = line[1];
         Assert.Multiple(() =>
@@ -62,7 +61,7 @@ public class ShortABLineTests
     [Test]
     public void A_heading_that_does_not_agree_with_A_to_B_is_not_used()
     {
-        var line = TrackModel.LengthenShortABLine(Couto(0), heading: 0);
+        var line = TrackModel.LengthenShortABLine(TestersLine(0), heading: 0);
         Assert.That(Deg(Math.Atan2(line[1].Easting - line[0].Easting, line[1].Northing - line[0].Northing)),
             Is.EqualTo(301.013).Within(1e-6), "A to B, a stored heading 59° off it is not the line's");
     }
@@ -70,7 +69,7 @@ public class ShortABLineTests
     [Test]
     public void No_heading_takes_A_to_B()
     {
-        var line = TrackModel.LengthenShortABLine(Couto(0));
+        var line = TrackModel.LengthenShortABLine(TestersLine(0));
         Assert.That(GeometryMath.Distance(line[0], line[1]), Is.EqualTo(TrackModel.ShortABLineNewLength).Within(1e-9));
         Assert.That(Deg(line[0].Heading), Is.EqualTo(301.013).Within(1e-6));
     }

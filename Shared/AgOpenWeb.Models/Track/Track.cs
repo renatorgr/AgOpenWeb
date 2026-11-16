@@ -208,14 +208,15 @@ public class Track : INotifyPropertyChanged
     /// <summary>
     /// An AB line's two points, B moved to <see cref="ShortABLineNewLength"/> from A along the line
     /// when they are closer than <see cref="MinABLineLength"/>: the same line, A and its heading as they
-    /// were. AgOpenGPS's A+ line keeps B about 1 m from A (it runs every line on past its points), and
-    /// read as it was, AgOpenWeb had no pass on it but the line itself: an offset pass leaves out a
-    /// point within 1 m of the one before (<see cref="Guidance.CurveProcessing.CreateOffsetCurveWithInfo"/>),
-    /// so pass after pass had one point and nothing to steer (the beta robot on Couto da Ribeira, a line
+    /// were. AgOpenGPS's A+ line puts B 1 m from A along the heading (FormQuickAB.btnAPlus_Click; 200 m
+    /// when the heading is typed in), and read as it was, AgOpenWeb had no pass on it but the line
+    /// itself: an offset pass leaves out a point within 1 m of the one before
+    /// (<see cref="Guidance.CurveProcessing.CreateOffsetCurveWithInfo"/>), so pass after pass had one
+    /// point and nothing to steer, and AutoSteer held the wheels straight (a tester's field, a line
     /// brought from AgOpenGPS with A and B 0.96 m apart). <paramref name="heading"/> (radians) is the
     /// line's own, from the file, when it has one: over 1 m the points' rounding turns the line a tenth
     /// of a degree, half a metre 300 m away. It is used only within 5° of A to B, else A to B is.
-    /// Any other list (a curve, A and B on one spot) is returned as it is. Fork only.
+    /// Any other list (a curve, A and B on one spot) is returned as it is.
     /// </summary>
     public static List<Vec3> LengthenShortABLine(List<Vec3> points, double? heading = null)
     {
