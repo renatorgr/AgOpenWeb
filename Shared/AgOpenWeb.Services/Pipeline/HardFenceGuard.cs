@@ -49,6 +49,14 @@ public static class HardFenceGuard
     public static double HeadingOut(BoundaryPolygon outer, Vec3 toolCentre, double toolHeading, double reach, double lookAhead)
         => HeadingOut(outer, toolCentre, toolHeading, reach, lookAhead, default, 0);
 
+    /// <summary>
+    /// How far <paramref name="point"/> lies ahead of (<paramref name="easting"/>, <paramref name="northing"/>)
+    /// along <paramref name="heading"/> (radians, 0 = north); negative behind. The look-ahead stops at the
+    /// start of a U-turn planned ahead, which keeps the implement off the fence from there.
+    /// </summary>
+    public static double AheadOf(Vec3 point, double easting, double northing, double heading)
+        => (point.Easting - easting) * Math.Sin(heading) + (point.Northing - northing) * Math.Cos(heading);
+
     /// <summary>Below this curvature (1/m: a radius over 10 km) the tractor is going straight.</summary>
     private const double Straight = 1e-4;
 
