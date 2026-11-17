@@ -114,6 +114,29 @@ public class GoAroundPassesTests
     }
 
     [Test]
+    public void A_trailed_implement_gets_its_cut_in_added_to_the_margin()
+    {
+        // Pass 12 bends west round the tree. Trailed on a 3.5 m drawbar the implement settles
+        // inside a 6 m curve, the tree's side, so the bend keeps that much further off.
+        double Westmost(bool trailed)
+        {
+            var (passes, field, track) = Setup();
+            var c = ConfigurationStore.Instance;
+            c.Vehicle.HitchLength = -1.8;
+            c.Tool.TrailingHitchLength = -3.5;
+            c.Tool.TrailingToolToPivotLength = 0;
+            c.Tool.SetToolType(trailed ? "trailing" : "rear");
+            var (dist, pass) = PassOf(track, 12);
+            return passes.For(track, dist, pass, field.Boundary)!.Points.Min(p => p.Easting);
+        }
+
+        double withRear = Westmost(trailed: false), withTrailed = Westmost(trailed: true);
+        double cutIn = ObstacleDetour.TrailedCutIn(ConfigurationStore.Instance.Tool, 1.8, 6.0);
+        Assert.That(cutIn, Is.EqualTo(0.80).Within(0.01), "sqrt(36 + 3.24 - 12.25) = 5.195 from the centre");
+        Assert.That(withRear - withTrailed, Is.EqualTo(cutIn).Within(0.1));
+    }
+
+    [Test]
     public void The_two_passes_beside_the_tree_bend_away_from_each_other()
     {
         var (passes, field, track) = Setup();
