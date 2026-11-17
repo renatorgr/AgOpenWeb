@@ -408,6 +408,15 @@ public class TuneSteeringStepViewModel : SwitchGatedWizardStep
             PhaseResult = "Too fast: slow down to walking pace, then press Start.";
             return;
         }
+        // A turn sensor that trips at 0 counts lets go at once (the module trips at count >= the
+        // setting), so the module never holds the wheels: say so, not "the steer switch is off".
+        if (Config.TurnSensorEnabled && Config.TurnSensorCounts <= 0)
+        {
+            Stage = TuneStage.Idle;
+            PhaseResult = "The turn sensor is set to trip at 0 counts, so the module lets go of the wheels at once. " +
+                          "Set its counts (Speed and Sensors, two steps on), then press Start.";
+            return;
+        }
 
         _stopKind = StopKindFor(Config);
         _screenStop = false;
@@ -523,7 +532,17 @@ public class TuneSteeringStepViewModel : SwitchGatedWizardStep
 
             var (max, speed, maxNote) = await MeasureMaxLimitAsync(lower, token);
             if (maxNote.Length > 0) notes.Add(maxNote);
+            int measuredMax = max;
             max = Math.Clamp(Math.Max(max, (int)Math.Ceiling(min * 1.3) + 5), 50, 255);
+            if (max > measuredMax)
+            {
+                // Raised to the lowest Max Limit the module takes, or clear of Minimum To Move: the
+                // wheels turn faster than wanted, so the speed shown is the one at that PWM.
+                speed = Math.Max(speed, SteerTuneMath.SpeedAtPwm(_maxLevels, max, lower));
+                if (speed > TargetWheelSpeed + 1)
+                    notes.Add(string.Create(Inv,
+                        $"Max Limit {max} is the lowest that works here (50 at least, and well above Minimum To Move): the wheels turn about {speed:F0}°/s, faster than the {TargetWheelSpeed:F0}°/s wanted."));
+            }
 
             var (kp, check, gainNote) = await FindGainAsync(min, max, token);
             if (gainNote.Length > 0) notes.Add(gainNote);
@@ -805,10 +824,13 @@ public class TuneSteeringStepViewModel : SwitchGatedWizardStep
 
     // ============================================================ part 2: Max Limit
 
+    /// <summary>The PWM levels the last Max Limit measurement ran, with the wheel speed at each.</summary>
+    private List<(int Pwm, double Speed)> _maxLevels = new();
+
     private async Task<(int MaxPwm, double Speed, string Note)> MeasureMaxLimitAsync(int startsMovingPwm, CancellationToken token)
     {
         double wanted = TargetWheelSpeed;
-        var levels = new List<(int Pwm, double Speed)>();
+        var levels = _maxLevels = new List<(int Pwm, double Speed)>();
         int pwm = Math.Clamp((int)Math.Round(startsMovingPwm * 1.6), 50, 255);
         while (true)
         {

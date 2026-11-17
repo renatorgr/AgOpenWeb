@@ -1322,8 +1322,8 @@ public sealed class YouTurnPathingService
         Func<double, double, (double From, double To)> distances;
         if (track.Points.Count > 2)
         {
-            var from = CurveProcessing.CreateOffsetCurve(track.Points, uFrom);
-            var to = CurveProcessing.CreateOffsetCurve(track.Points, uTo);
+            var from = CurveProcessing.CreateOffsetCurveWithInfo(track.Points, uFrom, track.IsClosed).Points;
+            var to = CurveProcessing.CreateOffsetCurveWithInfo(track.Points, uTo, track.IsClosed).Points;
             if (from.Count < 2 || to.Count < 2) return 0;
             distances = (e, n) => (DistanceToLine(from, e, n), DistanceToLine(to, e, n));
         }

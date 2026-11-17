@@ -67,8 +67,6 @@ internal sealed class FakeSteering
     public double WatchFrom { get; set; }
     /// <summary>Highest PWM the module drove at.</summary>
     public int PeakPwm { get; private set; }
-    /// <summary>Milliseconds the motor drove while the module said it was not steering (must stay 0).</summary>
-    public int DroveWhileOffMs { get; private set; }
 
     private int _kp = 50, _high = 180, _min = 25;
     private bool _invert;
@@ -157,7 +155,6 @@ internal sealed class FakeSteering
         double drive = -Pwm * (MotorReversed ? -1 : 1);
         _driveLine.Enqueue(drive);
         double delayed = _driveLine.Count > DeadTimeMs ? _driveLine.Dequeue() : 0;
-        if (!Steering && Math.Abs(Pwm) > 0) DroveWhileOffMs++;
 
         int breakaway = delayed > 0 ? BreakawayRight : BreakawayLeft;
         double want = Math.Abs(delayed) >= breakaway

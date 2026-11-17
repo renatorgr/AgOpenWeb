@@ -46,6 +46,22 @@ public class SteerSettingsLogTests
     }
 
     [Test]
+    public void The_rest_of_PGN_251_is_written()
+    {
+        var (store, lines) = Watched();
+        store.AutoSteer.InvertRelays = !store.AutoSteer.InvertRelays;
+        store.AutoSteer.ImuAxisSwap = store.AutoSteer.ImuAxisSwap == 1 ? 0 : 1;
+        store.AutoSteer.MinSteerSpeed = store.AutoSteer.MinSteerSpeed + 1;
+        Assert.That(lines, Has.Count.EqualTo(3));
+        Assert.Multiple(() =>
+        {
+            Assert.That(lines[0], Does.StartWith("InvertRelays "));
+            Assert.That(lines[1], Does.StartWith("ImuAxisSwap "));
+            Assert.That(lines[2], Does.StartWith("MinSteerSpeed "));
+        });
+    }
+
+    [Test]
     public void A_value_set_to_what_it_was_and_other_settings_write_nothing()
     {
         var (store, lines) = Watched();
