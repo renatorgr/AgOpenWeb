@@ -89,7 +89,9 @@ public record GuidanceSnapshot
     public IReadOnlyList<IReadOnlyList<Base.Vec3>>? GuideLines { get; init; }
 
     /// <summary>The centre of the pass shown, where the tool runs (no tool shift); the map draws
-    /// the tool's width along it. The same list until the pass changes; null with no track.</summary>
+    /// the tool's width along it. The same list until the pass changes, or, on a closed track's
+    /// pass that does not fit everywhere, until the tractor is nearer another stretch that fits;
+    /// null with no track.</summary>
     public IReadOnlyList<Base.Vec3>? ToolPass { get; init; }
 
     // ── Cycle-only U-turn pure-pursuit diagnostics ────────────────────────

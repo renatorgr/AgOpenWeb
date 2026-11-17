@@ -195,6 +195,21 @@ public class GuidanceConfig : ObservableObject
 
     public const double DefaultLineEntryStraight = 3.0;
 
+    // The ranges the settings page keeps these to, kept when a profile is read too: a profile
+    // written by hand with a huge straight or bend radius held up the GPS cycle (the way onto the
+    // pass and the bend round an obstacle are built a point every 0.25 m).
+    public const double MaxLineEntryStraight = 50.0;
+    public const double MinGoAroundRadius = 1.0, MaxGoAroundRadius = 50.0;
+    public const double MinGoAroundMargin = 0.3, MaxGoAroundMargin = 10.0;
+
+    /// <summary>
+    /// A value read from a profile, kept to its range. One that is no number (NaN or an infinity:
+    /// the profile files may hold them, and <see cref="Math.Clamp(double, double, double)"/> lets
+    /// NaN through) is read as <paramref name="fallback"/>.
+    /// </summary>
+    public static double InRange(double value, double fallback, double min, double max)
+        => double.IsFinite(value) ? Math.Clamp(value, min, max) : fallback;
+
     // Sagitta (offset-semicircle) by default — matches Twol, which dropped Dubins
     // for U-turns because the shortest-path solution loops ("np" shape) whenever the
     // next row is closer than 2× the turn radius. SagittaStyle == 0, so profiles

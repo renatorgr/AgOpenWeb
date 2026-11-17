@@ -107,7 +107,61 @@ public class ObstacleUTurnTests
 
         Assert.That(result.Path, Is.Not.Null.And.Count.GreaterThan(10));
         Assert.That(result.AtObstacle, Is.True);
-        Assert.That(result.Path!.Min(p => p.Northing), Is.GreaterThanOrEqualTo(ObstacleNorth + Distance - 0.2));
+        double near = result.Path!.Min(p => p.Northing);
+        Assert.That(near, Is.GreaterThanOrEqualTo(ObstacleNorth + Distance - 0.2));
+        Assert.That(near, Is.LessThan(ObstacleNorth + 10), "at the obstacle, not somewhere short of it");
+    }
+
+    [Test]
+    public void AnObstacleWhoseTurnLineCannotBeGrown_IsStillTurnedAt()
+    {
+        // The outward offset gives up on the outline: the obstacle had no turn line at all, and
+        // the pass ran on through it. The box round it, grown by the same distance, is the turn
+        // line then, so the clearance holds.
+        var real = new PolygonOffsetService();
+        var offsets = NSubstitute.Substitute.For<IPolygonOffsetService>();
+        NSubstitute.SubstituteExtensions.ReturnsForAnyArgs(offsets.CreateOutwardOffset(default!, default), (List<Vec2>?)null);
+        NSubstitute.SubstituteExtensions.ReturnsForAnyArgs(offsets.CreateInwardOffset(default!, default),
+            ci => real.CreateInwardOffset(ci.ArgAt<List<Vec2>>(0), ci.ArgAt<double>(1), ci.ArgAt<OffsetJoinType>(2)));
+        NSubstitute.SubstituteExtensions.ReturnsForAnyArgs(offsets.CalculatePointHeadings(default!),
+            ci => real.CalculatePointHeadings(ci.ArgAt<List<Vec2>>(0)));
+        var creation = new YouTurnCreationService(
+            NullLogger<YouTurnCreationService>.Instance, offsets, ConfigurationStore.Instance);
+
+        Assert.That(creation.TurnObstacleAhead(Field(ObstacleAction.Turn), 3, 0, heading: 0, distance: 45), Is.EqualTo(0),
+            "the obstacle 40 m ahead is seen");
+        Assert.That(creation.TurnObstacleAhead(Field(ObstacleAction.Turn), 3, 0, heading: 0, distance: ObstacleSouth - Distance + 0.5),
+            Is.EqualTo(0), "from the U-turn distance before it, as a grown turn line");
+        Assert.That(creation.TurnObstacleAhead(Field(ObstacleAction.Turn), 3, 0, heading: 0, distance: ObstacleSouth - Distance - 1),
+            Is.EqualTo(-1), "and no further out than that");
+
+        // A hard obstacle keeps the implement's reach more (3 m, half the 6 m implement).
+        Assert.That(creation.TurnObstacleAhead(Field(ObstacleAction.Turn, hard: true), 3, 0, heading: 0,
+            distance: ObstacleSouth - Distance - 3 + 0.5), Is.EqualTo(0), "a hard obstacle's reach is kept too");
+    }
+
+    [Test]
+    public void TheBoxRoundAnOutline_KeepsTheDistanceAndGoesRoundTheSameWay()
+    {
+        // A sliver with no area the offset can grow: three points in a line.
+        var sliver = new List<Vec2> { new(0, 0), new(10, 0), new(5, 0) };
+        var box = YouTurnCreationService.GrownBox(sliver, 2);
+        Assert.Multiple(() =>
+        {
+            Assert.That(box.Min(p => p.Easting), Is.EqualTo(-2).Within(1e-9));
+            Assert.That(box.Max(p => p.Easting), Is.EqualTo(12).Within(1e-9));
+            Assert.That(box.Min(p => p.Northing), Is.EqualTo(-2).Within(1e-9));
+            Assert.That(box.Max(p => p.Northing), Is.EqualTo(2).Within(1e-9));
+            for (int i = 0; i < box.Count; i++)
+                Assert.That(GeometryMath.Distance(box[i], box[(i + 1) % box.Count]), Is.LessThanOrEqualTo(2.0 + 1e-9), "a point every 2 m");
+        });
+
+        double Area(List<Vec2> ring) => Enumerable.Range(0, ring.Count)
+            .Sum(i => ring[i].Easting * ring[(i + 1) % ring.Count].Northing - ring[(i + 1) % ring.Count].Easting * ring[i].Northing);
+        var clockwise = new List<Vec2> { new(0, 0), new(0, 10), new(10, 10), new(10, 0) };
+        Assert.That(Area(YouTurnCreationService.GrownBox(clockwise, 1)), Is.LessThan(0), "clockwise as the outline");
+        clockwise.Reverse();
+        Assert.That(Area(YouTurnCreationService.GrownBox(clockwise, 1)), Is.GreaterThan(0), "and the other way");
     }
 
     [Test]

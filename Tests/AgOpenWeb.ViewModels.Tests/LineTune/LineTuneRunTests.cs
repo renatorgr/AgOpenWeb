@@ -289,6 +289,87 @@ public class LineTuneRunTests
     }
 
     [Test]
+    public void A_hand_nudge_in_the_cycle_of_the_runs_own_move_stops_the_run_and_is_kept()
+    {
+        // The operator nudges 5 cm left in the very cycle the run's 30 cm move shows: the line is
+        // at 25 cm, neither where it was nor where the run expects it. Taken as the run's own move
+        // still on its way, a value tried steered on for 1.5 s on a line the operator had moved.
+        var sim = new LineTuneSim();
+        Settle(sim, 10);
+        var run = NewRun(sim);
+        run.Start();
+        bool nudged = false;
+        double stoppedAt = double.NaN, askedAt = double.NaN;
+        Drive(sim, run, 30, each: t =>
+        {
+            if (!nudged && sim.NudgeCalls == 1) { nudged = true; askedAt = t; sim.HandNudge(-0.05); }
+        }, after: s => { if (!run.Active && double.IsNaN(stoppedAt)) stoppedAt = s.TimeS; });
+        Assert.That(nudged, Is.True);
+        Assert.That(run.Stage, Is.EqualTo(LineTuneStage.Stopped));
+        Assert.That(run.ResultText, Does.Contain("moved by hand"));
+        Assert.That(stoppedAt - askedAt, Is.LessThan(0.3), "in the cycle it shows, not after the 1.5 s wait");
+        AssertLeftAsFound(sim, homeNudge: -0.05);
+    }
+
+    [Test]
+    public void A_move_that_never_shows_is_not_moved_back()
+    {
+        // The nudge reset in the cycle of the run's move: the line stays where it was, and the
+        // move is not on it. After the 1.5 s wait the run moved "back" a move that was never
+        // there, 30 cm the other way.
+        var sim = new LineTuneSim();
+        Settle(sim, 10);
+        var run = NewRun(sim);
+        run.Start();
+        bool undone = false;
+        double least = 0;
+        Drive(sim, run, 12, each: t =>
+        {
+            if (!undone && sim.NudgeCalls == 1) { undone = true; sim.HandNudge(-LineTuneRun.StepM); }
+        }, after: s => least = Math.Min(least, s.NudgeOffset));
+        Assert.That(undone, Is.True);
+        Assert.That(least, Is.GreaterThan(-0.01), "the line was never moved the other way");
+    }
+
+    [Test]
+    public void Another_track_chosen_during_a_move_stops_the_run_without_moving_that_track()
+    {
+        var sim = new LineTuneSim();
+        Settle(sim, 10);
+        var run = NewRun(sim);
+        run.Start();
+        Drive(sim, run, 4.5);
+        Assert.That(run.Stage, Is.EqualTo(LineTuneStage.Measuring));
+        Assert.That(sim.NudgeOffset, Is.EqualTo(LineTuneRun.StepM).Within(1e-9), "the scenario: the run's move is on the line");
+        // Another track, with a nudge of its own: the run's move is not in it.
+        sim.Track = new object();
+        sim.NudgeOffset = 0.12;
+        Drive(sim, run, 2);
+        Assert.That(run.Stage, Is.EqualTo(LineTuneStage.Stopped));
+        Assert.That(sim.Override, Is.Null);
+        Settle(sim, 2);
+        Assert.That(sim.NudgeOffset, Is.EqualTo(0.12).Within(1e-9), "the new track keeps its own nudge");
+    }
+
+    [Test]
+    public void The_calm_value_after_a_cut_is_never_quicker_than_the_operators_own([Values(0.2, 0.25, 0.3, 0.8)] double own)
+    {
+        // Stanley with the operator's Aggressiveness under the calm value's floor of 0.3: the floor
+        // made the "calm" value (0.3) quicker than the operator's own.
+        var sim = new LineTuneSim { Stanley = true, StanleyDist = own };
+        var run = NewRun(sim);
+        foreach (double cut in new[] { 0.4, 1.0, 4.0 })
+        {
+            var calm = run.RescueFor(new LineTuneLevel
+            {
+                Gains = new GuidanceGainsOverride(sim.Hold, cut, sim.StanleyHead), Value = cut, Failure = "swung",
+            });
+            Assert.That(calm.StanleyDistanceGain, Is.LessThanOrEqualTo(own), $"own {own}, cut {cut}");
+            Assert.That(calm.StanleyDistanceGain, Is.LessThan(cut), $"own {own}, cut {cut}: calmer than the one that swung");
+        }
+    }
+
+    [Test]
     public void A_snap_to_the_next_pass_stops_the_run_without_moving_that_line()
     {
         var sim = new LineTuneSim();
