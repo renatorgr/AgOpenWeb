@@ -665,19 +665,34 @@ const SPRAYER_ALARMS = [ // SprayerAlarms bits, in order
 // The module's target rate (L/ha) is only shown: the valves are on / off and the pressure is
 // set by hand. The actual rate is green within SPRAYER_RATE_TOLERANCE of it, orange outside.
 const SPRAYER_RATE_TOLERANCE = 0.10;
-// Each section: what the app asks (the section's relay bit: manual on, auto on, turning
-// off) against what the module reports open. A small square per section in the section
-// buttons' colours: green open, red closed, orange asked on but still closed, cyan asked
-// off but still open. The module answers once a second, so the line naming a section it
-// doesn't follow only shows once the difference has lasted SPRAYER_SECTION_LAG_MS.
+// Each section: what the app asks (the section's relay bit) against what the module reports
+// open. A small square per section in the section buttons' colours: green open, red closed,
+// orange asked on but still closed, cyan asked off but still open. The module answers once a
+// second, so the line naming a section it doesn't follow only shows once the difference has
+// lasted SPRAYER_SECTION_LAG_MS.
+// The relay bit is SectionControlService.IsCommandedOn: on by hand (1), auto on (2), and from
+// the first moment of an on request (4, turning on: the look-ahead asks the valve early); off
+// from the first moment of an off request (3, turning off) when look-ahead off is set, and
+// still on through it when it is 0 (the turn-off delay, which the valve follows).
+// With nothing to compare (no tick yet, or the module silent: "No data") the squares are grey
+// and no section is named: the last sections a silent module reported are not its state now.
 const SPRAYER_SECTION_LAG_MS = 2000;
+const SPRAYER_NO_DATA = 32; // SprayerAlarms.NoData
 const sprayerDiffSince = []; // per section: when the two started to differ (0 = they agree)
+function sprayerSectionAsked(code, earlyOff) {
+  return code === 1 || code === 2 || code === 4 || (code === 3 && !earlyOff);
+}
 function sprayerSections(sp, n) {
   const asked = tick && tick.sections, now = performance.now();
   const states = [], notOpened = [], notClosed = [];
+  if (!asked || (sp.alarms & SPRAYER_NO_DATA)) {
+    sprayerDiffSince.length = 0;
+    for (let i = 0; i < n; i++) states.push('');
+    return { states, warn: [] };
+  }
+  const earlyOff = !!(config && config.tool && config.tool.lookAheadOff > 0);
   for (let i = 0; i < n; i++) {
-    const code = asked ? asked[i] : 0;
-    const on = code === 1 || code === 2 || code === 3, open = ((sp.sections >> i) & 1) === 1;
+    const on = sprayerSectionAsked(asked[i], earlyOff), open = ((sp.sections >> i) & 1) === 1;
     states.push(on ? (open ? 's-on' : 's-goingon') : (open ? 's-goingoff' : 's-off'));
     if (on === open) { sprayerDiffSince[i] = 0; continue; }
     if (!sprayerDiffSince[i]) sprayerDiffSince[i] = now;
@@ -714,6 +729,7 @@ function renderSprayerBar() {
   const n = Math.max(1, Math.min(8, (config && config.tool && config.tool.numSections) || 5));
   if (+sprayerBar.dataset.n !== n) {
     sprayerBar.dataset.n = n;
+    sprayerDiffSince.length = 0; // other sections now: a difference being timed was the old ones'
     sprayerBar.innerHTML = '<div class="spr-row"><span class="spr-val" translate="no"></span><div class="spr-cells"></div></div>'
       + '<div class="spr-row"><span class="spr-note"></span></div><div class="spr-warn"></div><div class="spr-msg"></div>';
     const val = sprayerBar.querySelector('.spr-val'); // value + unit pairs; units are symbols, not text

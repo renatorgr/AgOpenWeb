@@ -1098,7 +1098,7 @@ own, as with the rate controllers above. Little-endian.
 
 With PGN 160 alone (an older module program) the strip shows the pressure, the flow, the
 litres and the sections, without a rate or alarms. No message for 3 s shows "No data from the
-sprayer".
+sprayer" and sounds the alarm once.
 
 ### Process data: the module's rate, target and alarms
 
