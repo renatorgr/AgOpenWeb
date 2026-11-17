@@ -194,13 +194,23 @@ public class YouTurnTrackSwitchTests
         {
             Assert.That(turn.SnakeSequence, Is.Null, "the order for the old spacing");
             Assert.That(turn.SnakeIndex, Is.EqualTo(-1));
+            Assert.That(turn.TurnPath, Is.Null, "the turn planned onto the old pass");
+            Assert.That(turn.ReturnPassTargetPath, Is.Null);
         });
 
-        // The same width again: nothing forgotten.
-        turn.SnakeSequence = new List<int> { 0, -1, 1 };
-        turn.SnakeIndex = 0;
+        // The same width again: nothing forgotten, the same order where it had got to.
+        var order = new List<int> { 0, -1, 1 };
+        var planned = new List<Vec3> { new(3, 40, 0), new(0, 50, 0), new(-3, 40, Math.PI) };
+        turn.SnakeSequence = order;
+        turn.SnakeIndex = 1;
+        turn.TurnPath = planned;
         _gpsService.UpdateGpsData(ValidFix());
-        Assert.That(turn.SnakeSequence, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.SnakeSequence, Is.SameAs(order));
+            Assert.That(turn.SnakeIndex, Is.EqualTo(1));
+            Assert.That(turn.TurnPath, Is.SameAs(planned));
+        });
     }
 
     [Test]

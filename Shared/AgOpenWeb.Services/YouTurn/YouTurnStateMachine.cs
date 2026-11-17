@@ -1060,11 +1060,13 @@ public sealed class YouTurnStateMachine
     /// <summary>
     /// The active track's line moved (same track, new points: Reference Line Nudge, an end trimmed):
     /// pass N is another strip of ground, so the snake order and everything remembered about each
-    /// pass (worked on the map, open at this end, an end with no turn) go. A turn being driven is
-    /// left alone. Fork only.
+    /// pass (worked on the map, open at this end, an end with no turn) go, and a turn planned but
+    /// not yet driven with them: it leaves the old line and lands where the old pass was, so it is
+    /// planned again. A turn being driven is left alone. Fork only.
     /// </summary>
     public void ForgetPassStatus(YouTurnWorkingState turn)
     {
+        if (!turn.IsExecuting && (turn.TurnPath != null || turn.NextTrack != null)) DiscardPlannedTurn(turn);
         turn.SnakeSequence = null;
         turn.SnakeIndex = -1;
         _coveredPasses.Clear();

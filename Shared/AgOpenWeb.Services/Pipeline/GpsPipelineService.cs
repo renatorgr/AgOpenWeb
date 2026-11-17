@@ -843,8 +843,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
             // The same track with its line moved (Reference Line Nudge, a trimmed end), or with
             // its passes laid at another spacing (the implement's width or the overlap changed):
             // pass N is another strip of ground now, so what was found out about each pass (worked,
-            // open at this end, an end with no turn) and the snake order go. Kept, the snake turned
-            // past the clean passes of the moved line (Tapada da Casa). Fork only.
+            // open at this end, an end with no turn) and the snake order go, and a turn planned but
+            // not yet driven is planned again. Kept, the snake turned past the clean passes of the
+            // moved line (Tapada da Casa). Fork only.
             _youTurnTrackPoints = track?.Points;
             _youTurnPassSpacing = passSpacing;
             _youTurnStateMachine.ForgetPassStatus(_youTurn);

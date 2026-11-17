@@ -99,9 +99,11 @@ public partial class YouTurnCreationService
             if (line == null || line.Count < 3)
             {
                 if (off <= 0.1) continue; // shrunk away: nothing left to turn at
-                // Could not be grown (an outline the offset gives up on): the obstacle itself is the
-                // turn line. Left out, the pass ran on through it with no turn and no alarm.
-                line = fence;
+                // Could not be grown (an outline the offset gives up on: no area, crossing itself):
+                // the box round it, grown by the same distance, is the turn line. Never nearer the
+                // obstacle than the line asked for, so the clearance holds. Left out, the pass ran
+                // on through the obstacle with no turn and no alarm.
+                line = GrownBox(fence, off);
             }
 
             var withHeadings = _polygonOffsetService.CalculatePointHeadings(line);
@@ -197,6 +199,36 @@ public partial class YouTurnCreationService
                 if (obstacles[k].Area.Contains(point.Easting, point.Northing)) return k + 1;
             return 0;
         };
+    }
+
+    /// <summary>
+    /// The box round <paramref name="outline"/> grown by <paramref name="grow"/> metres, a point at
+    /// least every 2 m as a turn line has them, going round the way the outline does.
+    /// </summary>
+    internal static List<Vec2> GrownBox(IReadOnlyList<Vec2> outline, double grow)
+    {
+        double minE = double.MaxValue, minN = double.MaxValue, maxE = double.MinValue, maxN = double.MinValue, twiceArea = 0;
+        for (int i = 0; i < outline.Count; i++)
+        {
+            var p = outline[i];
+            var q = outline[(i + 1) % outline.Count];
+            minE = Math.Min(minE, p.Easting); maxE = Math.Max(maxE, p.Easting);
+            minN = Math.Min(minN, p.Northing); maxN = Math.Max(maxN, p.Northing);
+            twiceArea += p.Easting * q.Northing - q.Easting * p.Northing;
+        }
+        minE -= grow; minN -= grow; maxE += grow; maxN += grow;
+        var corners = new List<Vec2> { new(minE, minN), new(maxE, minN), new(maxE, maxN), new(minE, maxN) };
+        if (twiceArea < 0) corners.Reverse(); // clockwise, as the outline
+        var box = new List<Vec2>();
+        for (int i = 0; i < corners.Count; i++)
+        {
+            var a = corners[i];
+            var b = corners[(i + 1) % corners.Count];
+            int steps = Math.Max(1, (int)Math.Ceiling(GeometryMath.Distance(a, b) / 2.0));
+            for (int k = 0; k < steps; k++)
+                box.Add(new Vec2(a.Easting + (b.Easting - a.Easting) * k / steps, a.Northing + (b.Northing - a.Northing) * k / steps));
+        }
+        return box;
     }
 
     /// <summary>
