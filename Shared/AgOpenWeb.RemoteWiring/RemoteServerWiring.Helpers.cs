@@ -192,7 +192,7 @@ public static partial class RemoteServerWiring
             case "tool.pivotSide": // behind(+)/ahead(-)/zero
                 tool.TrailingToolToPivotLength = val == "zero" ? 0 : val == "ahead" ? -System.Math.Abs(tool.TrailingToolToPivotLength == 0 ? 0.5 : tool.TrailingToolToPivotLength) : System.Math.Abs(tool.TrailingToolToPivotLength == 0 ? 0.5 : tool.TrailingToolToPivotLength);
                 return;
-            case "tool.sectionWidth": if (IDX(out var swi, out var swv) && double.TryParse(swv, System.Globalization.NumberStyles.Float, inv, out var swd)) tool.SetSectionWidth(swi, swd); return;
+            case "tool.sectionWidth": if (IDX(out var swi, out var swv) && double.TryParse(swv, System.Globalization.NumberStyles.Float, inv, out var swd) && double.IsFinite(swd)) tool.SetSectionWidth(swi, swd); return;
             case "tool.zoneEnd": if (IDX(out var zei, out var zev) && int.TryParse(zev, out var zen)) tool.SetZoneEndSection(zei, zen); return;
             case "tool.sectionColor": if (IDX(out var sci, out var sch) && uint.TryParse(sch, System.Globalization.NumberStyles.HexNumber, inv, out var scc)) tool.SetSectionColor(sci, scc); return;
             case "tool.singleCoverageColor": if (uint.TryParse(val, System.Globalization.NumberStyles.HexNumber, inv, out var scov)) tool.SingleCoverageColor = scov; return;
@@ -338,7 +338,7 @@ public static partial class RemoteServerWiring
         object? conv = null;
         try
         {
-            if (t == typeof(double)) { if (double.TryParse(val, System.Globalization.NumberStyles.Float, inv, out var d)) conv = d; }
+            if (t == typeof(double)) { if (double.TryParse(val, System.Globalization.NumberStyles.Float, inv, out var d) && double.IsFinite(d)) conv = d; }
             else if (t == typeof(int)) { if (TryParseRoundedInt(val, out var i)) conv = i; } // e.g. Ackermann, Kp (#112)
             else if (t == typeof(bool)) conv = val == "1" || val == "true";
             else if (t.IsEnum) { if (int.TryParse(val, out var e)) conv = System.Enum.ToObject(t, e); }
