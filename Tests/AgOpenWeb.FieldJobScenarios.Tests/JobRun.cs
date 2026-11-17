@@ -199,6 +199,8 @@ public sealed class JobRun : IAsyncDisposable
     public Func<(double E, double N), bool>? LeftOnPurpose;
     /// <summary>Unsprayed ground at a lap's corner, where the passes pull apart.</summary>
     public Func<(double E, double N), bool>? AtCorner;
+    /// <summary>Ground where the operator moved a width in by hand to the next lap (the contour laps).</summary>
+    public Func<(double E, double N), bool>? AtLapChange;
     private bool _passJoined;
     private int _passStartFix;
     private int _passErrorTraced = -1000;
@@ -339,6 +341,18 @@ public sealed class JobRun : IAsyncDisposable
         }
     }
     private readonly Dictionary<int, SortedDictionary<int, (double L, double R)>> _passEdges = new();
+    // Where each stretch of a pass's edges began after a U-turn or the engage (the bin along the
+    // line; not after a lap's corner or a lap change by hand, which keep their own rules): after a U-turn hands
+    // back, or AutoSteer is engaged, the implement is still settling onto its pass for a few metres
+    // (a trailed or front-mounted one longer, a manual turn landing in the crop at an angle).
+    private readonly Dictionary<int, List<int>> _runStarts = new();
+    private int _recPass = int.MinValue;
+    private bool _settling = true;   // the engage, or a U-turn since the last edges: the next stretch starts settling
+    /// <summary>Metres from where a pass's edges begin within which the implement is still settling
+    /// after the turn: a strip there is a wedge at the pass's start, not a strip along the pass. The
+    /// landing length AgOpenWeb asks of the next pass (20 m); a manual U-turn landing in the crop at
+    /// 26° settles over about 17 m (T11).</summary>
+    public const double SettlingM = 20;
     /// <summary>The passes driven: from the lowest to the highest pass number recorded.</summary>
     public int PassesDriven => _passEdges.Count == 0 ? 1 : _passEdges.Keys.Max() - _passEdges.Keys.Min() + 1;
     private readonly (double E, double N)?[] _prevEdge = new (double E, double N)?[65];
@@ -1180,9 +1194,18 @@ public sealed class JobRun : IAsyncDisposable
         {
             if (!_passEdges.TryGetValue(Pass, out var d)) _passEdges[Pass] = d = new SortedDictionary<int, (double, double)>();
             int bin = (int)Math.Floor(Vv((tc.E, tc.N)));
+            if (_recPass != Pass && _settling)
+            {
+                if (!_runStarts.TryGetValue(Pass, out var starts)) _runStarts[Pass] = starts = new List<int>();
+                starts.Add(bin);
+            }
+            _recPass = Pass;
+            _settling = false;
             if (d.TryGetValue(bin, out var old)) d[bin] = (Math.Min(old.L, uL), Math.Max(old.R, uR));
             else d[bin] = (uL, uR);
         }
+        else _recPass = int.MinValue;
+        if (InTurn) _settling = true;
         Track.Add((Truth.E, Truth.N, InTurn || InChange || HandSteer != null, open != 0));
     }
 
@@ -1327,6 +1350,9 @@ public sealed class JobRun : IAsyncDisposable
                     // The laps' corners first: a lap rounds a corner of the boundary and cannot reach
                     // into it, whatever the sections do (near the fence too).
                     else if (AtCorner?.Invoke(c) == true) a.MissedAtCorners += cell;
+                    // Where the operator moved a width in by hand between laps: the implement crosses
+                    // from one lap to the next, and what it leaves is the operator's lap change.
+                    else if (AtLapChange?.Invoke(c) == true) a.MissedAtLapChange += cell;
                     // No headland (the lap jobs): the edge of the field along the boundary.
                     else if (Work == null && Ring.DistToRing(c, Outer) < 1.5) a.MissedAlongBoundary += cell;
                     else if (LeftOnPurpose?.Invoke(c) == true) a.MissedLeftInMiddle += cell;
@@ -1385,14 +1411,33 @@ public sealed class JobRun : IAsyncDisposable
                 if (!passes[k + 1].Value.TryGetValue(bin, out var x2)) continue;
                 if (x.R - x.L < Spec.T.Width - 0.3 || x2.R - x2.L < Spec.T.Width - 0.3) continue;   // a section still off at the pass's end
                 double gap = x2.L - x.R;
+                if (Settling(passes[k].Key, bin) || Settling(passes[k + 1].Key, bin))
+                {
+                    if (gap > a.LargestSettlingStripM)
+                    {
+                        var at = Frame.At((x.R + x2.L) / 2, bin);
+                        a.LargestSettlingStripM = gap;
+                        a.LargestSettlingWhere = F($"between passes {passes[k].Key} and {passes[k + 1].Key}, {bin} m along the line from A, at ({at.E:0},{at.N:0})");
+                    }
+                    a.LargestOverlapM = Math.Max(a.LargestOverlapM, -gap);
+                    continue;
+                }
                 if (gap > a.LargestMissedStripM)
-                    a.LargestStripWhere = F($"between passes {passes[k].Key} and {passes[k + 1].Key}, {bin} m along the line from A");
+                {
+                    var at = Frame.At((x.R + x2.L) / 2, bin);
+                    a.LargestStripWhere = F($"between passes {passes[k].Key} and {passes[k + 1].Key}, {bin} m along the line from A, at ({at.E:0},{at.N:0})");
+                }
                 a.LargestMissedStripM = Math.Max(a.LargestMissedStripM, gap);
                 a.LargestOverlapM = Math.Max(a.LargestOverlapM, -gap);
             }
         }
         return a;
     }
+
+    /// <summary>Is this bin of a pass within <see cref="SettlingM"/> of where a stretch of its
+    /// edges began (the implement settling onto the pass after a turn or the engage)?</summary>
+    private bool Settling(int pass, int bin) =>
+        _runStarts.TryGetValue(pass, out var starts) && starts.Any(b => Math.Abs(bin - b) < SettlingM);
 
     /// <summary>Are two passes, next to each other in the order across the field, neighbours? A pass
     /// with no edges recorded (its only stretch in the cultivated area under a U-turn's start, J6's
