@@ -501,14 +501,38 @@ public partial class YouTurnCreationService
         intrusion = clearance.MaxIntrusion;
         if (clearance.IsClear) return true;
 
+        return SweepKeepsToFence(swept, outerPolygon, margin);
+    }
+
+    /// <summary>
+    /// The second half of <see cref="ManualTurnClearsHardBoundary"/>, for an implement that does
+    /// not keep <paramref name="margin"/> from the fence along the whole turn. Refused when it has
+    /// the distance at the press (the turn would take it). Else each corner is held to its own
+    /// place at the press: one inside the fence stays inside it, one across it goes no further
+    /// across. Judged by the worst corner alone, a corner 0.5 m across at the press let another
+    /// one, inside then, cross by as much during the turn.
+    /// </summary>
+    internal static bool SweepKeepsToFence(ImplementSweptPathResult swept, IReadOnlyList<Vec2> outerPolygon, double margin)
+    {
+        var corners = new[] { swept.FrontLeft, swept.FrontRight, swept.RearLeft, swept.RearRight };
         // Where the implement is at the press: the path's first point is the tractor.
-        var atPress = TurnClearance.Evaluate(
-            new[] { swept.FrontLeft[0], swept.FrontRight[0], swept.RearLeft[0], swept.RearRight[0] },
-            outerPolygon, TurnClearance.KeepSide.Inside, margin);
-        if (atPress.IsClear) return false; // it has the distance now and the turn would take it
+        var atPress = new double[corners.Length];
+        bool clearAtPress = true;
+        for (int i = 0; i < corners.Length; i++)
+        {
+            if (corners[i].Count == 0) { atPress[i] = double.NegativeInfinity; continue; }
+            atPress[i] = TurnClearance.Evaluate(new[] { corners[i][0] }, outerPolygon, TurnClearance.KeepSide.Inside, margin).MaxIntrusion;
+            if (atPress[i] > 0.0) clearAtPress = false;
+        }
+        if (clearAtPress) return false; // it has the distance now and the turn would take it
 
         // Inside the distance already: up to the fence. Across it already: no further.
-        return clearance.MaxIntrusion <= Math.Max(margin, atPress.MaxIntrusion + ManualTurnFenceSlack);
+        for (int i = 0; i < corners.Length; i++)
+        {
+            double along = TurnClearance.Evaluate(corners[i], outerPolygon, TurnClearance.KeepSide.Inside, margin).MaxIntrusion;
+            if (along > Math.Max(margin, atPress[i] + ManualTurnFenceSlack)) return false;
+        }
+        return true;
     }
 
     /// <summary>What an implement already across a hard fence at the press may move in a manual
@@ -986,6 +1010,12 @@ public partial class YouTurnCreationService
         {
             path.Clear();
             int arcFrom = BuildSimplePath(path, setback);
+            // Smoothed before it is checked, so the path checked is the path driven: smoothing
+            // pulls the arc in towards its centre (0.2 m at the default 14 passes on an 8 m
+            // radius, 0.4 m on a 4 m one, more with more passes), which is nearer a fence that
+            // lies inside the bend (the tip of a bay between the two passes). It moves no point
+            // along the list, so the arc still starts at arcFrom.
+            TurnPathSmoothing.Smooth(path, config.Guidance.UTurnSmoothing);
             if (outerPolygon == null || !seatBack) break;
 
             var clearance = TurnClearance.Evaluate(path.Skip(arcFrom), outerPolygon, TurnClearance.KeepSide.Inside, distanceFromBoundary);
@@ -996,6 +1026,9 @@ public partial class YouTurnCreationService
                 break;
             }
             double next = setback + Math.Max(SetbackStep, clearance.MaxIntrusion);
+            // The last step stops at the limit itself: a turn that fits only with its arc seated
+            // within that step of the limit was refused untried.
+            if (next > maxSetback && setback < maxSetback - 1e-9) next = maxSetback;
             if (next > maxSetback)
             {
                 _logger.LogWarning("[YouTurn] No simple turn seated up to {S:F0}m back (up to {F:F0}m into the field, starting ahead of the tractor) keeps the tractor {M:F1}m inside the boundary (intrusion {I:F1}m); no turn",
@@ -1007,8 +1040,6 @@ public partial class YouTurnCreationService
         }
 
         _logger.LogDebug("[YouTurn] Simple fallback path has {Count} points", path.Count);
-
-        TurnPathSmoothing.Smooth(path, config.Guidance.UTurnSmoothing);
 
         // A last check, after the seating above (which keeps clear of the outer boundary only):
         // no point outside the field or in an obstacle a turn may not drive through (#692).

@@ -400,6 +400,9 @@ public class ObstacleDetourTests
         // Hitch 1.8 m behind the axle on a 6 m curve: sqrt(36 + 3.24) from the centre. The
         // wheels 2.5 m behind it: sqrt(39.24 - 6.25) = 5.744, so 0.256 m inside the line.
         Assert.That(ObstacleDetour.TrailedCutIn(Trailed("trailing", 2.5), 1.8, 6.0), Is.EqualTo(0.256).Within(0.001));
+        // A radius of 0 or less is the 1 m bend the detour builds then, not "no cut-in".
+        Assert.That(ObstacleDetour.TrailedCutIn(Trailed("trailing", 0.5), 0, 0), Is.EqualTo(ObstacleDetour.TrailedCutIn(Trailed("trailing", 0.5), 0, 1.0)));
+        Assert.That(ObstacleDetour.TrailedCutIn(Trailed("trailing", 0.5), 0, -3), Is.GreaterThan(0.1));
         // A longer drawbar cuts in further, a wider curve less.
         Assert.That(ObstacleDetour.TrailedCutIn(Trailed("trailing", 5.0), 1.8, 6.0), Is.GreaterThan(2.0));
         Assert.That(ObstacleDetour.TrailedCutIn(Trailed("trailing", 2.5), 1.8, 12.0), Is.LessThan(0.15));

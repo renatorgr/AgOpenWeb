@@ -138,6 +138,37 @@ public class SideStepTests
     }
 
     [Test]
+    public void A_long_thin_obstacle_across_the_S_is_seen_though_its_corners_are_far_off()
+    {
+        // A row of trees 1 m wide from N -160 to N 60, between the tractor and the lap: every corner
+        // is more than 50 m from the S, but the S runs across it.
+        var row = new BoundaryPolygon
+        {
+            Points = new List<BoundaryPoint> { new(-42.5, -160, 0), new(-42.5, 60, 0), new(-41.5, 60, 0), new(-41.5, -160, 0) },
+        };
+        var plan = SideStep.Plan(Tractor(), Speed, Line(), false, Field(), new[] { row }, FrontBoom, MinRadius);
+        Assert.That(plan.Outcome, Is.EqualTo(SideStepOutcome.NotNeeded));
+    }
+
+    [Test]
+    public void A_line_that_ends_before_any_S_beside_the_fence_is_no_room()
+    {
+        // The lap ends 8 m ahead of the tractor: no S fits on it, and the boom on the lap runs on the
+        // fence. Not "nothing to do": AutoSteer would steer straight onto the lap.
+        var shortLap = new List<Vec3> { new(-46, -700, 0), new(-46, -92, 0) };
+        var plan = SideStep.Plan(Tractor(), Speed, shortLap, false, Field(), null, FrontBoom, MinRadius);
+        Assert.That(plan.Outcome, Is.EqualTo(SideStepOutcome.NoRoom));
+    }
+
+    [Test]
+    public void A_line_that_ends_before_any_S_away_from_the_fence_needs_nothing()
+    {
+        var shortLine = new List<Vec3> { new(-26, -700, 0), new(-26, -92, 0) };
+        var plan = SideStep.Plan(Tractor(-34), Speed, shortLine, false, Field(), null, FrontBoom, MinRadius);
+        Assert.That(plan.Outcome, Is.EqualTo(SideStepOutcome.NotNeeded));
+    }
+
+    [Test]
     public void A_steep_approach_is_turned_along_the_line_first()
     {
         // As on the tester's field: 9.5 m from the lap, heading 46 degrees towards it (and the fence).

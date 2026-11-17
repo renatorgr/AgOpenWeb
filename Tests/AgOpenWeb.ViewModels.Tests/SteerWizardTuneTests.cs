@@ -272,6 +272,61 @@ public class SteerWizardTuneTests
         Assert.That(fast.FoundMaxPwm, Is.InRange(160, 200));
     }
 
+    [Test]
+    public async Task A_steering_too_quick_for_the_gentle_speed_says_how_fast_it_turns()
+    {
+        // A quick motor: at PWM 50, the lowest Max Limit, the wheels already turn about 20°/s. The
+        // Max Limit is held at 50 and the result says 20°/s, not the 15°/s asked for.
+        _fake.BreakawayRight = _fake.BreakawayLeft = 10;
+        _fake.DegPerSecPerPwm = 0.5;
+        var step = CreateStep();
+        step.TargetWheelSpeed = 15;
+        await RunAsync(step);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(step.FoundMaxPwm, Is.EqualTo(50), step.PhaseResult);
+            Assert.That(step.FoundWheelSpeed, Is.GreaterThan(17), "the speed at PWM 50");
+            Assert.That(step.PhaseResult, Does.Contain("faster than the 15°/s wanted"));
+        });
+    }
+
+    [Test]
+    public async Task A_turn_sensor_at_0_counts_is_said_before_anything_moves()
+    {
+        _store.AutoSteer.TurnSensorEnabled = true;
+        _store.AutoSteer.TurnSensorCounts = 0;
+        var step = CreateStep();
+        await step.RunStopCheckAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(step.Stage, Is.EqualTo(TuneStage.Idle));
+            Assert.That(step.PhaseResult, Does.Contain("trip at 0 counts"));
+            Assert.That(_fake.FreeDriveOn, Is.False, "the module was never asked to hold the wheels");
+        });
+    }
+
+    [Test]
+    public async Task Turn_counts_at_0_do_not_stop_the_test_when_a_pressure_sensor_sets_the_trip_point()
+    {
+        // The module is sent one trip byte: the pressure sensor's when it is on, whatever the turn
+        // counts say. The counts are then not in use, and 0 there lets go of nothing.
+        _store.AutoSteer.ExternalEnable = 0;
+        _store.AutoSteer.TurnSensorEnabled = true;
+        _store.AutoSteer.TurnSensorCounts = 0;
+        _store.AutoSteer.PressureSensorEnabled = true;
+        _store.AutoSteer.PressureTripPoint = 30;
+        _fake.KickoutSensor = true;
+        var step = CreateStep();
+        _fake.Script = f => { if (f.Steering && step.PhaseDescription.Contains("turn it by hand", StringComparison.Ordinal)) f.Hands = 4; };
+
+        await step.RunStopCheckAsync();
+
+        Assert.That(step.PhaseResult, Does.Not.Contain("trip at 0 counts"));
+        Assert.That(step.Stage, Is.EqualTo(TuneStage.StopChecked), step.PhaseResult);
+    }
+
     // ------------------------------------------------------------ nothing kept unless taken
 
     [Test]
@@ -662,7 +717,17 @@ public class SteerWizardTuneTests
     {
         var step = CreateStep();
         await RunAsync(step);
-        Assert.That(_fake.DroveWhileOffMs, Is.EqualTo(0));
+        Assert.That(_fake.FreeDriveOn, Is.False, "Free Drive released");
+        // Once the valve's own lag has run out, the wheels stay where they are: measured at the
+        // wheels, whatever the module says.
+        _fake.Advance(_fake.DeadTimeMs + (int)(5 * _fake.LagMs) + 500);
+        double rest = _fake.Angle;
+        _fake.Advance(3000);
+        Assert.Multiple(() =>
+        {
+            Assert.That(_fake.Steering, Is.False, "the module is not steering");
+            Assert.That(Math.Abs(_fake.Angle - rest), Is.LessThan(0.05), "the wheels stay still");
+        });
     }
 
     /// <summary>What the step finds on a range of steerings, and how long it takes (run by hand).</summary>
@@ -764,5 +829,10 @@ public class SteerWizardTuneTests
         Assert.That(SteerTuneMath.PwmForSpeed(levels, 25, 60), Is.EqualTo(113));
         // First level already fast enough: on the line from the PWM that starts the wheels.
         Assert.That(SteerTuneMath.PwmForSpeed(new List<(int, double)> { (100, 40) }, 20, 60), Is.EqualTo(80));
+        // The speed at a PWM, on the same lines: from the start of movement to each level.
+        Assert.That(SteerTuneMath.SpeedAtPwm(new List<(int, double)> { (100, 40) }, 80, 60), Is.EqualTo(20).Within(1e-9));
+        Assert.That(SteerTuneMath.SpeedAtPwm(new List<(int, double)> { (100, 40), (150, 60) }, 125, 60), Is.EqualTo(50).Within(1e-9));
+        Assert.That(SteerTuneMath.SpeedAtPwm(new List<(int, double)> { (100, 40) }, 200, 60), Is.EqualTo(40), "not past the last level");
+        Assert.That(SteerTuneMath.SpeedAtPwm(new List<(int, double)> { (100, 40) }, 50, 60), Is.EqualTo(0), "below the start");
     }
 }

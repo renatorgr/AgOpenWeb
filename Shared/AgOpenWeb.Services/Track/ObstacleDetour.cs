@@ -181,8 +181,9 @@ public sealed class ObstacleDetour
     /// </summary>
     public static double TrailedCutIn(Models.Configuration.ToolConfig tool, double vehicleHitch, double radius)
     {
-        if (radius <= 0 || !(tool.IsToolTrailing || tool.IsToolTBT) || tool.IsToolFrontFixed || tool.IsToolRearFixed)
+        if (!double.IsFinite(radius) || !(tool.IsToolTrailing || tool.IsToolTBT) || tool.IsToolFrontFixed || tool.IsToolRearFixed)
             return 0;
+        radius = Math.Max(radius, 1.0); // the tightest bend Compute builds, whatever the setting says
         double h = Math.Abs(vehicleHitch), l = Math.Abs(tool.TrailingHitchLength), p = tool.TrailingToolToPivotLength;
         double r2 = radius * radius + h * h - l * l + p * p;
         if (tool.IsToolTBT) r2 -= tool.TankTrailingHitchLength * tool.TankTrailingHitchLength;

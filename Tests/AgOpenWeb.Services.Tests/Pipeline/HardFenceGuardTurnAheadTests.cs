@@ -193,8 +193,10 @@ public class HardFenceGuardTurnAheadTests
         Assert.That(planned, Is.True, "a turn was planned at the north end on the way");
         Assert.That(off, Is.Not.Null, "AutoSteer drove the boom over the spike");
         Assert.That(off!.DisengageReason, Does.Contain("heading across the hard boundary"));
-        // The boom's east end (x 8) reaches the spike's south side at y -1.3, with the pivot 4.5 m behind.
-        Assert.That(offNorthing, Is.InRange(-20.0, -5.8), "before the boom gets to the spike");
+        // The boom's east end (x 8) reaches the spike's south side at y -1.3 and is the guard's 0.5 m out at
+        // y -0.66; 2 s ahead at 8 km/h (4.4 m) with the pivot 4.5 m behind, the stop is at y -9.6, give or
+        // take a 0.22 m cycle. Looking 1.5 s or 2.5 s ahead would stop at -8.5 or -10.7.
+        Assert.That(offNorthing, Is.InRange(-10.1, -9.1), "2 s before the boom gets 0.5 m over the spike");
     }
 
     // The same pass with no spike, its north edge slanting down at the east side, so the boom's east end

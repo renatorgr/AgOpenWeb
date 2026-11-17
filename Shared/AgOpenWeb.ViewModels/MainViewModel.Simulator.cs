@@ -294,6 +294,22 @@ public partial class MainViewModel
         }
     }
 
+    /// <summary>
+    /// The Bench button's choice from a screen (<c>sim.driveSteering</c>). Turned on only with a
+    /// steer module answering now, as the button is shown: a command sent with the module
+    /// silent (a screen that still showed the button, a script) was taken, and the module was
+    /// steered by the simulator from the moment it came back, with nobody asked then.
+    /// </summary>
+    public void RequestSimulatorDrivesSteering(bool on)
+    {
+        if (on && !State.Connections.IsAutoSteerDataOk)
+        {
+            ReportFailure("Bench test not turned on: no steer module is answering");
+            return;
+        }
+        IsSimulatorDrivingSteering = on;
+    }
+
     /// <summary>The steer module went silent (it answered until now): the simulator's leave to
     /// move the steering ends with it. The next module heard may be the tractor's. Called with
     /// the module check's result, before it is stored.</summary>

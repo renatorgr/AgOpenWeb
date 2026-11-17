@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using AgOpenWeb.Models;
 using AgOpenWeb.Models.Base;
 using AgOpenWeb.Models.Configuration;
@@ -115,7 +116,7 @@ public class AutoSteerOutsideHardFenceTests
 
     /// <summary>The field with its slanting east fence, the AB line at E 40 running north, on
     /// <paramref name="pass"/>; AutoSteer engaged.</summary>
-    private void Open(int pass, bool hard = true)
+    private void Open(int pass, bool hard = true, double nudge = 0)
     {
         _pipeline.SetBoundary(new Boundary
         {
@@ -126,7 +127,7 @@ public class AutoSteerOutsideHardFenceTests
             },
         });
         var track = Models.Track.Track.FromABLine("AB", new Vec3(40, -10, 0), new Vec3(40, 290, 0));
-        _pipeline.SetActiveTrack(track, passNumber: pass, nudgeOffset: 0);
+        _pipeline.SetActiveTrack(track, passNumber: pass, nudgeOffset: nudge);
         _pipeline.SetAutoSteerEngaged(true);
     }
 
@@ -207,6 +208,63 @@ public class AutoSteerOutsideHardFenceTests
         {
             Assert.That(results.Find(r => r.AutoSteerDisengagedThisCycle)?.DisengageReason, Is.Null);
             Assert.That(results[^1].Guidance?.HasGuidance, Is.True);
+        });
+    }
+
+    [Test]
+    public void Engaged_just_outside_on_a_nudged_line_heading_into_the_field_AutoSteer_steers_in()
+    {
+        // Pass 8 nudged 12 m west runs at E 79: heading south from N 110 (3 m east of the fence) it
+        // comes into the field 15 m ahead. Pass 8 as it is (E 91) comes in only 75 m ahead, so the
+        // guard walking the pass without the nudge took AutoSteer off.
+        Open(pass: 8, nudge: -12);
+        var results = Drive(79, 110, Math.PI, 150);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(results.Find(r => r.AutoSteerDisengagedThisCycle)?.DisengageReason, Is.Null);
+            Assert.That(results[^1].Guidance?.HasGuidance, Is.True);
+        });
+    }
+
+    [Test]
+    public void A_bend_steered_on_another_pass_is_not_walked_for_this_one()
+    {
+        // Pass 5 (E 70) bent round a tree in the field, steered for a second. Then on pass 8, 23 m
+        // east of the fence and heading south, its field 115 m ahead: AutoSteer goes off on the
+        // first cycle. Pass 5's bend, kept from the cycle before, comes into the field 10 m ahead of
+        // abreast the tractor, and walked for pass 8 it kept AutoSteer on for that cycle.
+        Open(pass: 5);
+        var tree = new BoundaryPolygon
+        {
+            Points = Enumerable.Range(0, 16).Select(i => new BoundaryPoint(
+                70 + Math.Cos(2 * Math.PI * i / 16), 60 + Math.Sin(2 * Math.PI * i / 16), 0)).ToList(),
+            AtObstacle = ObstacleAction.GoRound,
+        };
+        var boundary = new Boundary
+        {
+            OuterBoundary = new BoundaryPolygon
+            {
+                Points = new List<BoundaryPoint> { new(-100, -10, 0), new(100, -10, 0), new(40, 290, 0), new(-100, 290, 0) },
+                IsHard = true,
+            },
+        };
+        boundary.InnerBoundaries.Add(tree);
+        _pipeline.SetBoundary(boundary);
+        var track = Models.Track.Track.FromABLine("AB", new Vec3(40, -10, 0), new Vec3(40, 290, 0));
+        _pipeline.SetActiveTrack(track, passNumber: 5, nudgeOffset: 0);
+        _pipeline.SetAutoSteerEngaged(true);
+        Drive(70, 30, 0, 10);
+        Assume.That(_results[^1].AutoSteerDisengagedThisCycle, Is.False);
+
+        _pipeline.SetActiveTrack(track, passNumber: 8, nudgeOffset: 0);
+        var results = Drive(91, 150, Math.PI, 3);
+
+        var off = results.Find(r => r.AutoSteerDisengagedThisCycle);
+        Assert.Multiple(() =>
+        {
+            Assert.That(off?.DisengageReason, Is.EqualTo(GpsPipelineService.OutsideFenceReason));
+            Assert.That(results.IndexOf(off!), Is.EqualTo(0), "on the first cycle");
         });
     }
 
