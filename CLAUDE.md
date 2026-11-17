@@ -651,11 +651,15 @@ little where it starts). That is a closed pass's line. An open pass's line is th
 as a trailer follows its hitch, `h` behind; on a steady bend that is the same √(R² − h²), and it also holds through a
 short S, which the window above averaged out: round a Go around tree (out of the pass at 45° and back, 6 m bends) the
 Maxxum's boom 4.8 m ahead cut the first bend by 1.5 m and sprayed 3 m² inside the tree (the farm job harness on a
-tester's field). Back on a straight stretch the pivot comes onto the pass as e^(−s/h). Never more than the bend allows
-the tractor (`Vehicle.MinTurningRadius`). Cached per pass and per way it is driven in
+tester's field). Back on a straight stretch the pivot comes onto the pass as e^(−s/h). The pivot's own turn in the pull
+is held to `Vehicle.MinTurningRadius`: on a bend tighter than √(r² + h²) (a recorded curve's S; Go around bends for a
+front implement are never that tight) the pull alone had the pivot turn on the spot, down to a 1.5 m bend on a 6 m S;
+held, the implement leaves the pass as little as the tractor allows. A pass that doubles back tighter than that (a
+hairpin at the turning radius) still loops, and an open line bending under 0.9 of the turning radius anywhere
+(`FrontToolLine.TightestBend`, over 2 m chords) is not used: the pass is steered as it is. Cached per pass and per way it is driven in
 `GpsPipelineService.FrontToolSteered`; a line with no bend (an AB line no tree bends) is steered as it is. The pass shown, the
 implement's band and U-turn, line-entry and S paths are not moved. Rear and trailed implements are not changed.
-Tests: `FrontToolLineTests` (`Round_a_go_around_tree_the_implement_stays_on_the_bend`), `FrontToolCurveTests`. Fork only.
+Tests: `FrontToolLineTests` (`Round_a_go_around_tree_the_implement_stays_on_the_bend`, `An_open_pass_is_never_steered_tighter_than_the_tractor_turns`), `FrontToolCurveTests`. Fork only.
 
 ## Going around obstacles
 Inner boundaries chosen as *Go around* (`ObstacleAction.GoRound`) bend the pass round them

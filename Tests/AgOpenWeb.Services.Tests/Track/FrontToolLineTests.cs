@@ -132,7 +132,7 @@ public class FrontToolLineTests
 
     // A pass north that steps right round a tree as a Go around bend does: out at 45° and back,
     // each bend an arc of the curve radius, the step 4 m. Points every 0.25 m.
-    private static List<Vec3> GoAroundS(double radius, double step = 4.0)
+    private static List<Vec3> GoAroundS(double radius, double step = 4.0, double q = Math.PI / 4, double middle = 10)
     {
         var pts = new List<Vec3>();
         double e = 0, n = 0, h = 0; // heading clockwise from north
@@ -156,9 +156,8 @@ public class FrontToolLineTests
                 n += 0.25 * Math.Cos(h);
             }
         }
-        double q = Math.PI / 4;
         double slant = Math.Max(0, (step - 2 * radius * (1 - Math.Cos(q))) / Math.Sin(q));
-        Straight(60); Arc(q); Straight(slant); Arc(-q); Straight(10); Arc(-q); Straight(slant); Arc(q); Straight(120);
+        Straight(60); Arc(q); Straight(slant); Arc(-q); Straight(middle); Arc(-q); Straight(slant); Arc(q); Straight(120);
         pts.Add(new Vec3(e, n, h));
         return pts;
     }
@@ -215,6 +214,45 @@ public class FrontToolLineTests
             Assert.That(ImplementOffPass(pass, steered!, reach, forward), Is.LessThan(0.03), "the implement on the bend");
             Assert.That(ImplementOffPass(pass, pass, reach, forward), Is.GreaterThan(1.0), "steered on the pass itself, it cuts the bends");
         });
+    }
+
+
+    // A front boom 4.8 m ahead on a tractor that turns no tighter than 5 or 6 m, on S bends of a recorded
+    // curve too tight to keep the boom on (a 6 m bend needs the pivot on 3.6 m): the line steered never
+    // bends tighter than the tractor turns. The pull alone had the pivot turn on the spot there: down to
+    // a 1.5 m bend on a 6 m S. A hairpin it can't follow at all is steered as it is.
+    [TestCase(5.0, 6.0, 90.0, 0.0)]
+    [TestCase(5.0, 6.0, 120.0, 10.0)]
+    [TestCase(5.0, 5.0, 90.0, 0.0)]
+    [TestCase(6.0, 6.0, 90.0, 0.0)]
+    [TestCase(6.0, 5.0, 120.0, 10.0)]
+    [TestCase(6.0, 6.0, 120.0, 0.0)]
+    public void An_open_pass_is_never_steered_tighter_than_the_tractor_turns(double minRadius, double radius, double turnDeg, double middle)
+    {
+        const double reach = 4.8;
+        var pass = GoAroundS(radius, step: 4.0, q: turnDeg * Math.PI / 180, middle: middle);
+        foreach (bool forward in new[] { true, false })
+        {
+            var steered = FrontToolLine.Steered(pass, closed: false, reach, minRadius, forward);
+            if (steered == null) continue; // steered as it is
+            Assert.That(FrontToolLine.TightestBend(steered), Is.GreaterThan(minRadius * 0.95), $"forward {forward}");
+        }
+    }
+
+    [Test]
+    public void A_go_around_bend_made_for_the_boom_is_not_held()
+    {
+        // Go around bends for a front implement are never tighter than √(r² + h²) (GoAroundPasses.Radius):
+        // the boom stays on them, the pivot on a bend no tighter than the tractor turns.
+        const double reach = 4.8, minRadius = 6.0;
+        var pass = GoAroundS(Math.Sqrt(minRadius * minRadius + reach * reach));
+        foreach (bool forward in new[] { true, false })
+        {
+            var steered = FrontToolLine.Steered(pass, closed: false, reach, minRadius, forward);
+            Assert.That(steered, Is.Not.Null);
+            Assert.That(ImplementOffPass(pass, steered!, reach, forward), Is.LessThan(0.03), $"forward {forward}");
+            Assert.That(FrontToolLine.TightestBend(steered!), Is.GreaterThan(minRadius * 0.95), $"forward {forward}");
+        }
     }
 
     [Test]

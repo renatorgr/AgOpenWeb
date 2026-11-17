@@ -66,35 +66,32 @@ public static class FrontToolLine
         double window = Math.Max(reach, MinWindow);
         // The implement is ahead in the way the tractor drives.
         double lead = (closed || forward ? 1 : -1) * reach / 2;
-        var shifts = new double[n];
-        // On an open pass, how far the pivot may be moved where the bend is tighter than the
-        // tractor can follow with the implement on it; unlimited elsewhere.
-        var limit = new double[n];
-        for (int i = 0; i < n; i++)
+        double[] shifts;
+        if (closed)
         {
-            limit[i] = double.PositiveInfinity;
-            double s = cum[i] + lead;
-            double turn = AngleDiff(HeadingAt(s + window), HeadingAt(s - window));
-            double k = turn / (2 * window); // + turning right (clockwise)
-            if (Math.Abs(k) < 1e-6) continue;
-            double r = 1 / Math.Abs(k);
-            double pivotR = Math.Sqrt(Math.Max(r * r - reach * reach, 0));
-            if (pivotR < minRadius) limit[i] = Math.Max(r - minRadius, 0);
-            pivotR = Math.Max(pivotR, minRadius);
-            double d = r - pivotR;
-            if (d <= 0) continue;
-            shifts[i] = Math.Sign(k) * d;
+            shifts = new double[n];
+            for (int i = 0; i < n; i++)
+            {
+                double s = cum[i] + lead;
+                double turn = AngleDiff(HeadingAt(s + window), HeadingAt(s - window));
+                double k = turn / (2 * window); // + turning right (clockwise)
+                if (Math.Abs(k) < 1e-6) continue;
+                double r = 1 / Math.Abs(k);
+                double pivotR = Math.Max(Math.Sqrt(Math.Max(r * r - reach * reach, 0)), minRadius);
+                double d = r - pivotR;
+                if (d <= 0) continue;
+                shifts[i] = Math.Sign(k) * d;
+            }
         }
-        if (!closed)
+        else
         {
             // An open pass: the line the implement's pull draws (a tractrix), which holds through a
             // short S as well as round a long bend. Measured over a window, a Go around bend's S
             // (out of the pass and back at the curve radius, a few metres each way) averaged out
             // to nearly straight and was hardly moved: the Maxxum's boom 4.8 m ahead cut the first
             // bend by 1.5 m and ran 0.85 m over a 3 m tree (a tester's field, the farm job harness).
-            var towed = TowedShifts(pass, cum, reach, forward);
-            for (int i = 0; i < n; i++)
-                shifts[i] = Math.Sign(towed[i]) * Math.Min(Math.Abs(towed[i]), limit[i]);
+            // The pull turns the pivot no tighter than the tractor turns (TowedShifts).
+            shifts = TowedShifts(pass, cum, reach, forward, minRadius);
         }
         double most = 0;
         for (int i = 0; i < n; i++) most = Math.Max(most, Math.Abs(shifts[i]));
@@ -108,6 +105,10 @@ public static class FrontToolLine
             // Right of a heading h is (cos h, -sin h).
             line.Add(new Vec3(p.Easting + shifts[i] * Math.Cos(h), p.Northing - shifts[i] * Math.Sin(h), p.Heading));
         }
+        // A pass that doubles back tighter than the tractor turns (a hairpin at its turning radius)
+        // leaves a pivot line that loops, which a shift beside each point of the pass can't follow:
+        // it came out with half-metre kinks. Steered as it is, the pass can at least be driven.
+        if (!closed && TightestBend(line) < minRadius * TightestBendShare) return null;
         return line;
 
         // The way the pass runs at s, over a chord either side: a pass that doubles back a little
@@ -134,6 +135,37 @@ public static class FrontToolLine
         }
     }
 
+    /// <summary>An open pass's line bending tighter than this share of the tractor's turning radius
+    /// anywhere is not steered (<see cref="TightestBend"/>).</summary>
+    private const double TightestBendShare = 0.9;
+
+    /// <summary>The chord <see cref="TightestBend"/> measures a bend over, either side, m.</summary>
+    private const double BendChord = 2.0;
+
+    /// <summary>
+    /// The tightest radius a line bends at: the circle through each point and the points
+    /// <see cref="BendChord"/> before and after it along the line.
+    /// </summary>
+    internal static double TightestBend(IReadOnlyList<Vec3> line)
+    {
+        int n = line.Count;
+        if (n < 3) return double.PositiveInfinity;
+        var cum = new double[n];
+        for (int i = 1; i < n; i++) cum[i] = cum[i - 1] + GeometryMath.Distance(line[i - 1], line[i]);
+        double tightest = double.PositiveInfinity;
+        for (int i = 0; i < n; i++)
+        {
+            if (cum[i] < BendChord || cum[i] > cum[n - 1] - BendChord) continue;
+            var a = PointOn(line, cum, cum[i] - BendChord);
+            var b = new Vec2(line[i].Easting, line[i].Northing);
+            var c = PointOn(line, cum, cum[i] + BendChord);
+            double cross = Math.Abs((b.Easting - a.Easting) * (c.Northing - a.Northing) - (b.Northing - a.Northing) * (c.Easting - a.Easting));
+            if (cross < 1e-9) continue;
+            tightest = Math.Min(tightest, GeometryMath.Distance(a, b) * GeometryMath.Distance(b, c) * GeometryMath.Distance(c, a) / (2 * cross));
+        }
+        return tightest;
+    }
+
     /// <summary>The step the implement's line is walked in for <see cref="TowedShifts"/>, m.</summary>
     private const double TowStep = 0.05;
 
@@ -152,8 +184,15 @@ public static class FrontToolLine
     /// implement now is until it is <paramref name="reach"/> behind it. Round a bend of radius R
     /// that settles on √(R² − h²), as <see cref="Steered"/> has it; into and out of a bend, and
     /// through an S, it is where the pivot must be, which no measure of the bend at one place gives.
+    /// The pivot's own turn is held to <paramref name="minRadius"/>: on a bend tighter than
+    /// √(minRadius² + h²) the implement can't stay on the pass, and the pull would have the pivot
+    /// turn on the spot (the line steered went down to a 1 m radius on a 6 m S with a 4.8 m boom);
+    /// held, the pivot turns as tight as the tractor can and the implement leaves the pass as
+    /// little as that allows. Bends that wide or wider, as Go around bends are made for a front
+    /// implement (<see cref="GoAroundPasses.Radius"/>), are not changed by it.
     /// </summary>
-    internal static double[] TowedShifts(IReadOnlyList<Vec3> pass, double[] cum, double reach, bool forward)
+    internal static double[] TowedShifts(IReadOnlyList<Vec3> pass, double[] cum, double reach, bool forward,
+        double minRadius = 0)
     {
         int n = pass.Count;
         double length = cum[n - 1];
@@ -164,23 +203,57 @@ public static class FrontToolLine
         // The implement along the pass the way the tractor drives, and the pivot behind it.
         var tow = new List<Vec2>(steps + 1);
         var towAt = new List<double>(steps + 1);  // where on the pass the implement was
+        var towLag = new List<double>(steps + 1); // how far the pivot was from it (the reach, unless held)
+        double mostLag = reach;
         Vec2 Implement(int k) => PointOn(pass, cum, forward ? Math.Min(k * TowStep, length) : Math.Max(length - k * TowStep, 0));
         var q0 = Implement(0);
         var q1 = Implement(1);
-        double dx = q1.Easting - q0.Easting, dy = q1.Northing - q0.Northing, dl = Math.Sqrt(dx * dx + dy * dy);
+        double dl = GeometryMath.Distance(q0, q1);
         if (dl < 1e-9) return shifts;
+        double dx = q1.Easting - q0.Easting, dy = q1.Northing - q0.Northing;
         var pivot = new Vec2(q0.Easting - dx / dl * reach, q0.Northing - dy / dl * reach);
+        double heading = Math.Atan2(dx, dy); // the way the pivot moves
         for (int k = 0; k <= steps; k++)
         {
             var q = Implement(k);
-            double ex = q.Easting - pivot.Easting, ey = q.Northing - pivot.Northing, el = Math.Sqrt(ex * ex + ey * ey);
-            if (el > 1e-9) pivot = new Vec2(q.Easting - ex / el * reach, q.Northing - ey / el * reach);
+            double el = GeometryMath.Distance(pivot, q);
+            if (el > 1e-9)
+            {
+                var pulled = new Vec2(q.Easting - (q.Easting - pivot.Easting) / el * reach, q.Northing - (q.Northing - pivot.Northing) / el * reach);
+                double moved = GeometryMath.Distance(pivot, pulled);
+                if (moved > 1e-9)
+                {
+                    double way = Math.Atan2(pulled.Easting - pivot.Easting, pulled.Northing - pivot.Northing);
+                    double turn = AngleDiff(way, heading), most = minRadius > 0 ? moved / minRadius : double.PositiveInfinity;
+                    if (Math.Abs(turn) <= most)
+                    {
+                        pivot = pulled;
+                        heading = way;
+                    }
+                    else
+                    {
+                        // Turned as tight as the tractor can, on as far as keeps the implement the
+                        // reach ahead (or as near it as that way allows).
+                        heading += Math.Sign(turn) * most;
+                        double ue = Math.Sin(heading), un = Math.Cos(heading);
+                        double we = q.Easting - pivot.Easting, wn = q.Northing - pivot.Northing;
+                        double along = we * ue + wn * un;
+                        double disc = along * along - (we * we + wn * wn) + reach * reach;
+                        double d = Math.Max(0, disc >= 0 ? along - Math.Sqrt(disc) : along);
+                        pivot = new Vec2(pivot.Easting + ue * d, pivot.Northing + un * d);
+                    }
+                }
+            }
             tow.Add(pivot);
             towAt.Add(forward ? Math.Min(k * TowStep, length) : Math.Max(length - k * TowStep, 0));
+            double lag = GeometryMath.Distance(pivot, q);
+            towLag.Add(lag);
+            mostLag = Math.Max(mostLag, lag);
         }
 
         // Beside each point of the pass: where the pivot's line crosses the pass's square there,
-        // the pivot then being about the reach behind the implement.
+        // the pivot then being about the reach behind the implement (further where it was held).
+        int span = (int)Math.Ceiling((reach + mostLag) / TowStep) + 2;
         for (int i = 0; i < n; i++)
         {
             double h = HeadingOn(pass, cum, cum[i]);
@@ -188,7 +261,6 @@ public static class FrontToolLine
             double re = Math.Cos(h), rn = -Math.Sin(h);  // right of it
             double target = forward ? cum[i] + reach : cum[i] - reach;
             int k0 = (int)Math.Round((forward ? target : length - target) / TowStep);
-            int span = (int)Math.Ceiling(2 * reach / TowStep) + 2;
             int from = Math.Max(0, k0 - span), to = Math.Min(tow.Count - 2, k0 + span);
             double best = double.PositiveInfinity, shift = 0;
             for (int k = from; k <= to; k++)
@@ -201,8 +273,8 @@ public static class FrontToolLine
                 double pn = tow[k].Northing + (tow[k + 1].Northing - tow[k].Northing) * t;
                 double lateral = (pe - pass[i].Easting) * re + (pn - pass[i].Northing) * rn;
                 // A pivot line that loops near a tight bend crosses a square more than once: the
-                // crossing with the implement the reach ahead.
-                double off = Math.Abs(towAt[k] - target);
+                // crossing with the implement as far ahead as the pivot was from it.
+                double off = Math.Abs(towAt[k] - (forward ? cum[i] + towLag[k] : cum[i] - towLag[k]));
                 if (off < best) { best = off; shift = lateral; }
             }
             shifts[i] = Math.Abs(shift) < TowNoise ? 0 : shift;

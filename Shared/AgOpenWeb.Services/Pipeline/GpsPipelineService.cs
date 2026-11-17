@@ -2247,8 +2247,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
             || reach != _frontLineKey.Reach || minRadius != _frontLineKey.MinRadius
             || passRadius != _frontLineKey.PassRadius || forward != _frontLineKey.Forward)
         {
+            // The line first, then the key with it: a line that failed is not taken for this pass's.
+            var line = Track.FrontToolLine.Steered(steered.Points, steered.IsClosed, reach, minRadius, forward);
+            _frontLine = line;
             _frontLineKey = key;
-            _frontLine = Track.FrontToolLine.Steered(steered.Points, steered.IsClosed, reach, minRadius, forward);
         }
         return _frontLine;
     }
