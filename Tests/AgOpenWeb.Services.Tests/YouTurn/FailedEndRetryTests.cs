@@ -118,6 +118,32 @@ public class FailedEndRetryTests
         });
     }
 
+    [TestCase(false, TestName = "Normal mode: the arrow refused and no turn built says there is no turn")]
+    [TestCase(true, TestName = "Alternative mode: the arrow refused and no turn built says there is no turn")]
+    public void The_arrow_refused_in_the_cycle_no_turn_builds_does_not_hide_that_there_is_no_turn(bool alternate)
+    {
+        // Pass 10 (x = 42), two passes from the east fence: the passes two over to the east are
+        // outside the field, so the arrow pointing east is refused, and the turn west does not
+        // build (the fixture's 32 m loop). The refusal's text took the place of the reason, with
+        // the failure sound, and the end is then tried again silently.
+        string Told(bool? arrow)
+        {
+            SetUp();
+            var guidance = new GuidanceWorkingState { HowManyPathsAway = 10, IsHeadingSameWay = false };
+            var turn = new YouTurnWorkingState { IsEnabled = true, NextUTurnDirectionLeftOverride = arrow };
+            var effects = _sm.Tick(Ctx(PassX(10), -18, 180, alternate), guidance, turn);
+            Assert.That(turn.TurnPath, Is.Null, $"the scenario: no turn fits (\"{effects.StatusMessage}\")");
+            Assert.That(effects.TurnCreationFailedSound, Is.True, "the scenario: the failure is sounded");
+            return effects.StatusMessage ?? "";
+        }
+
+        string reason = Told(null);
+        Assert.That(reason, Is.Not.Empty.And.Not.EqualTo(YouTurnStateMachine.DirectionNotChangedMessage));
+        // Whichever way the arrow points, the operator reads why there is no turn.
+        Assert.That(Told(true), Is.EqualTo(reason), "arrow left");
+        Assert.That(Told(false), Is.EqualTo(reason), "arrow right");
+    }
+
     [Test]
     public void Normal_mode_an_end_where_no_turn_built_is_tried_again_at_once_when_something_changes()
     {

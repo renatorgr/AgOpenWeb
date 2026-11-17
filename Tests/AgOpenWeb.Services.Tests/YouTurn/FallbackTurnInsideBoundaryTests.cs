@@ -192,4 +192,81 @@ public class FallbackTurnInsideBoundaryTests
 
         Assert.That(path, Is.Empty);
     }
+
+    // The distance to the fence itself (to its nearest edge), whatever its shape.
+    private static double ToFence(List<Vec2> fence, Vec3 p)
+    {
+        double min = double.MaxValue;
+        for (int i = 0, j = fence.Count - 1; i < fence.Count; j = i++)
+            min = Math.Min(min, GeometryMath.PointToSegmentDistance(new Vec2(p.Easting, p.Northing), fence[j], fence[i]));
+        return min;
+    }
+
+    [Test]
+    public void A_turn_that_fits_only_with_its_arc_at_the_limit_is_still_made()
+    {
+        // The slanted fence again, the tractor 1.02 m from the headland: the arc may be seated
+        // back 4.52 m at most (to start 2 m ahead of the tractor), and it clears the fence from
+        // 4.48 m back. The seating goes back by the intrusion, at least 0.5 m a step, and its
+        // last step went past the limit (to 4.58 m): no turn, though one fitted at the limit.
+        var path = TurnRightFromPass0(20 - 1.02, 1.02);
+
+        Assert.That(path, Is.Not.Empty, "the turn seated at the limit is made");
+        foreach (var p in path)
+            Assert.That(ToFence(Slanted, p), Is.GreaterThanOrEqualTo(0.99),
+                $"path point ({p.Easting:F1},{p.Northing:F1}) is within 1 m of the fence");
+        // The apex is the arc's start plus the 8 m radius: the arc starts 2 m ahead of the tractor.
+        Assert.That(path.Max(p => p.Northing) - 8 - (20 - 1.02), Is.EqualTo(2.0).Within(0.05));
+    }
+
+    [Test]
+    public void A_fence_inside_the_bend_is_kept_clear_of_by_the_smoothed_path()
+    {
+        // A square end 14.5 m past the headland, and a bay of the fence 0.2 m wide coming up from
+        // the south between the two passes, its tip 1.1 m inside the arc's apex (14, 33.5).
+        // Smoothing pulls the arc in towards its centre, 0.2 m at 14 passes on this 8 m radius:
+        // checked before it was smoothed, the path driven went 0.95 m from the tip with the
+        // distance set to 1 m. Seated back it only comes nearer the tip, so there is no turn here.
+        var bay = new List<Vec2>
+        {
+            new(-50, -50), new(13.9, -50), new(13.9, 32.4), new(14.1, 32.4), new(14.1, -50),
+            new(60, -50), new(60, 34.5), new(-50, 34.5),
+        };
+        var boundary = new Boundary
+        {
+            OuterBoundary = new BoundaryPolygon
+            {
+                Points = bay.Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(),
+            },
+        };
+        var g = new GuidanceWorkingState { HowManyPathsAway = 0, IsHeadingSameWay = true };
+        var turn = new YouTurnWorkingState { DistanceToHeadland = 10, NextTrackTurnOffset = 12 };
+        var tractor = new Position { Easting = 6, Northing = 10, Heading = 0 };
+
+        // The scenario: unsmoothed, the turn is made where the square end puts it, 1.1 m from the tip.
+        var plain = _creation.SimpleFallback(tractor, 0, false, boundary, g, turn, 0, 10, Track);
+        Assert.That(plain, Is.Not.Empty);
+        Assert.That(plain.Min(p => ToFence(bay, p)), Is.GreaterThanOrEqualTo(0.99));
+
+        _config.Guidance.UTurnSmoothing = 14;
+        var smoothed = _creation.SimpleFallback(tractor, 0, false, boundary, g, turn, 0, 10, Track);
+        foreach (var p in smoothed)
+            Assert.That(ToFence(bay, p), Is.GreaterThanOrEqualTo(0.99),
+                $"path point ({p.Easting:F1},{p.Northing:F1}) of the smoothed turn is within 1 m of the fence");
+    }
+
+    [Test]
+    public void A_smoothed_turn_is_still_made_beside_a_slanted_fence()
+    {
+        // The first test's turn with the default smoothing: made, and the path driven keeps the distance.
+        _config.Guidance.UTurnSmoothing = 14;
+        var path = TurnRightFromPass0(10, 10);
+
+        Assert.That(path, Is.Not.Empty);
+        foreach (var p in path)
+            Assert.That(ToFence(Slanted, p), Is.GreaterThanOrEqualTo(0.99),
+                $"path point ({p.Easting:F1},{p.Northing:F1}) is within 1 m of the fence");
+        Assert.That(path[0].Easting, Is.EqualTo(6).Within(0.05), "entry leg on pass 0");
+        Assert.That(path[^1].Easting, Is.EqualTo(18).Within(0.05), "exit leg on pass 1");
+    }
 }
