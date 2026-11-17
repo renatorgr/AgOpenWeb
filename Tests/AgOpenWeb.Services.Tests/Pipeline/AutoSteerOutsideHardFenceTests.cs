@@ -115,7 +115,7 @@ public class AutoSteerOutsideHardFenceTests
 
     /// <summary>The field with its slanting east fence, the AB line at E 40 running north, on
     /// <paramref name="pass"/>; AutoSteer engaged.</summary>
-    private void Open(int pass, bool hard = true)
+    private void Open(int pass, bool hard = true, double nudge = 0)
     {
         _pipeline.SetBoundary(new Boundary
         {
@@ -126,7 +126,7 @@ public class AutoSteerOutsideHardFenceTests
             },
         });
         var track = Models.Track.Track.FromABLine("AB", new Vec3(40, -10, 0), new Vec3(40, 290, 0));
-        _pipeline.SetActiveTrack(track, passNumber: pass, nudgeOffset: 0);
+        _pipeline.SetActiveTrack(track, passNumber: pass, nudgeOffset: nudge);
         _pipeline.SetAutoSteerEngaged(true);
     }
 
@@ -202,6 +202,22 @@ public class AutoSteerOutsideHardFenceTests
         // starts, 12 m before the fence): steered in, AutoSteer stays on.
         Open(pass: 8);
         var results = Drive(91, 50, Math.PI, 150); // 33 m at 8 km/h, to N 17
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(results.Find(r => r.AutoSteerDisengagedThisCycle)?.DisengageReason, Is.Null);
+            Assert.That(results[^1].Guidance?.HasGuidance, Is.True);
+        });
+    }
+
+    [Test]
+    public void Engaged_just_outside_on_a_nudged_line_heading_into_the_field_AutoSteer_steers_in()
+    {
+        // Pass 8 nudged 12 m west runs at E 79: heading south from N 110 (3 m east of the fence) it
+        // comes into the field 15 m ahead. Pass 8 as it is (E 91) comes in only 75 m ahead, so the
+        // guard walking the pass without the nudge took AutoSteer off.
+        Open(pass: 8, nudge: -12);
+        var results = Drive(79, 110, Math.PI, 150);
 
         Assert.Multiple(() =>
         {

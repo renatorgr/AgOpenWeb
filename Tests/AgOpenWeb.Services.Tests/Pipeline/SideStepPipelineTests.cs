@@ -223,6 +223,25 @@ public class SideStepPipelineTests
     }
 
     [Test]
+    public void A_manual_U_turn_asked_for_with_the_move_is_not_overridden_by_the_S()
+    {
+        // The move and a manual U-turn in the same cycle: the U-turn is the operator's, so no S and
+        // no "no room for the S" stop at the move.
+        Open(pass: 1, northEnd: -45);
+        var d = DriveNorth(-38, -120, 60, i =>
+        {
+            if (i != 50) return;
+            _intents.RequestGuidanceSnap(left: true);
+            _intents.RequestManualYouTurn(turnLeft: false);
+        });
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.Last.DisengageReason, Is.Not.EqualTo(GpsPipelineService.SideStepNoRoomReason));
+            Assert.That(d.SawS, Is.False, "no S");
+        });
+    }
+
+    [Test]
     public void A_lateral_move_away_from_the_fence_is_steered_as_before()
     {
         // From pass 2 (E -30) to pass 3 (E -22): the boom stays 20 m and more from the fence.

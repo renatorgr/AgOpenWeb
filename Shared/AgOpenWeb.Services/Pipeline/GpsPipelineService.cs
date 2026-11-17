@@ -1460,7 +1460,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
             && HardFenceGuard.OutsideBy(fenceAround,
                 toolPos.Easting + Math.Cos(toolHeading) * config.Tool.Offset,
                 toolPos.Northing - Math.Sin(toolHeading) * config.Tool.Offset) > OutsideFenceMargin
-            && !_youTurnStateMachine.LineComesIntoFieldAhead(in tickCtx, _guidanceWorking, YouTurnPathingService.OutsideFenceReach))
+            && !_youTurnStateMachine.LineComesIntoFieldAhead(in tickCtx, _guidanceWorking, YouTurnPathingService.OutsideFenceReach,
+                boundary, _goAround.Current is { GoneRound.Count: > 0 } fenceBend ? fenceBend.Points : null))
         {
             autoSteerEngaged = false;
             autoSteerDisengaged = true;
@@ -1744,7 +1745,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
                         autoSteerEngaged = false;
                         autoSteerDisengaged = true;
                         disengageReason = NoLineReason;
-                        lock (_stateLock) _autoSteerEngaged = false;
+                        // As SetAutoSteerEngaged(false): the next engage searches the line afresh
+                        // (a setting that gives the pass a line again keeps the pass and nudge).
+                        lock (_stateLock) { _autoSteerEngaged = false; _trackGuidanceState = null; }
                         _audioService.Play(SoundEffect.UTurnTooClose);
                     }
                     _autoSteerService.UpdateGuidanceResults(0, NoLineDistance);
@@ -3293,7 +3296,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 || passNumber != _sideStepPass || Math.Abs(nudgeOffset - _sideStepNudge) > 1e-6
                 || intents.ManualYouTurn.HasValue))
             _sideStepPath = null;
-        if (!possible || !joined) return false;
+        // A manual U-turn asked for in the same cycle as the join is the operator's move: no S.
+        if (!possible || !joined || intents.ManualYouTurn.HasValue) return false;
 
         _sideStepPath = null;
         var plan = PlanSideStep(config, track!, passNumber, nudgeOffset, boundary!, headlandLine, youTurnEnabled,

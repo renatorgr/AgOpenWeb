@@ -140,9 +140,35 @@ public class FailedEndRetryTests
         guidance.HowManyPathsAway = 1;
         TriedAgain("another pass", Ctx(PassX(1), -18, 180, false));
 
+        // The alternative mode chosen.
+        TriedAgain("the alternative mode", Ctx(PassX(1), -18, 180, true));
+
         // The fence made soft: the turn may now swing over it.
         _boundary.OuterBoundary!.IsHard = false;
         TriedAgain("the fence made soft", Ctx(PassX(1), -18, 180, false));
+    }
+
+    [Test]
+    public void Normal_mode_a_heading_flickering_off_the_line_does_not_build_the_turn_again()
+    {
+        // Parked with AutoSteer on, a single antenna's heading swings past the 20 degrees the turn is
+        // looked for within, and back: the end is not tried again until the 1.5 s are up.
+        var (guidance, turn) = OnPass0();
+        _sm.Tick(Ctx(PassX(0), -18, 180, false), guidance, turn);
+        int builds = _creation.TurnPathBuilds;
+        Assert.That(builds, Is.GreaterThan(0), "the scenario: a turn was built and did not fit");
+
+        for (int i = 1; i <= 6; i++)
+        {
+            _sm.Tick(Ctx(PassX(0), -18, 180 + 30, false), guidance, turn); // off the line
+            _sm.Tick(Ctx(PassX(0), -18, 180, false), guidance, turn);
+        }
+        Assert.That(_creation.TurnPathBuilds, Is.EqualTo(builds), "not built again at each flicker");
+
+        // Off the line for 1.5 s (turned away, and back): tried again at once.
+        for (int i = 0; i < 15; i++) _sm.Tick(Ctx(PassX(0), -18, 180 + 30, false), guidance, turn);
+        _sm.Tick(Ctx(PassX(0), -18, 180, false), guidance, turn);
+        Assert.That(_creation.TurnPathBuilds, Is.GreaterThan(builds), "tried again after 1.5 s off the line");
     }
 
     [Test]

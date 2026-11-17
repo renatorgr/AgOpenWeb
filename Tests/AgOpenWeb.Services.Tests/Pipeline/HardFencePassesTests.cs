@@ -100,6 +100,20 @@ public class HardFencePassesTests
     }
 
     [Test]
+    public void A_drawn_curve_whose_long_stretch_crosses_the_field_is_not_outside()
+    {
+        // Four points, all outside the field, the stretch between the middle two across it through
+        // its centre: looked at only at its points, the pass was taken for wholly outside.
+        var curve = new Models.Track.Track
+        {
+            Name = "Drawn",
+            Points = new List<Vec3> { new(-60, 260, 0), new(-60, 60, 0), new(60, -60, 0), new(260, -60, 0) },
+            Type = Models.Track.TrackType.Curve,
+        };
+        Assert.That(HardFencePasses.WhollyOutside(curve, 0, Square), Is.False);
+    }
+
+    [Test]
     public void The_nearest_pass_inside_is_taken()
     {
         // Passes -3 and below are outside; 6 m passes, the reference at 0.

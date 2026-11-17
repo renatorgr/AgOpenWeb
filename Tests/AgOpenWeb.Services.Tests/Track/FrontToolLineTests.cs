@@ -149,6 +149,6 @@ public class FrontToolLineTests
         // A 5 m circle: the pivot would need 0.6 m (√(25 − 20.25) = 2.2 m); it is held at its 4.6 m.
         var line = FrontToolLine.Steered(Circle(5), closed: true, Reach, MinRadius)!;
         foreach (var p in line)
-            Assert.That(Math.Sqrt(p.Easting * p.Easting + p.Northing * p.Northing), Is.GreaterThanOrEqualTo(MinRadius - 0.05));
+            Assert.That(Math.Sqrt(p.Easting * p.Easting + p.Northing * p.Northing), Is.EqualTo(MinRadius).Within(0.05));
     }
 }

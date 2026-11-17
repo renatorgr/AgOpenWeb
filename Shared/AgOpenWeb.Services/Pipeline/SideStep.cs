@@ -159,7 +159,13 @@ public static class SideStep
             path[0] = pivot;
             return new SideStepPlan(SideStepOutcome.Planned, path);
         }
-        return first ? SideStepPlan.NotNeeded : SideStepPlan.NoRoom;
+        if (!first) return SideStepPlan.NoRoom;
+        // No way the tractor can drive (the line ends first, or every S bends too tight): beside the
+        // fence that is no room, not nothing to do, or AutoSteer steered straight onto the line.
+        var lineAhead = new List<(Vec3 Pose, double S)> { (pivot, s0) };
+        for (double s = s0; s <= Math.Min(frame.Length, s0 + MaxLength); s += CheckSpacing)
+            lineAhead.Add((OnLine(frame, s), s));
+        return FenceNear(lineAhead, frame, outer, tool, near) ? SideStepPlan.NoRoom : SideStepPlan.NotNeeded;
     }
 
     /// <summary>Headings to the line (radians) a steep approach is first brought round to by an arc.</summary>
@@ -284,14 +290,36 @@ public static class SideStep
             minE = Math.Min(minE, p.Easting); maxE = Math.Max(maxE, p.Easting);
             minN = Math.Min(minN, p.Northing); maxN = Math.Max(maxN, p.Northing);
         }
+        minE -= near; minN -= near; maxE += near; maxN += near;
         foreach (var o in obstacles)
         {
             if (o == null || !o.IsValid) continue;
-            foreach (var q in o.Points)
-                if (q.Easting > minE - near && q.Easting < maxE + near && q.Northing > minN - near && q.Northing < maxN + near)
+            // A corner in the box, an edge across it (a long, thin obstacle whose corners are all
+            // far off), or the box inside the obstacle.
+            var q = o.Points;
+            for (int i = 0, j = q.Count - 1; i < q.Count; j = i++)
+                if (SegmentMeetsBox(q[j].Easting, q[j].Northing, q[i].Easting, q[i].Northing, minE, minN, maxE, maxN))
                     return true;
+            if (o.IsPointInside((minE + maxE) / 2, (minN + maxN) / 2)) return true;
         }
         return false;
+    }
+
+    /// <summary>Whether the segment from (ax, ay) to (bx, by) has a point in the box (Liang-Barsky).</summary>
+    private static bool SegmentMeetsBox(double ax, double ay, double bx, double by,
+        double minX, double minY, double maxX, double maxY)
+    {
+        double t0 = 0, t1 = 1, dx = bx - ax, dy = by - ay;
+        return Clip(-dx, ax - minX) && Clip(dx, maxX - ax) && Clip(-dy, ay - minY) && Clip(dy, maxY - ay);
+
+        bool Clip(double p, double q)
+        {
+            if (Math.Abs(p) < 1e-12) return q >= 0;
+            double r = q / p;
+            if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+            else { if (r < t0) return false; if (r < t1) t1 = r; }
+            return true;
+        }
     }
 
     private static bool Fits(List<(Vec3 Pose, double S)> samples, Frame frame, BoundaryPolygon outer,
