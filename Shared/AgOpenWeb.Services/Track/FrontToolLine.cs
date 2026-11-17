@@ -308,7 +308,9 @@ public static class FrontToolLine
 
     /// <summary>
     /// The pass with a point every <see cref="StretchStep"/> along the first and last
-    /// <paramref name="span"/> metres of every stretch longer than the span. A pass bent round Go
+    /// <paramref name="span"/> metres of every stretch (all along one shorter than twice the span;
+    /// a 25 m stretch beside a tree, joined straight between its ends, took the boom 0.58 m off the
+    /// pass while the pull died away along it: review of fork #264). A pass bent round Go
     /// around obstacles is straight between its bends, one stretch often hundreds of metres long:
     /// the point that starts it moved with the bend and the far one did not, so the line steered
     /// ran slanted along the whole stretch (on a tester's field, simulator, the tractor and its
@@ -323,7 +325,7 @@ public static class FrontToolLine
             var a = pass[i];
             var b = pass[i + 1];
             double len = GeometryMath.Distance(a, b);
-            if (len <= Math.Max(span, 2 * StretchStep))
+            if (len <= 2 * StretchStep)
             {
                 result?.Add(a);
                 continue;

@@ -132,17 +132,19 @@ public class FrontToolLineTests
 
     // A pass north that steps right round a tree as a Go around bend does: out at 45° and back,
     // each bend an arc of the curve radius, the step 4 m. Points every 0.25 m.
-    private static List<Vec3> GoAroundS(double radius, double step = 4.0, double q = Math.PI / 4, double middle = 10)
+    private static List<Vec3> GoAroundS(double radius, double step = 4.0, double q = Math.PI / 4, double middle = 10, bool sparse = false)
     {
         var pts = new List<Vec3>();
         double e = 0, n = 0, h = 0; // heading clockwise from north
         void Straight(double len)
         {
-            for (double s = 0; s < len; s += 0.25)
+            // Sparse: a straight stretch is one segment, as a pass's straight is between its bends.
+            for (double s = 0; s < len; s += sparse ? Math.Max(len, 0.25) : 0.25)
             {
+                double ds = sparse ? Math.Max(len, 0.25) : 0.25;
                 pts.Add(new Vec3(e, n, h));
-                e += 0.25 * Math.Sin(h);
-                n += 0.25 * Math.Cos(h);
+                e += ds * Math.Sin(h);
+                n += ds * Math.Cos(h);
             }
         }
         void Arc(double turn) // + right
@@ -237,6 +239,20 @@ public class FrontToolLineTests
             if (steered == null) continue; // steered as it is
             Assert.That(FrontToolLine.TightestBend(steered), Is.GreaterThan(minRadius * 0.95), $"forward {forward}");
         }
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void A_short_straight_between_bends_follows_the_pull(bool forward)
+    {
+        // The straight beside the tree, 25 m, is one segment of the pass: shorter than the stretch the
+        // points near a stretch's ends were added on, it was joined straight between its ends' shifts,
+        // and the boom ran beside the pass along it while the pull died away.
+        const double reach = 4.8, minRadius = 3.0;
+        var pass = GoAroundS(6.0, middle: 25, sparse: true);
+        var steered = FrontToolLine.Steered(pass, closed: false, reach, minRadius, forward);
+        Assert.That(steered, Is.Not.Null);
+        Assert.That(ImplementOffPass(pass, steered!, reach, forward), Is.LessThan(0.05));
     }
 
     [Test]

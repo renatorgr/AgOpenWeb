@@ -641,7 +641,7 @@ Key parameters:
 AutoSteer steers the pivot on the line; an implement fixed `h` ahead of it (`ToolMount.FrontFixed`,
 `RigGeometry.AttachX`: the vehicle's front hitch plus the tool's working point from it) runs outside a bend of radius R by √(R² + h²) − R. `FrontToolLine.Steered` moves each point of
 the line steered (after the Go around bend; a closed pass's points one for one, so `PassUnfit` still lines up; an
-open pass first gets a point every metre near both ends of each long straight stretch, `WithPointsNearStretchEnds`:
+open pass first gets a point every metre near both ends of each straight stretch, all along a short one, `WithPointsNearStretchEnds`:
 a pass bent round Go around trees is straight between its bends, and moved one for one the stretch after a bend ran
 slanted, the tractor and the boom 0.40 m beside the pass for 100 m on a tester's field) towards the
 bend's centre by R − √(R² − h²), the pivot's bend never tighter than `Vehicle.MinTurningRadius`; R is measured over
