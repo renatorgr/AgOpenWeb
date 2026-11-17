@@ -227,6 +227,36 @@ public class LineEntryPlannerTests
     }
 
     [Test]
+    public void A_hard_fence_with_room_for_the_implement_still_gets_its_way()
+    {
+        // Heading east towards the pass, 10 m from the south fence: the way keeps the implement
+        // inside, so a hard fence changes nothing (a planner refusing every way beside a hard fence
+        // would pass the test above).
+        var hard = Plan(-40, -140, 90, Field(hard: true));
+
+        Assert.That(hard.Outcome, Is.EqualTo(LineEntryOutcome.Planned));
+        Assert.Multiple(() =>
+        {
+            Assert.That(hard.Path![^1].Easting, Is.EqualTo(0).Within(0.05), "ends on the pass");
+            Assert.That(hard.Path!.Min(p => p.Northing), Is.GreaterThan(-HalfN + 3 + _config.Guidance.UTurnDistanceFromBoundary),
+                "half the 6 m implement and the distance from boundary inside the fence all the way");
+        });
+    }
+
+    [Test]
+    public void The_way_has_a_point_every_step_from_the_tractor_on()
+    {
+        // The straight from the tractor to where the turn starts was one 3 m stretch between two
+        // points: the checks look at points, so a corner of the headland line or the fence between
+        // them went unseen.
+        var path = Plan(-40, -140, 90).Path!;
+        double longest = 0;
+        for (int i = 1; i < path.Count; i++)
+            longest = Math.Max(longest, GeometryMath.Distance(path[i - 1], path[i]));
+        Assert.That(longest, Is.LessThan(0.6));
+    }
+
+    [Test]
     public void An_obstacle_in_the_way_is_not_driven_through()
     {
         var field = Field();

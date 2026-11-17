@@ -119,6 +119,8 @@ public class LineEntryPipelineTests
 
     /// <summary>The field, the headland line <paramref name="headland"/> m in, and the track at
     /// <see cref="PassE"/> running north; AutoSteer engaged.</summary>
+    private Models.Track.Track _track = null!;
+
     private void OpenField(LineEntryMode mode, double headland = 20, bool hard = false)
     {
         _config.Guidance.LineEntryMode = mode;
@@ -133,7 +135,7 @@ public class LineEntryPipelineTests
             new(-100 + headland, -10 + headland, 0), new(100 - headland, -10 + headland, 0),
             new(100 - headland, 290 - headland, 0), new(-100 + headland, 290 - headland, 0),
         });
-        var track = Models.Track.Track.FromABLine("AB", new Vec3(PassE, -10, 0), new Vec3(PassE, 290, 0));
+        var track = _track = Models.Track.Track.FromABLine("AB", new Vec3(PassE, -10, 0), new Vec3(PassE, 290, 0));
         _passLineE = PassE + Models.Track.PassGeometry.Offset(track, 0, 6);
         _pipeline.SetActiveTrack(track, passNumber: 0, nudgeOffset: 0);
         _pipeline.SetAutoSteerEngaged(true);
@@ -201,6 +203,29 @@ public class LineEntryPipelineTests
     }
 
     [Test]
+    public void A_tuning_runs_trial_values_do_not_steer_the_way_onto_the_pass([Values] bool stanley)
+    {
+        // Tune on the line tries its values through the gains override. The way onto a pass is
+        // steered like a U-turn, and both read the operator's own values: a trial's look-ahead
+        // hold of 6 (or its Stanley gains) steered them for the cycle before the run ended.
+        _config.Guidance.IsPurePursuit = !stanley;
+        OpenField(LineEntryMode.PassStart);
+        var own = Cycle(0, 0, Math.PI / 2);
+        Assert.That(own.LineEntryPath, Is.Not.Null, "the scenario: the way is driven");
+        double ownSteer = own.Guidance!.SteerAngle;
+
+        TearDown();
+        SetUp();
+        _config.Guidance.IsPurePursuit = !stanley;
+        OpenField(LineEntryMode.PassStart);
+        _pipeline.SetGuidanceGainsOverride(new AgOpenWeb.Models.Pipeline.GuidanceGainsOverride(
+            LookAheadHold: 6.0, StanleyDistanceGain: 3.5, StanleyHeadingGain: 0.2));
+        var tried = Cycle(0, 0, Math.PI / 2);
+        Assert.That(tried.LineEntryPath, Is.Not.Null);
+        Assert.That(tried.Guidance!.SteerAngle, Is.EqualTo(ownSteer).Within(1e-9));
+    }
+
+    [Test]
     public void Nearest_point_joins_the_line_as_before()
     {
         OpenField(LineEntryMode.Nearest);
@@ -211,6 +236,7 @@ public class LineEntryPipelineTests
 
         Assert.That(track.Where(InCrop).Max(p => Math.Abs(p.Easting - _passLineE)), Is.GreaterThan(0.5),
             "the default joins at the nearest point, into the crop off the pass (why the option exists)");
+        Assert.That(Math.Abs(track[^1].Easting - _passLineE), Is.LessThan(0.5), "and it does join the line: steered to it, not straight on");
         _audio.DidNotReceive().Play(SoundEffect.YouTurnApproach);
     }
 
@@ -232,7 +258,61 @@ public class LineEntryPipelineTests
         {
             Assert.That(taken.LineEntryOfferPass, Is.Null, "answered");
             Assert.That(taken.LineEntryPath, Is.Not.Null, "and driven");
+            Assert.That(taken.LineEntryPath?[0].Easting, Is.EqualTo(0.2).Within(1e-6), "planned again from where the tractor is now");
+            Assert.That(first.LineEntryPath![0].Easting, Is.EqualTo(0).Within(1e-6), "the way offered started where it was then");
         });
+    }
+
+    [Test]
+    public void An_answer_in_the_cycle_the_line_moved_a_pass_is_not_taken_for_the_new_offer()
+    {
+        // The operator taps "take" for the way to pass 1R as the line is moved a pass: the offer he
+        // answered is gone, and the one made for the next pass in that cycle is a new question.
+        OpenField(LineEntryMode.Ask);
+        Assert.That(Cycle(0, 0, Math.PI / 2).LineEntryOfferPass, Is.EqualTo("1R"));
+
+        _intents.RequestGuidanceSnap(left: false);
+        _intents.RequestLineEntryAnswer(take: true);
+        var moved = Cycle(0.2, 0, Math.PI / 2);
+
+        Assert.That(moved.LineEntryOfferPass, Is.Not.Null.And.Not.EqualTo("1R"), "the new pass is offered, not driven");
+        Assert.That(Math.Abs(moved.LineEntryPath![^1].Easting - _passLineE), Is.EqualTo(6).Within(0.05), "the way drawn is the offer for the pass beside it");
+        var next = Cycle(0.4, 0, Math.PI / 2);
+        Assert.That(next.LineEntryOfferPass, Is.EqualTo(moved.LineEntryOfferPass), "still offered: nothing was taken");
+    }
+
+    [Test]
+    public void A_manual_U_turn_ends_the_offer_and_an_answer_with_it_takes_nothing()
+    {
+        OpenField(LineEntryMode.Ask);
+        Assert.That(Cycle(0, 0, Math.PI / 2).LineEntryOfferPass, Is.EqualTo("1R"));
+
+        _intents.RequestManualYouTurn(turnLeft: true);
+        _intents.RequestLineEntryAnswer(take: true);
+        var after = Cycle(0.2, 0, Math.PI / 2);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(after.LineEntryOfferPass, Is.Null, "the offer is gone, whether the turn was made or refused");
+            Assert.That(after.LineEntryPath, Is.Null, "and the way is not driven over the operator's turn");
+        });
+        Assert.That(Cycle(0.4, 0, Math.PI / 2).LineEntryOfferPass, Is.Null);
+    }
+
+    [Test]
+    public void The_track_edited_while_the_way_is_driven_plans_the_way_to_the_line_as_it_is_now()
+    {
+        // Reference Line Nudge: the same track, its points replaced 2 m to the east. The way to the
+        // old line ended beside the new one.
+        OpenField(LineEntryMode.PassStart);
+        var first = Cycle(0, 0, Math.PI / 2);
+        Assert.That(first.LineEntryPath![^1].Easting, Is.EqualTo(_passLineE).Within(0.05));
+
+        _track.Points = _track.Points.Select(p => new Vec3(p.Easting + 2, p.Northing, p.Heading)).ToList();
+        var moved = Cycle(0.2, 0, Math.PI / 2);
+
+        Assert.That(moved.LineEntryPath, Is.Not.Null);
+        Assert.That(moved.LineEntryPath![^1].Easting, Is.EqualTo(_passLineE + 2).Within(0.05));
     }
 
     [Test]
@@ -354,6 +434,61 @@ public class LineEntryPipelineTests
             Assert.That(inCrop.Max(p => Math.Abs(p.Easting - _passLineE)), Is.LessThan(0.5), "in the crop only on the pass");
             Assert.That(track.Min(p => p.Northing), Is.GreaterThan(-9), "the fence not reached");
         });
+    }
+
+    [Test]
+    public void Ask_facing_out_and_keeping_the_nearest_point_goes_off_and_says_to_face_the_field()
+    {
+        // The way round to the start of the pass is offered; AutoSteer steers the nearest point
+        // meanwhile, towards the fence. "Keep" left it steering there: the look at where the line
+        // leads was made only in the cycle the line was joined, when the offer stood in for it.
+        OpenField(LineEntryMode.Ask, hard: true);
+        var first = Cycle(0, 5, Math.PI);
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.LineEntryOfferPass, Is.Not.Null, "the way round is offered");
+            Assert.That(first.AutoSteerDisengagedThisCycle, Is.False, "and AutoSteer waits for the answer");
+        });
+
+        _intents.RequestLineEntryAnswer(take: false);
+        var kept = Cycle(0, 4.8, Math.PI);
+        Assert.Multiple(() =>
+        {
+            Assert.That(kept.AutoSteerDisengagedThisCycle, Is.True);
+            Assert.That(kept.DisengageReason, Is.EqualTo(FaceTheField));
+        });
+    }
+
+    [Test]
+    public void Ask_facing_out_and_left_unanswered_goes_off_when_the_offer_runs_out()
+    {
+        OpenField(LineEntryMode.Ask, hard: true);
+        long now = 1_000_000;
+        _pipeline.NowMs = () => now;
+        Assert.That(Cycle(0, 5, Math.PI).LineEntryOfferPass, Is.Not.Null);
+
+        now += GpsPipelineService.LineEntryOfferMs - 100;
+        var waiting = Cycle(0, 4.8, Math.PI);
+        Assert.That(waiting.AutoSteerDisengagedThisCycle, Is.False, "still offered");
+
+        now += 200;
+        var ranOut = Cycle(0, 4.6, Math.PI);
+        Assert.Multiple(() =>
+        {
+            Assert.That(ranOut.LineEntryOfferPass, Is.Null);
+            Assert.That(ranOut.DisengageReason, Is.EqualTo(FaceTheField));
+        });
+    }
+
+    [Test]
+    public void Ask_facing_the_field_and_keeping_the_nearest_point_stays_on()
+    {
+        // In the south headland heading north-east: the line, driven north, leads into the crop.
+        OpenField(LineEntryMode.Ask, hard: true);
+        Assert.That(Cycle(0, 0, Math.PI / 3).LineEntryOfferPass, Is.Not.Null);
+        _intents.RequestLineEntryAnswer(take: false);
+        var kept = Cycle(0.2, 0.1, Math.PI / 3);
+        Assert.That(kept.AutoSteerDisengagedThisCycle, Is.False, kept.DisengageReason);
     }
 
     [Test]

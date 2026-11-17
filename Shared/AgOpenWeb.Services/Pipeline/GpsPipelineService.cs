@@ -240,9 +240,13 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private int _lineEntryOfferPass;
     private double _lineEntryOfferNudge;
     private long _lineEntryOfferUntilMs;
+    // The offer ended in this cycle with AutoSteer still steering the nearest point: the operator
+    // chose to keep it, did not answer in time, or the way could not be planned again.
+    private bool _lineEntryOfferUntaken;
     private string? _lineEntryNotice;
     private bool _lineEntryWasEngaged;
     private Models.Track.Track? _lineEntryTrack;
+    private List<Vec3>? _lineEntryTrackPoints; // the track's points then: an edit replaces the list
     // The way being driven is to the pass AutoSteer chose itself as the nearest still to do
     // (NearestOpenPassEntry): kept whatever the entry mode, as the pass was not the operator's.
     private bool _lineEntryChosen;
@@ -540,6 +544,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// <inheritdoc />
     public void SetGuidanceGainsOverride(Models.Pipeline.GuidanceGainsOverride? gains) => _gainsOverride = gains;
 
+    // Read by the line's guidance only. A turn, the way onto a pass and contour steer with the
+    // operator's own values: the run ends when one starts, but it hears of it a cycle later.
     private double LookAheadHold => _gainsOverride?.LookAheadHold ?? _configStore.Guidance.GoalPointLookAheadHold;
     private double StanleyDistanceGain => _gainsOverride?.StanleyDistanceGain ?? _configStore.Guidance.StanleyDistanceErrorGain;
     private double StanleyHeadingGain => _gainsOverride?.StanleyHeadingGain ?? _configStore.Guidance.StanleyHeadingErrorGain;
@@ -1415,8 +1421,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // to a hard fence before any crop, so AutoSteer would steer it there. AutoSteer off with
         // the alarm, and the operator is told to turn the tractor to the field. Not when a way to
         // the start of the pass is driven or offered (Joining a new line in the headland), which
-        // turns round through the headland when it fits. Fork only.
-        if (joinedNewLine && autoSteerEngaged && !_isReverse && !_youTurn.IsExecuting
+        // turns round through the headland when it fits; looked at again when an offer (Ask) is
+        // answered with "keep", cannot be planned again, or is left unanswered: the nearest point
+        // is then what is steered, and facing the fence that is the way to it. Fork only.
+        if ((joinedNewLine || _lineEntryOfferUntaken) && autoSteerEngaged && !_isReverse && !_youTurn.IsExecuting
             && _lineEntryPath == null && _lineEntryOffer == null
             && boundary?.OuterBoundary is { IsHard: true, IsValid: true } && hasValidHeadlandLine && hasTickableTrack
             && InHeadland(boundary, headlandLine!, driftedEasting, driftedNorthing)
@@ -2630,9 +2638,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
         var c = _configStore;
         return new ContourParams(
             c.ActualToolWidth, c.Tool.Overlap, c.Tool.Offset,
-            c.Guidance.IsStanley, StanleyHeadingGain, StanleyDistanceGain,
+            c.Guidance.IsStanley, c.Guidance.StanleyHeadingErrorGain, c.Guidance.StanleyDistanceErrorGain,
             c.Vehicle.Wheelbase, c.Vehicle.MaxSteerAngle, c.Guidance.PurePursuitIntegralGain,
-            c.AutoSteer.SideHillCompensation, GoalLookAheadFor(speedKmh, _contour.LastCrossTrackError));
+            c.AutoSteer.SideHillCompensation, GoalLookAheadFor(speedKmh, _contour.LastCrossTrackError, tuned: false));
     }
 
     /// <summary>
@@ -2643,10 +2651,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// </summary>
     private double GoalLookAhead(double speedKmh) => GoalLookAheadFor(speedKmh, _lastCrossTrackError);
 
-    private double GoalLookAheadFor(double speedKmh, double lastXte)
+    private double GoalLookAheadFor(double speedKmh, double lastXte, bool tuned = true)
     {
         var g = _configStore.Guidance;
-        double hold = LookAheadHold;
+        double hold = tuned ? LookAheadHold : g.GoalPointLookAheadHold;
         double acquire = hold * g.GoalPointAcquireFactor;
         double xte = Math.Abs(lastXte);
         double h = xte <= 0.1 ? hold
@@ -3036,7 +3044,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // while moving, so the goal point jumped CLOSER at the track→turn handoff — a sudden
         // sharper steer that made the tractor hunt for ~½ s on entry (exit was gentler
         // because the goal jumped farther). Matching them makes the handoff seamless.
-        double lookAhead = GoalLookAhead(speedKmh); // same as track guidance (AgOpenGPS UpdateGoalPointDistance)
+        // The operator's own values, never a tuning run's (LookAheadHold).
+        double lookAhead = GoalLookAheadFor(speedKmh, _lastCrossTrackError, tuned: false); // same as track guidance (AgOpenGPS UpdateGoalPointDistance)
 
         var input = new YouTurnGuidanceInput
         {
@@ -3050,8 +3059,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
             Wheelbase = config.Vehicle.Wheelbase,
             MaxSteerAngle = config.Vehicle.MaxSteerAngle,
             UseStanley = config.Guidance.IsStanley,
-            StanleyHeadingErrorGain = StanleyHeadingGain,
-            StanleyDistanceErrorGain = StanleyDistanceGain,
+            StanleyHeadingErrorGain = config.Guidance.StanleyHeadingErrorGain,
+            StanleyDistanceErrorGain = config.Guidance.StanleyDistanceErrorGain,
             GoalPointDistance = lookAhead,
             UTurnCompensation = config.Guidance.UTurnCompensation,
             FixHeading = headingRad,
@@ -3101,8 +3110,11 @@ public sealed class GpsPipelineService : IGpsPipelineService
         IReadOnlyList<Vec3>? turnLine = null, IReadOnlyList<Vec3>? workHeadland = null)
     {
         var mode = config.Guidance.LineEntryMode;
-        bool trackSwitched = !ReferenceEquals(track, _lineEntryTrack);
+        // Another track, or this one edited (Reference Line Nudge, an end trimmed: an edit replaces
+        // the track's list of points): a way planned to the old line ends beside the new one.
+        bool trackSwitched = !ReferenceEquals(track, _lineEntryTrack) || !ReferenceEquals(track?.Points, _lineEntryTrackPoints);
         _lineEntryTrack = track;
+        _lineEntryTrackPoints = track?.Points;
         bool engagedNow = autoSteerEngaged && !_lineEntryWasEngaged;
         _lineEntryWasEngaged = autoSteerEngaged;
 
@@ -3119,12 +3131,30 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 || Math.Abs(nudgeOffset - _lineEntryNudge) > 1e-6 || intents.ManualYouTurn.HasValue))
             _lineEntryPath = null;
 
-        // An offer runs out with its time, when the line or the mode changes, and when the tractor
-        // has left the headland (it is on its way to the nearest point).
-        if (_lineEntryOffer != null && (!possible || mode != LineEntryMode.Ask || trackSwitched
+        // An offer runs out with its time, when the line or the mode changes, when a manual U-turn
+        // is asked for (the operator's own move, made or refused), and when the tractor has left the
+        // headland (it is on its way to the nearest point).
+        // One left unanswered on its line, or answered with "keep" (below), leaves AutoSteer on the
+        // nearest point: where that leads is looked at as when the line was joined
+        // (_lineEntryOfferUntaken, step 5b'''').
+        _lineEntryOfferUntaken = false;
+        if (_lineEntryOffer != null)
+        {
+            bool gone = !possible || mode != LineEntryMode.Ask || trackSwitched
                 || passNumber != _lineEntryOfferPass || Math.Abs(nudgeOffset - _lineEntryOfferNudge) > 1e-6
-                || NowMs() > _lineEntryOfferUntilMs || !InHeadland(boundary!, headlandLine!, e, n)))
-            _lineEntryOffer = null;
+                || intents.ManualYouTurn.HasValue
+                || !InHeadland(boundary!, headlandLine!, e, n);
+            if (gone)
+                _lineEntryOffer = null;
+            else if (NowMs() > _lineEntryOfferUntilMs)
+            {
+                _lineEntryOffer = null;
+                _lineEntryOfferUntaken = true;
+            }
+        }
+        // The offer the operator saw: an answer is for this one, not for one made in this cycle
+        // (the line moved a pass in the cycle of the answer makes a new offer below).
+        var offerSeen = _lineEntryOffer;
 
         // A new line: AutoSteer engaged, the line moved a pass (the snap applied above), another track.
         bool snapped = intents.GuidanceSnap.HasValue && !_youTurn.IsExecuting;
@@ -3197,13 +3227,17 @@ public sealed class GpsPipelineService : IGpsPipelineService
 
         // The operator's answer to the offer. The tractor has moved on towards the nearest point
         // since: the way is planned again from where it is now.
-        if (intents.LineEntryAnswer is { } take)
+        if (intents.LineEntryAnswer is { } take && offerSeen != null && ReferenceEquals(_lineEntryOffer, offerSeen))
         {
-            if (take && _lineEntryOffer != null && possible)
+            _lineEntryOfferUntaken = true;
+            if (take && possible)
             {
                 var plan = PlanLineEntry(config, track!, passNumber, nudgeOffset, headlandLine!, boundary!, e, n, headingRad);
                 if (plan.Outcome == LineEntryOutcome.Planned)
+                {
                     StartLineEntry(plan, passNumber, nudgeOffset);
+                    _lineEntryOfferUntaken = false;
+                }
                 else
                     _lineEntryNotice = $"No way through the headland to the start of pass {PassName(passNumber)} from here any more - staying on the nearest point";
             }
