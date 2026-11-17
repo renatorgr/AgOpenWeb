@@ -16,7 +16,8 @@ namespace AgOpenWeb.Services.Gps;
 /// taken out too), the offset goes to 0 at <see cref="EaseOutMPerS"/>: no pull on the steering.
 /// <para>Only a change of fix quality is a step: a position that wanders while the quality stays is
 /// followed, as before. Fixes further apart than <see cref="MaxGapS"/>, and steps larger than
-/// <see cref="MaxStepM"/> (another plane, the simulator switched), are not taken out.</para>
+/// <see cref="MaxStepM"/> (another plane, the simulator switched), are not taken out, nor is a step
+/// on the second fix after a start or a gap, when the tractor's travel is not known yet.</para>
 /// </summary>
 public sealed class RtkLossHold
 {
@@ -111,11 +112,14 @@ public sealed class RtkLossHold
         {
             bool leaving = _prevQuality == RtkFixed;
             bool returning = quality == RtkFixed;
-            if (enabled && consecutive && (leaving || returning || IsHolding))
+            // Only with the travel known (two fixes at one quality before this one): on the second
+            // fix after a start or a gap there is none, and the tractor's own travel since the
+            // first was taken out with the step, the position held an epoch's travel behind.
+            if (enabled && consecutive && _hasStep && (leaving || returning || IsHolding))
             {
                 // Where the tractor would be from its own travel; the rest is the receiver's step.
-                double se = easting - (_prevE + (_hasStep ? _stepE * epochs : 0));
-                double sn = northing - (_prevN + (_hasStep ? _stepN * epochs : 0));
+                double se = easting - (_prevE + _stepE * epochs);
+                double sn = northing - (_prevN + _stepN * epochs);
                 double s = Math.Sqrt(se * se + sn * sn);
                 if (s >= MinStepM && s <= MaxStepM)
                 {

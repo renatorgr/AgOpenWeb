@@ -96,9 +96,16 @@ public partial class YouTurnCreationService
             List<Vec2>? line = off > 0.1 ? _polygonOffsetService.CreateOutwardOffset(fence, off)
                 : off < -0.1 ? _polygonOffsetService.CreateInwardOffset(fence, -off)
                 : fence;
-            if (line == null || line.Count < 3) continue; // shrunk away: nothing left to turn at
+            if (line == null || line.Count < 3)
+            {
+                if (off <= 0.1) continue; // shrunk away: nothing left to turn at
+                // Could not be grown (an outline the offset gives up on): the obstacle itself is the
+                // turn line. Left out, the pass ran on through it with no turn and no alarm.
+                line = fence;
+            }
 
             var withHeadings = _polygonOffsetService.CalculatePointHeadings(line);
+            if (withHeadings == null || withHeadings.Count < 3) continue;
             var area = PolygonSlabIndex.Build(withHeadings);
             if (area == null) continue;
             double tightDistance = off - ArcTolerance;

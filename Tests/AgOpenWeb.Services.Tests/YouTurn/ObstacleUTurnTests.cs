@@ -107,7 +107,30 @@ public class ObstacleUTurnTests
 
         Assert.That(result.Path, Is.Not.Null.And.Count.GreaterThan(10));
         Assert.That(result.AtObstacle, Is.True);
-        Assert.That(result.Path!.Min(p => p.Northing), Is.GreaterThanOrEqualTo(ObstacleNorth + Distance - 0.2));
+        double near = result.Path!.Min(p => p.Northing);
+        Assert.That(near, Is.GreaterThanOrEqualTo(ObstacleNorth + Distance - 0.2));
+        Assert.That(near, Is.LessThan(ObstacleNorth + 10), "at the obstacle, not somewhere short of it");
+    }
+
+    [Test]
+    public void AnObstacleWhoseTurnLineCannotBeGrown_IsStillTurnedAt()
+    {
+        // The outward offset gives up on the outline: the obstacle had no turn line at all, and
+        // the pass ran on through it. Its own outline is the turn line then.
+        var real = new PolygonOffsetService();
+        var offsets = NSubstitute.Substitute.For<IPolygonOffsetService>();
+        NSubstitute.SubstituteExtensions.ReturnsForAnyArgs(offsets.CreateOutwardOffset(default!, default), (List<Vec2>?)null);
+        NSubstitute.SubstituteExtensions.ReturnsForAnyArgs(offsets.CreateInwardOffset(default!, default),
+            ci => real.CreateInwardOffset(ci.ArgAt<List<Vec2>>(0), ci.ArgAt<double>(1), ci.ArgAt<OffsetJoinType>(2)));
+        NSubstitute.SubstituteExtensions.ReturnsForAnyArgs(offsets.CalculatePointHeadings(default!),
+            ci => real.CalculatePointHeadings(ci.ArgAt<List<Vec2>>(0)));
+        var creation = new YouTurnCreationService(
+            NullLogger<YouTurnCreationService>.Instance, offsets, ConfigurationStore.Instance);
+
+        Assert.That(creation.TurnObstacleAhead(Field(ObstacleAction.Turn), 3, 0, heading: 0, distance: 45), Is.EqualTo(0),
+            "the obstacle 40 m ahead is seen");
+        Assert.That(creation.TurnObstacleAhead(Field(ObstacleAction.Turn), 3, 0, heading: 0, distance: 30), Is.EqualTo(-1),
+            "its own outline, no further out");
     }
 
     [Test]

@@ -1397,6 +1397,16 @@ public sealed class YouTurnPathingService
         {
             var curve = CurveProcessing.CreateOffsetCurve(track.Points, distAway);
             if (curve.Count < 2) return points;
+            // The walk below goes from point to point: a curve with long bare stretches (drawn with
+            // a few taps, 10 points to a stretch whatever its length) gets a point every step, or
+            // its end was looked for, and its cover sampled, only where it happens to have points.
+            for (int i = 1; i < curve.Count; i++)
+            {
+                double de = curve[i].Easting - curve[i - 1].Easting, dn = curve[i].Northing - curve[i - 1].Northing;
+                if (de * de + dn * dn <= 4 * Step * Step) continue;
+                curve = CurveProcessing.Densify(curve, Step);
+                break;
+            }
             int near = 0;
             double best = double.MaxValue;
             for (int i = 0; i < curve.Count; i++)

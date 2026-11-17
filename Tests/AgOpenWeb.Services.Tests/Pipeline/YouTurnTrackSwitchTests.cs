@@ -180,6 +180,30 @@ public class YouTurnTrackSwitchTests
     }
 
     [Test]
+    public void AnotherImplementWidth_ForgetsTheOrderMadeForTheOldPasses()
+    {
+        // The passes are laid a width apart: with another width pass 1 is another strip of ground,
+        // and the snake's order (and what it found worked or open on each pass) was made for the
+        // old strips.
+        var turn = PlannedOnTrackA();
+        var tool = ConfigurationStore.Instance.Tool;
+        tool.SetSectionWidth(0, 800); // 6 m before
+        _gpsService.UpdateGpsData(ValidFix());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.SnakeSequence, Is.Null, "the order for the old spacing");
+            Assert.That(turn.SnakeIndex, Is.EqualTo(-1));
+        });
+
+        // The same width again: nothing forgotten.
+        turn.SnakeSequence = new List<int> { 0, -1, 1 };
+        turn.SnakeIndex = 0;
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(turn.SnakeSequence, Is.Not.Null);
+    }
+
+    [Test]
     public void TheSameTrackAgain_KeepsThePlannedTurn()
     {
         var turn = PlannedOnTrackA();

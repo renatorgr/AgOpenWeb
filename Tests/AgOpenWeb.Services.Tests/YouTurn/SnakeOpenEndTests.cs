@@ -221,6 +221,26 @@ public class SnakeOpenEndTests
     }
 
     [Test]
+    public void A_curve_with_long_bare_stretches_is_judged_at_its_end_not_at_its_points()
+    {
+        // A curve of three points 100 m apart (drawn with a few taps), straight up the field. Its
+        // pass has a point at the middle of the field and one outside each end: the stretch at the
+        // south end was sampled at the middle point alone, so a pass left at the south was not
+        // open there, and one left only at the middle was.
+        var curve = Models.Track.Track.FromCurve("Drawn",
+            new List<Vec3> { new(0, -100, 0), new(0, 0, 0), new(0, 100, 0) }, isClosed: false);
+        var position = new Position { Easting = PassX(6), Northing = -25, Heading = 180 };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_pathing.IsPassOpenAtThisEnd(curve, 0, 4, 0, _boundary, _square, position,
+                headingSameWay: false, headlandAhead: 15, AllCoveredBut(n => n < -10)), Is.True, "left at the south end");
+            Assert.That(_pathing.IsPassOpenAtThisEnd(curve, 0, 4, 0, _boundary, _square, position,
+                headingSameWay: false, headlandAhead: 15, AllCoveredBut(n => Math.Abs(n) < 5)), Is.False, "left only at the middle");
+        });
+    }
+
+    [Test]
     public void The_stretch_at_this_end_is_measured_from_where_the_pass_leaves_the_field()
     {
         var position = new Position { Easting = PassX(6), Northing = -25, Heading = 180 };

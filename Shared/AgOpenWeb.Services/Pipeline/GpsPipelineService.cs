@@ -219,6 +219,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private readonly YouTurnWorkingState _youTurn = new();
     private Models.Track.Track? _youTurnTrack; // the track _youTurn was planned on
     private List<Vec3>? _youTurnTrackPoints; // its points then: a moved line is a new set of passes
+    private double _youTurnPassSpacing;      // width less overlap then: another spacing is a new set too
     private readonly GuidanceWorkingState _guidanceWorking = new();
 
     // ── Joining a new line at the start of the pass (fork only) ─────────
@@ -829,19 +830,23 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // order were the old track's; kept, they started a turn mid-field on the new one and
         // landed on the old pass number. AgOpenGPS resets the U-turn on a track change
         // (FormBuildTracks: yt.ResetYouTurn).
+        double passSpacing = _configStore.ActualToolWidth - _configStore.Tool.Overlap;
         if (!ReferenceEquals(track, _youTurnTrack))
         {
             _youTurnTrack = track;
             _youTurnTrackPoints = track?.Points;
+            _youTurnPassSpacing = passSpacing;
             _youTurnStateMachine.ForgetTrack(_youTurn);
         }
-        else if (!ReferenceEquals(track?.Points, _youTurnTrackPoints))
+        else if (!ReferenceEquals(track?.Points, _youTurnTrackPoints) || Math.Abs(passSpacing - _youTurnPassSpacing) > 1e-6)
         {
-            // The same track with its line moved (Reference Line Nudge, a trimmed end): pass N is
-            // another strip of ground now, so what was found out about each pass (worked, open at
-            // this end, an end with no turn) and the snake order go. Kept, the snake turned past
-            // the clean passes of the moved line (Tapada da Casa). Fork only.
+            // The same track with its line moved (Reference Line Nudge, a trimmed end), or with
+            // its passes laid at another spacing (the implement's width or the overlap changed):
+            // pass N is another strip of ground now, so what was found out about each pass (worked,
+            // open at this end, an end with no turn) and the snake order go. Kept, the snake turned
+            // past the clean passes of the moved line (Tapada da Casa). Fork only.
             _youTurnTrackPoints = track?.Points;
+            _youTurnPassSpacing = passSpacing;
             _youTurnStateMachine.ForgetPassStatus(_youTurn);
         }
 
@@ -2443,6 +2448,25 @@ public sealed class GpsPipelineService : IGpsPipelineService
             double reach = ObstacleStopDistance + ObstacleStopSeconds * Math.Abs(currentPosition.Speed);
             unfitAhead = CurveProcessing.UnfitAhead(currentTrack.Points, unfit, at, travel, reach);
         }
+        // An implement shifted to one side runs on the pass's centre, the tool offset beside the
+        // line steered: across a neck the tractor's line can fit where the implement's does not
+        // (shifted away from the fence the laps follow, it is that much nearer the fence across
+        // the neck). Where the implement's own line does not fit ahead counts too.
+        if (!unfitAhead && track.IsClosed && bent == null && Math.Abs(config.Tool.Offset) >= 0.01)
+        {
+            double toolDist = Models.Track.PassGeometry.Offset(track, passNumber, widthMinusOverlap, nudgeOffset);
+            if (Math.Abs(toolDist) >= 0.01 && PassUnfit(track, toolDist) is { } toolUnfit)
+            {
+                var toolPass = _offsetPasses.Get(track, toolDist, config.Guidance.UTurnRadius).Points;
+                if (toolUnfit.Length == toolPass.Count)
+                {
+                    double travel = _isReverse ? headingRad + Math.PI : headingRad;
+                    double reach = ObstacleStopDistance + ObstacleStopSeconds * Math.Abs(currentPosition.Speed);
+                    unfitAhead = CurveProcessing.UnfitAhead(toolPass, toolUnfit,
+                        CurveProcessing.NearestIndex(toolPass, driftedEasting, driftedNorthing), travel, reach);
+                }
+            }
+        }
 
         return (output.SteerAngle, output.CrossTrackError, output.GoalPoint.Easting, output.GoalPoint.Northing,
                 statusMessage, true, output.IsAtEndOfTrack, unfitAhead);
@@ -2623,7 +2647,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// Returns the detected nearest pass number, the offset display track and the pivot's
     /// cross-track error to it (m, the engaged guidance's sign) for the light bar.
     /// </summary>
-    private (Models.Track.Track Track, int Pass, double Width, double Nudge, bool Extend, double Radius, int Piece) _toolPassKey;
+    private (Models.Track.Track Track, List<Vec3> Points, int Pass, double Width, double Nudge, bool Extend, double Radius, int Piece, bool[]? Unfit) _toolPassKey;
     private IReadOnlyList<Vec3>? _toolPass;
 
     /// <summary>
@@ -2632,7 +2656,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// shadow on the current AB line shows where the tool will land; on a curve it follows the
     /// pass, its corners rounded as the tractor will drive them. The same list until the pass
     /// changes. On a closed track, only the stretch of the pass that fits nearest the tractor
-    /// (<see cref="CurveProcessing.PassUnfit"/>).
+    /// (<see cref="CurveProcessing.PassUnfit"/>): another list when the tractor comes nearer
+    /// another stretch of the same pass.
     /// </summary>
     private IReadOnlyList<Vec3> ToolPass(Models.Track.Track track, int pass, double widthMinusOverlap, double nudge, bool extend,
         double easting, double northing)
@@ -2643,8 +2668,13 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // tractor (found each cycle only on such a pass).
         bool[]? unfit = track.IsClosed && Math.Abs(dist) >= 0.01 ? PassUnfit(track, dist) : null;
         int piece = unfit != null ? CurveProcessing.FitPieceStart(_offsetPasses.Get(track, dist, radius).Points, unfit, easting, northing) : 0;
-        var key = (track, pass, widthMinusOverlap, nudge, extend, radius, piece);
-        if (_toolPass != null && _toolPassKey.Equals(key)) return _toolPass;
+        // The track's own list and the unfit marks too: an edit replaces the list (the same length
+        // or not), and the marks are made again with the turn radius and the tolerance.
+        var key = (track, track.Points, pass, widthMinusOverlap, nudge, extend, radius, piece, unfit);
+        if (_toolPass != null && ReferenceEquals(_toolPassKey.Track, track) && ReferenceEquals(_toolPassKey.Points, track.Points)
+            && ReferenceEquals(_toolPassKey.Unfit, unfit)
+            && _toolPassKey.Pass == pass && _toolPassKey.Width == widthMinusOverlap && _toolPassKey.Nudge == nudge
+            && _toolPassKey.Extend == extend && _toolPassKey.Radius == radius && _toolPassKey.Piece == piece) return _toolPass;
         IReadOnlyList<Vec3> line;
         if (track.Points.Count == 2)
         {
@@ -2685,7 +2715,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
         return _offsetPasses.Unfit(track, distAway, _configStore.Guidance.UTurnRadius, Math.Max(0.5, half));
     }
 
-    private (Models.Track.Track Track, double DistAway, int Start, int Count) _fitPieceKey;
+    // The pass's own list and its unfit marks are made again when the track's points, the turn
+    // radius or the tolerance change (OffsetPassCache), so they stand for all of those.
+    private (List<Vec3> Pass, bool[] Unfit, int Start) _fitPieceKey;
     private Models.Track.Track? _fitPiece;
 
     /// <summary>
@@ -2700,8 +2732,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
         var unfit = PassUnfit(track, distAway);
         if (unfit == null || unfit.Length != shown.Points.Count) return shown;
         int start = CurveProcessing.FitPieceStart(shown.Points, unfit, easting, northing);
-        var key = (track, distAway, start, shown.Points.Count);
-        if (_fitPiece != null && _fitPieceKey.Equals(key)) return _fitPiece;
+        var key = (shown.Points, unfit, start);
+        if (_fitPiece != null && ReferenceEquals(_fitPieceKey.Pass, key.Points) && ReferenceEquals(_fitPieceKey.Unfit, unfit)
+            && _fitPieceKey.Start == start) return _fitPiece;
         _fitPieceKey = key;
         return _fitPiece = new Models.Track.Track
         {
