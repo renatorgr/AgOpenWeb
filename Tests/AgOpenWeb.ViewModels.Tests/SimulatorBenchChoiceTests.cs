@@ -87,11 +87,14 @@ public class SimulatorBenchChoiceTests
         // screen that showed it a moment ago: taken then, the module was steered by the
         // simulator from the moment it came back.
         _vm.State.Connections.IsAutoSteerDataOk = false;
+        var said = new List<string>();
+        _vm.FailureReported += said.Add;
 
         _vm.RequestSimulatorDrivesSteering(true);
 
         Assert.That(_vm.IsSimulatorDrivingSteering, Is.False);
         _b.GpsPipelineService.DidNotReceive().SetSimulatorSteersModule(true);
+        Assert.That(said, Has.Exactly(1).Contains("no steer module is answering"), "the screen is told why");
 
         _vm.State.Connections.IsAutoSteerDataOk = true; // the module comes back: still not chosen
         Assert.That(_vm.IsSimulatorDrivingSteering, Is.False);
