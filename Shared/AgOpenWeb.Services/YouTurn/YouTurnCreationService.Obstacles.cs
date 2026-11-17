@@ -248,9 +248,14 @@ public partial class YouTurnCreationService
     /// <paramref name="obstacles"/> are the turn obstacles of the plan (with its promoted ones);
     /// without them they are built from <paramref name="promoted"/>.
     /// </summary>
+    /// <param name="arcFrom">The path's first point that is not the current pass (the arc's start): the
+    /// entry leg before it is the pass, bent round its Go around obstacles with the Go around margin
+    /// as the pipeline steers it, and is not held to a turn's room from them. Held to it, a turn
+    /// whose entry leg ran on a bend round a tree near the end of the pass was refused on every
+    /// try (fork only: a tester's field, the farm job harness).</param>
     private bool ClearsTurnObstacles(IReadOnlyList<Vec3> path, Boundary boundary, ConfigurationStore config,
         out int innerIndex, double exitReach = 0, int turnedAt = -1, List<TurnObstacle>? obstacles = null,
-        IReadOnlyList<int>? promoted = null)
+        IReadOnlyList<int>? promoted = null, int arcFrom = 0)
     {
         innerIndex = -1;
         obstacles ??= TurnObstacles(boundary, config.Guidance.UTurnDistanceFromBoundary, promoted, HardReach(config));
@@ -278,10 +283,10 @@ public partial class YouTurnCreationService
         ImplementSweptPathResult? swept = null;
         IReadOnlyList<Vec3> sweptPath = exit.Count == 0 ? path : path.Concat(exit).ToList();
         double margin = Math.Max(0.0, config.Guidance.UTurnDistanceFromBoundary);
-        bool ImplementClear(IReadOnlyList<Vec2> fence, double pathMargin, double? exitMargin, double exitLength = double.PositiveInfinity)
+        bool ImplementClear(IReadOnlyList<Vec2> fence, double pathMargin, double? exitMargin, double exitLength = double.PositiveInfinity, int from = 0)
         {
             swept ??= ImplementSweptPath.Compute(sweptPath, BuildToolGeometry(config));
-            if (!TurnClearance.Evaluate(Corners(swept, 0, path.Count), fence, TurnClearance.KeepSide.Outside, pathMargin).IsClear)
+            if (!TurnClearance.Evaluate(Corners(swept, from, path.Count), fence, TurnClearance.KeepSide.Outside, pathMargin).IsClear)
                 return false;
             int exitEnd = exitLength >= exitReach ? sweptPath.Count : Math.Min(sweptPath.Count, path.Count + (int)Math.Ceiling(exitLength / 0.5));
             return exitMargin == null || exit.Count == 0
@@ -302,18 +307,21 @@ public partial class YouTurnCreationService
                 return false;
             }
         }
+        // From the arc on: the entry leg before it is the pass (arcFrom).
+        int legEnd = Math.Clamp(arcFrom, 0, path.Count - 2);
+        int roundFrom = legEnd == 0 ? 0 : Densified(path.Take(legEnd + 1).ToList(), 0.5).Count() - 1;
         foreach (var r in round)
         {
             if (obstacles.Any(o => o.InnerIndex == r.InnerIndex)) continue; // promoted: tested above
             int settleEnd = Math.Min(pivot.Count, pathPoints + (int)Math.Ceiling(settle / 0.5));
-            for (int i = 0; i < settleEnd; i++)
+            for (int i = roundFrom; i < settleEnd; i++)
                 if (r.Clear.Contains(pivot[i].Easting, pivot[i].Northing))
                 {
                     innerIndex = r.InnerIndex;
                     return false;
                 }
             if (!r.IsHard) continue;
-            if (!ImplementClear(r.Fence, margin, goAroundMargin, settle))
+            if (!ImplementClear(r.Fence, margin, goAroundMargin, settle, legEnd))
             {
                 innerIndex = r.InnerIndex;
                 return false;
@@ -342,7 +350,7 @@ public partial class YouTurnCreationService
     /// the inner boundaries, or -1 when the turn is still clear.
     /// </summary>
     public int RestOfTurnBlockedBy(IReadOnlyList<Vec3> path, Position tractor, Boundary boundary, int turnedAt,
-        IReadOnlyList<int>? promoted = null)
+        IReadOnlyList<int>? promoted = null, Vec3? arcStart = null)
     {
         if (path.Count < 2) return -1;
         int nearest = 0;
@@ -354,7 +362,9 @@ public partial class YouTurnCreationService
         }
         int start = Math.Min(nearest, path.Count - 2);
         IReadOnlyList<Vec3> rest = start == 0 ? path : path.Skip(start).ToList();
-        return ClearsTurnObstacles(rest, boundary, _configStore, out int inner, ExitReach, turnedAt, promoted: promoted) ? -1 : inner;
+        // The entry leg is the pass, as at planning (ClearsTurnObstacles' arcFrom).
+        int arcFrom = arcStart is { } at ? Math.Max(0, PassEnds.NearestIndex(path, at.Easting, at.Northing) - start) : 0;
+        return ClearsTurnObstacles(rest, boundary, _configStore, out int inner, ExitReach, turnedAt, promoted: promoted, arcFrom: arcFrom) ? -1 : inner;
     }
 
     // The path's points with more between any two further apart than the step, so a turn line
@@ -382,10 +392,17 @@ public partial class YouTurnCreationService
         if (obstacles.Count == 0) return null;
         int step = input.IsHeadingSameWay ? 1 : -1;
         var points = input.GuidancePoints;
+        // The pass must have been in the workable area first, as its end (PassEnds.Find): at the
+        // start of a job the tractor drives in over the turn line, and the stretch outside it under
+        // the tractor is where the pass begins. Taken for the end, a U-turn obstacle ahead was not
+        // seen, and a turn that did not fit before it was told as the implement swinging into the
+        // hard boundary (fork only: the spreaders on a tester's field, the farm job harness).
+        bool seenInside = false;
         for (int j = input.CurrentLocationIndex; j > 0 && j < points.Count; j += step)
         {
             int area = input.IsPointInsideTurnArea(points[j]);
-            if (area == 0) continue;
+            if (area == 0) { seenInside = true; continue; }
+            if (!seenInside) continue;
             return area > 0 && area <= obstacles.Count ? obstacles[area - 1] : null;
         }
         return null;

@@ -475,6 +475,7 @@ namespace AgOpenWeb.Services.YouTurn
             isOutOfBounds = true;
             int stopIfWayOut = 0;
             double head = 0;
+            _bendNextPass = null;
 
             // Walk the start index inward until the generated arc sits inside the turn area
             while (isOutOfBounds)
@@ -510,6 +511,17 @@ namespace AgOpenWeb.Services.YouTurn
                 if (stopIfWayOut == 1)
                     _logger.LogDebug("[YouTurn] Arc from index {Idx} ({E:F1},{N:F1}) heading {Deg:F0}°, {Side}",
                         curveIndex, currentPos.Easting, currentPos.Northing, head * 180 / Math.PI, isTurningRight ? "right" : "left");
+
+                // On a Go around bend of the pass the arc starts at the bend's heading, up to 45° off
+                // the pass, and lands on the next pass at its own (fork only).
+                if (OnGoAroundBend(input, curveIndex, count, out var bendSeat))
+                {
+                    var fromBend = ArcFromBend(input, bendSeat, isTurningRight);
+                    isOutOfBounds = fromBend.Count == 0 || OutsideTurnLineBy(input, fromBend) > 0 || fromBend.Exists(p => Blocked(input, p));
+                    if (isOutOfBounds) continue;
+                    ytList = SeatForwardOnBend(input, curveIndex, count, isTurningRight, fromBend, SlideBound(fromBend, inClosestTurnPt));
+                    break;
+                }
 
                 ytList = keyhole
                     ? SagittaTurnGeometry.BuildKeyhole(currentPos, head, isTurningRight, input.TurnRadius, Math.Abs(turnOffset))
