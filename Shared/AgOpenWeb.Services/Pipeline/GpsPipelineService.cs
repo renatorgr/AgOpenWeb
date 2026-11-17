@@ -1177,6 +1177,11 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 intents.ManualYouTurn.Value, autoSteerEngaged,
                 in tickCtx, _guidanceWorking, _youTurn);
         }
+        else if (intents.ManualYouTurn.HasValue)
+        {
+            // No line to turn on (no track, contour, a recorded path): the press is answered too.
+            youTurnTickEffects = new YouTurnEffects { StatusMessage = YouTurnEffects.NoLineForManualTurn, TellOperator = true };
+        }
 
         // Not while the way to the start of the pass is driven: the tractor crosses the headland
         // along it, and a turn would be planned for where it heads now.

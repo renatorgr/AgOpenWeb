@@ -2,6 +2,7 @@
 // Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using AgOpenWeb.Models;
@@ -61,7 +62,15 @@ public class FallbackTurnInsideBoundaryTests
         },
     };
 
-    private static double EdgeNorthing(double x) => 10 + (60 - x) * 5 / 11;
+    // The distance to the fence itself, not the gap straight north to a slanted edge (0.9 m
+    // north of this one is 0.82 m from it).
+    private static double FenceDistance(List<Vec2> fence, Vec3 p)
+    {
+        double min = double.MaxValue;
+        for (int i = 0, j = fence.Count - 1; i < fence.Count; j = i++)
+            min = Math.Min(min, GeometryMath.PointToSegmentDistance(new Vec2(p.Easting, p.Northing), fence[j], fence[i]));
+        return min;
+    }
 
     private List<Vec3> TurnRightFromPass0(double tractorNorthing, double headlandAhead)
     {
@@ -85,7 +94,7 @@ public class FallbackTurnInsideBoundaryTests
         {
             Assert.That(GeometryMath.IsPointInPolygon(Slanted, new Vec2(p.Easting, p.Northing)), Is.True,
                 $"path point ({p.Easting:F1},{p.Northing:F1}) is outside the fence");
-            Assert.That(EdgeNorthing(p.Easting) - p.Northing, Is.GreaterThanOrEqualTo(0.9),
+            Assert.That(FenceDistance(Slanted, p), Is.GreaterThanOrEqualTo(0.99),
                 $"path point ({p.Easting:F1},{p.Northing:F1}) is within 1 m of the fence");
         }
         Assert.That(path.Max(p => p.Northing), Is.LessThan(33.5 - 1), "the arc was seated further back");
@@ -141,7 +150,7 @@ public class FallbackTurnInsideBoundaryTests
         {
             Assert.That(GeometryMath.IsPointInPolygon(tight, new Vec2(p.Easting, p.Northing)), Is.True,
                 $"path point ({p.Easting:F1},{p.Northing:F1}) is outside the fence");
-            Assert.That(-1.5 + (60 - p.Easting) * 5 / 11 - p.Northing, Is.GreaterThanOrEqualTo(0.9),
+            Assert.That(FenceDistance(tight, p), Is.GreaterThanOrEqualTo(0.99),
                 $"path point ({p.Easting:F1},{p.Northing:F1}) is within 1 m of the fence");
         }
         Assert.That(path.Max(p => p.Northing), Is.LessThan(20), "the apex before the headland crossing");

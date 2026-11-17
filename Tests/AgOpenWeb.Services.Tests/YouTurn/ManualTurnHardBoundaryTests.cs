@@ -9,6 +9,7 @@ using AgOpenWeb.Models;
 using AgOpenWeb.Models.Base;
 using AgOpenWeb.Models.Configuration;
 using AgOpenWeb.Models.Pipeline;
+using AgOpenWeb.Models.Tool;
 using AgOpenWeb.Services.Geometry;
 using AgOpenWeb.Services.YouTurn;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -191,6 +192,36 @@ public class ManualTurnHardBoundaryTests
         EightMetreTool(front: false, hitch: 5);
         Assert.That(TurnAwayFromTheEastFence(endFromFence: -0.2), Is.Empty,
             "the rear corner would swing 1 m further across");
+    }
+
+    [Test]
+    public void EachCornerIsHeldToItsOwnPlaceAtThePress()
+    {
+        // A 100 m square, 2 m to keep. The rear left corner is 0.5 m across the east fence at the
+        // press and stays there; the front right one, 3 m inside then, swings 0.3 m across. The
+        // worst corner along the turn is still the first one, no further across than at the
+        // press, and by that alone the turn was let through.
+        var fence = new List<Vec2> { new(0, 0), new(100, 0), new(100, 100), new(0, 100) };
+        var swept = new ImplementSweptPathResult();
+        for (int i = 0; i <= 10; i++)
+        {
+            double n = 50 + i;
+            swept.RearLeft.Add(new Vec3(100.5, n, 0));
+            swept.FrontRight.Add(new Vec3(97 + 0.33 * i, n, 0));
+            swept.FrontLeft.Add(new Vec3(90, n, 0));
+            swept.RearRight.Add(new Vec3(90, n, 0));
+        }
+        Assert.That(YouTurnCreationService.SweepKeepsToFence(swept, fence, 2.0), Is.False,
+            "a corner inside the fence at the press crosses it");
+
+        // The same with the front right corner staying inside the fence: let through.
+        for (int i = 0; i <= 10; i++) swept.FrontRight[i] = new Vec3(97 + 0.25 * i, 50 + i, 0);
+        Assert.That(YouTurnCreationService.SweepKeepsToFence(swept, fence, 2.0), Is.True,
+            "up to the fence, and the corner across it no further");
+
+        // And the corner across the fence going further across: refused, as before.
+        swept.RearLeft[10] = new Vec3(100.8, 60, 0);
+        Assert.That(YouTurnCreationService.SweepKeepsToFence(swept, fence, 2.0), Is.False);
     }
 
     [Test]
