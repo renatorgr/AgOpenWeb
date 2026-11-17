@@ -47,6 +47,8 @@ public sealed partial class LineTuneViewModel : ObservableObject, ILineTuneActio
         AcceptCommand = new RelayCommand(Accept);
         DiscardCommand = new RelayCommand(Discard);
         Guidance.PropertyChanged += OnGuidanceSettingChanged;
+        _configService.Store.AutoSteer.PropertyChanged += OnSteeringSettingChanged;
+        _configService.Store.Vehicle.PropertyChanged += OnSteeringSettingChanged;
         _configService.Store.PropertyChanged += OnStoreChanged;
     }
 
@@ -148,6 +150,34 @@ public sealed partial class LineTuneViewModel : ObservableObject, ILineTuneActio
             case nameof(GuidanceConfig.StanleyHeadingErrorGain):
             case nameof(GuidanceConfig.PurePursuitIntegralGain):
             case nameof(GuidanceConfig.StanleyIntegralGainAB):
+                _run.Stop("A steering setting was changed.");
+                _run.DropResult("A steering setting was changed.");
+                break;
+        }
+    }
+
+    // The same for what the steer module and the guidance take from the AutoSteer and vehicle
+    // settings (the sliders beside this panel): the wheels answer another way after a change.
+    private void OnSteeringSettingChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (_run == null)
+            return;
+        switch (e.PropertyName)
+        {
+            case nameof(AutoSteerConfig.WasOffset):
+            case nameof(AutoSteerConfig.CountsPerDegree):
+            case nameof(AutoSteerConfig.Ackermann):
+            case nameof(AutoSteerConfig.ProportionalGain):
+            case nameof(AutoSteerConfig.MaxPwm):
+            case nameof(AutoSteerConfig.MinPwm):
+            case nameof(AutoSteerConfig.InvertWas):
+            case nameof(AutoSteerConfig.InvertMotor):
+            case nameof(AutoSteerConfig.SideHillCompensation):
+            case nameof(VehicleConfig.Wheelbase):
+            case nameof(VehicleConfig.MaxSteerAngle):
+            case nameof(VehicleConfig.MaxAngularVelocity):
+            case nameof(VehicleConfig.AntennaPivot):
+            case nameof(VehicleConfig.AntennaOffset):
                 _run.Stop("A steering setting was changed.");
                 _run.DropResult("A steering setting was changed.");
                 break;

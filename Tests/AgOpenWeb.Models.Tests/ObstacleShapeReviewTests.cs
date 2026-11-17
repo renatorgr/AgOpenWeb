@@ -87,4 +87,26 @@ public class ObstacleShapeReviewTests
         a.Points = a.Points.Take(5).ToList(); // a new list: no UpdateBounds needed
         Assert.That(a.OutlineStamp, Is.Not.EqualTo(before));
     }
+
+    [Test]
+    public void OutlineStamp_SeesACornerMovedBothWaysAtOnce()
+    {
+        // Summed as 31 x east + north, a corner moved 1 cm east and 31 cm south left the stamp as
+        // it was, and a turn planned before the move was kept.
+        var a = Polygon(new[] { (30.0, 40.0), (40.0, 40.0), (50.0, 40.0), (50.0, 60.0), (40.0, 60.0), (30.0, 60.0) });
+        long before = a.OutlineStamp;
+        foreach (int cmEast in new[] { -3, -2, -1, 1, 2, 3 })
+        {
+            a.Points[1] = new BoundaryPoint(40 + cmEast * 0.01, 40 - cmEast * 0.31, 0);
+            a.UpdateBounds();
+            Assert.That(a.OutlineStamp, Is.Not.EqualTo(before), $"{cmEast} cm east, {-31 * cmEast} cm north");
+        }
+
+        // Two corners trading a move: 31 x 31 cm north on one, 1 cm north on the next but one.
+        a.Points[1] = new BoundaryPoint(40, 40, 0);
+        a.Points[2] = new BoundaryPoint(50, 40.01, 0);
+        a.Points[3] = new BoundaryPoint(50 - 0.31, 60, 0);
+        a.UpdateBounds();
+        Assert.That(a.OutlineStamp, Is.Not.EqualTo(before));
+    }
 }

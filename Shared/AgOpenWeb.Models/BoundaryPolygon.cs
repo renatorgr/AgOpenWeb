@@ -79,7 +79,7 @@ public class BoundaryPolygon
                 if (pt.Easting > maxE) maxE = pt.Easting;
                 if (pt.Northing < minN) minN = pt.Northing;
                 if (pt.Northing > maxN) maxN = pt.Northing;
-                outline = (outline * 31 + Cm(pt.Easting)) * 31 + Cm(pt.Northing);
+                outline = Mix(Mix(outline ^ Cm(pt.Easting)) ^ Cm(pt.Northing));
             }
         }
 
@@ -125,6 +125,20 @@ public class BoundaryPolygon
     }
 
     private static long Cm(double metres) => (long)Math.Round(metres * 100);
+
+    // Scrambles the stamp after each coordinate (splitmix64's last step), so one corner's move is
+    // never undone by a move of its other coordinate: summed as 31 x east + north, a corner moved
+    // 1 cm east and 31 cm south left the stamp as it was.
+    private static long Mix(long value)
+    {
+        unchecked
+        {
+            ulong z = (ulong)value + 0x9E3779B97F4A7C15UL;
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+            return (long)(z ^ (z >> 31));
+        }
+    }
 
     /// <summary>
     /// A fingerprint of the whole outline: every corner, to the centimetre. Worked out with the

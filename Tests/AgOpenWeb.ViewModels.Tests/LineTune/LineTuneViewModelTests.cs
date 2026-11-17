@@ -188,6 +188,46 @@ public class LineTuneViewModelTests
     }
 
     [Test]
+    public void A_module_or_vehicle_steering_setting_changed_during_the_run_stops_it([Values] bool module)
+    {
+        // The sliders beside the panel: the module's gain, the largest steer angle. The wheels
+        // answer another way after the change, so the values tried before and after don't compare.
+        _vm.StartCommand.Execute(null);
+        Run(5);
+        Assert.That(_vm.Stage, Is.EqualTo(LineTuneStage.Measuring));
+        if (module) _store.AutoSteer.ProportionalGain += 10;
+        else _store.Vehicle.MaxSteerAngle -= 5;
+        Assert.That(_vm.Stage, Is.EqualTo(LineTuneStage.Stopped));
+        Assert.That(_sim.Override, Is.Null);
+        Assert.That(_vm.ResultText, Does.Contain("setting was changed"));
+    }
+
+    [Test]
+    public void A_value_found_is_not_taken_after_a_module_or_vehicle_steering_setting_changed([Values] bool module)
+    {
+        _store.ActiveVehicleProfileName = "Maxxum";
+        _vm.StartCommand.Execute(null);
+        Run(900);
+        Assert.That(_vm.Stage, Is.EqualTo(LineTuneStage.Result), _vm.ResultText);
+        if (module) _store.AutoSteer.MinPwm += 5;
+        else _store.Vehicle.Wheelbase += 0.3;
+        Assert.That(_vm.Stage, Is.EqualTo(LineTuneStage.Stopped));
+
+        _vm.AcceptCommand.Execute(null);
+        Assert.That(_store.Guidance.GoalPointLookAheadHold, Is.EqualTo(4.0), "the value found is not written");
+    }
+
+    [Test]
+    public void A_setting_that_is_not_steering_leaves_the_run_alone()
+    {
+        _vm.StartCommand.Execute(null);
+        Run(5);
+        _store.AutoSteer.LightbarEnabled = !_store.AutoSteer.LightbarEnabled;
+        _store.Vehicle.AntennaHeight += 0.1;
+        Assert.That(_vm.Stage, Is.EqualTo(LineTuneStage.Measuring));
+    }
+
+    [Test]
     public void The_browser_in_control_going_away_stops_the_run()
     {
         _vm.StartCommand.Execute(null);

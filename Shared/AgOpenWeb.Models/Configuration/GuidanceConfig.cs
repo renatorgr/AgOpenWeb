@@ -198,6 +198,14 @@ public class GuidanceConfig : ObservableObject
     public const double MinGoAroundRadius = 1.0, MaxGoAroundRadius = 50.0;
     public const double MinGoAroundMargin = 0.3, MaxGoAroundMargin = 10.0;
 
+    /// <summary>
+    /// A value read from a profile, kept to its range. One that is no number (NaN or an infinity:
+    /// the profile files may hold them, and <see cref="Math.Clamp(double, double, double)"/> lets
+    /// NaN through) is read as <paramref name="fallback"/>.
+    /// </summary>
+    public static double InRange(double value, double fallback, double min, double max)
+        => double.IsFinite(value) ? Math.Clamp(value, min, max) : fallback;
+
     // Sagitta (offset-semicircle) by default — matches Twol, which dropped Dubins
     // for U-turns because the shortest-path solution loops ("np" shape) whenever the
     // next row is closer than 2× the turn radius. SagittaStyle == 0, so profiles

@@ -787,7 +787,8 @@ vehicle profile). A value that runs away (0.25 m past where it started, half the
 swings) is cut at once: a calm value steers back to the moved line before the line moves back. AutoSteer
 off, a speed change, a turn or the headland near, no RTK, contour, reverse or a hand nudge or snap pause or end
 the run, with the line moved back and the operator's values steering again; a steering setting changed (the
-integral gains too), another vehicle profile loaded or the browser in control gone ends it, and a result waiting
+integral gains too, and what the module and the guidance take from the AutoSteer and vehicle settings: the module's
+gain and PWM limits, WAS zero and counts, Ackermann, wheelbase, Max Steer Angle, the antenna's place), another vehicle profile loaded or the browser in control gone ends it, and a result waiting
 to be taken is dropped by such a change (`LineTuneRun.DropResult`): it was found for other settings. Only a nudge
 that is exactly the run's own move is the run's (a hand nudge in the same cycle ends it), and a move that never
 shows on the line is taken out of what the run still has to move back. The calm value steering back is never

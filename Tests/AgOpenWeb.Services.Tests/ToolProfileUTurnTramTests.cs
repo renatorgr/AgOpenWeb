@@ -190,4 +190,40 @@ public class ToolProfileUTurnTramTests
             Assert.That(d.Guidance.LineEntryStraight, Is.EqualTo(0));
         });
     }
+
+    [Test]
+    public void GoAroundAndLineEntrySettings_ThatAreNoNumberInAFile_AreReadAsTheDefaults()
+    {
+        // The profile files may hold NaN and the infinities, and a clamp lets NaN through: the
+        // bend round an obstacle and the way onto a pass were then built from no number at all.
+        var odd = new ConfigurationStore();
+        odd.Guidance.GoAroundRadius = double.NaN;
+        odd.Guidance.GoAroundMargin = double.NaN;
+        odd.Guidance.LineEntryStraight = double.NaN;
+        ToolProfileJsonService.Save(_tools, "Odd", odd);
+        Assert.That(File.ReadAllText(Path.Combine(_tools, "Odd.json")), Does.Contain("NaN"), "the file holds them");
+
+        var defaults = new GuidanceConfig();
+        var d = new ConfigurationStore();
+        d.Guidance.GoAroundRadius = 9;
+        d.Guidance.GoAroundMargin = 2;
+        d.Guidance.LineEntryStraight = 7;
+        Assert.That(ToolProfileJsonService.Load(_tools, "Odd", d), Is.True);
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.Guidance.GoAroundRadius, Is.EqualTo(defaults.GoAroundRadius));
+            Assert.That(d.Guidance.GoAroundMargin, Is.EqualTo(defaults.GoAroundMargin));
+            Assert.That(d.Guidance.LineEntryStraight, Is.EqualTo(defaults.LineEntryStraight));
+        });
+
+        odd.Guidance.GoAroundRadius = double.PositiveInfinity;
+        odd.Guidance.LineEntryStraight = double.PositiveInfinity;
+        ToolProfileJsonService.Save(_tools, "Odd", odd);
+        Assert.That(ToolProfileJsonService.Load(_tools, "Odd", d), Is.True);
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.Guidance.GoAroundRadius, Is.EqualTo(defaults.GoAroundRadius));
+            Assert.That(d.Guidance.LineEntryStraight, Is.EqualTo(defaults.LineEntryStraight));
+        });
+    }
 }
