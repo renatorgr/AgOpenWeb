@@ -193,7 +193,7 @@ namespace AgOpenWeb.Services.YouTurn
                 case 0: // Find the crossing points
                     if (!FindCurveTurnPoint(input, false))
                     {
-                        FailCreate("no crossing of the turn line ahead", TurnFailure.TooLate);
+                        FailCreate("no crossing of the turn line ahead", NoCrossingFailure(input));
                         return false;
                     }
 
@@ -459,7 +459,7 @@ namespace AgOpenWeb.Services.YouTurn
             // Find the crossing point
             if (!FindCurveTurnPoint(input, false))
             {
-                FailCreate("no crossing of the turn line ahead", TurnFailure.TooLate);
+                FailCreate("no crossing of the turn line ahead", NoCrossingFailure(input));
                 return false;
             }
 
@@ -624,7 +624,7 @@ namespace AgOpenWeb.Services.YouTurn
                         if (input.TrackMode == 32 || input.TrackMode == 64) // waterPivot or bndCurve
                             youTurnPhase = 11; // Ignore
                         else
-                            FailCreate("wide turn: no crossing of the turn line ahead", TurnFailure.TooLate);
+                            FailCreate("wide turn: no crossing of the turn line ahead", NoCrossingFailure(input));
                         return false;
                     }
 
@@ -981,7 +981,7 @@ namespace AgOpenWeb.Services.YouTurn
 
             if (!FindCurveTurnPoint(input, true))
             {
-                FailCreate("K turn: no crossing of the turn line ahead", TurnFailure.TooLate);
+                FailCreate("K turn: no crossing of the turn line ahead", NoCrossingFailure(input));
                 return false;
             }
 
@@ -1785,6 +1785,32 @@ namespace AgOpenWeb.Services.YouTurn
         }
 
         private string? _failReason;
+
+        /// <summary>How far ahead of the tractor the turn line counts as reached, m: as the generator's
+        /// "within 3 m of the tractor (too late)".</summary>
+        private const double TooLateWithin = 3.0;
+
+        /// <summary>
+        /// Why a pass has no crossing of the turn line ahead: <see cref="TurnFailure.TooLate"/> when the
+        /// tractor is at the turn line (its point of the pass, or one within <see cref="TooLateWithin"/>
+        /// ahead, outside the workable area), else <see cref="TurnFailure.DoesNotFit"/>, the pass's
+        /// geometry giving no crossing to plan from (fork only).
+        /// </summary>
+        private static TurnFailure NoCrossingFailure(YouTurnCreationInput input)
+        {
+            var points = input.GuidancePoints;
+            int step = input.IsHeadingSameWay ? 1 : -1;
+            int i = input.CurrentLocationIndex;
+            if (points == null || input.IsPointInsideTurnArea == null || i < 0 || i >= points.Count) return TurnFailure.DoesNotFit;
+            double along = 0;
+            for (int j = i; j >= 0 && j < points.Count; j += step)
+            {
+                if (j != i) along += Distance(points[j - step], points[j]);
+                if (along > TooLateWithin) break;
+                if (input.IsPointInsideTurnArea(points[j]) != 0) return TurnFailure.TooLate;
+            }
+            return TurnFailure.DoesNotFit;
+        }
 
         /// <summary>The kind of the last failure (<see cref="FailCreate"/>), for <see cref="YouTurnCreationOutput.Failure"/>.</summary>
         private TurnFailure _failKind = TurnFailure.DoesNotFit;

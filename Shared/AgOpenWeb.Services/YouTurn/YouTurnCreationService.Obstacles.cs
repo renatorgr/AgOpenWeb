@@ -374,15 +374,17 @@ public partial class YouTurnCreationService
     /// points up to <paramref name="arcFrom"/>, runs into, or -1. The leg is the pass as it was bent
     /// round the Go around obstacles there were when the turn was planned, so it is not held to a
     /// turn's room (<see cref="ClearsTurnObstacles"/>); one added or moved onto it since is not gone
-    /// round, and the tractor would drive the leg into it. The pivot is kept out of each Go around
-    /// obstacle grown by half the track, as the pipeline's check straight ahead
-    /// (<see cref="AgOpenWeb.Services.Track.GoAroundPasses.ObstacleAhead"/>): a leg bent round an obstacle is clear of
-    /// that by construction. Obstacles with no room on this pass (<paramref name="promoted"/>) are
-    /// U-turn obstacles, tested with the whole path. Fork only.
+    /// round, and the tractor would drive the leg into it, or the implement over it. The pivot is kept
+    /// out of each Go around obstacle grown by what the bend keeps from it less its margin: half the
+    /// implement and its offset, or half the track if wider (<see cref="AgOpenWeb.Services.Track.ObstacleDetour.KeepOutFor"/>
+    /// with no margin). A leg bent round an obstacle keeps that and the margin (0.3 m at least), so it
+    /// is clear of it by construction. Obstacles with no room on this pass (<paramref name="promoted"/>)
+    /// are U-turn obstacles, tested with the whole path. Fork only.
     /// </summary>
     private int EntryLegRunsInto(IReadOnlyList<Vec3> path, int arcFrom, Boundary boundary, IReadOnlyList<int>? promoted)
     {
-        double grow = Math.Max(0.3, _configStore.Vehicle.TrackWidth / 2);
+        var c = _configStore;
+        double grow = AgOpenWeb.Services.Track.ObstacleDetour.KeepOutFor(c.ActualToolWidth, c.Tool.Offset, c.Vehicle.TrackWidth, 0);
         var leg = Densified(path.Take(Math.Min(arcFrom, path.Count - 1) + 1).ToList(), 0.5).ToList();
         for (int i = 0; i < boundary.InnerBoundaries.Count; i++)
         {
@@ -390,8 +392,9 @@ public partial class YouTurnCreationService
             if (!obstacle.IsValid || obstacle.AtObstacle != ObstacleAction.GoRound) continue;
             if (promoted != null && promoted.Contains(i)) continue;
             var outline = obstacle.Points.Select(p => new Vec2(p.Easting, p.Northing)).ToList();
+            // An outline that can't be grown is held to itself, not left out.
             var ring = _polygonOffsetService.CreateOutwardOffset(outline, grow);
-            if (ring == null || ring.Count < 3) continue;
+            if (ring == null || ring.Count < 3) ring = outline;
             if (leg.Exists(p => GeometryMath.IsPointInPolygon(ring, p.Easting, p.Northing))) return i;
         }
         return -1;

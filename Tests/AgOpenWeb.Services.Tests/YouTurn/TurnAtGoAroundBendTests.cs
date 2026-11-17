@@ -257,6 +257,16 @@ public class TurnAtGoAroundBendTests
 
         Assert.That(creation.RestOfTurnBlockedBy(path, tractor, field, -1, null, r.ArcStart), Is.EqualTo(1),
             "the new tree on the entry leg");
+
+        // Beside the leg instead, 3 m off it: clear of the tractor, under the 8 m boom.
+        field.InnerBoundaries.RemoveAt(1);
+        var next = path[path.IndexOf(onLeg) + 1];
+        double h = Math.Atan2(next.Easting - onLeg.Easting, next.Northing - onLeg.Northing);
+        var beside = ObstacleTestField.Circle(onLeg.Easting - 3.0 * Math.Cos(h), onLeg.Northing + 3.0 * Math.Sin(h), 0.3);
+        beside.AtObstacle = ObstacleAction.GoRound;
+        field.InnerBoundaries.Add(beside);
+        Assert.That(creation.RestOfTurnBlockedBy(path, tractor, field, -1, null, r.ArcStart), Is.EqualTo(1),
+            "a new tree under the boom beside the entry leg");
     }
 
     [TestCase(97.5)]
