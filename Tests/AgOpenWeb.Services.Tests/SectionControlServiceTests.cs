@@ -635,6 +635,36 @@ public class SectionControlServiceTests
             "every button takes the state, as in AgOpenGPS");
     }
 
+    // The sprayer strip (js/overlays.js, sprayerSectionAsked) works out what the module is asked
+    // from the section's colour code, the only state the page gets. This is that rule: when the
+    // relay bit's rule changes here, the page's must change with it (it did not when #707 made
+    // the look-ahead ask the valve early, and the squares showed the two phases the wrong way).
+    [TestCase(SectionButtonState.Off, false, false, false, 0)]
+    [TestCase(SectionButtonState.On, true, false, false, 1)]
+    [TestCase(SectionButtonState.Auto, true, false, false, 2)]
+    [TestCase(SectionButtonState.Auto, true, false, true, 3)]
+    [TestCase(SectionButtonState.Auto, false, true, false, 4)]
+    [TestCase(SectionButtonState.Auto, false, false, false, 5)]
+    public void TheRelayBit_IsWhatTheSprayerStripReadsFromTheColourCode(
+        SectionButtonState button, bool isOn, bool onRequest, bool offRequest, int code)
+    {
+        static bool StripSaysAsked(int c, bool earlyOff) => c == 1 || c == 2 || c == 4 || (c == 3 && !earlyOff);
+
+        var s = _service.SectionStates[0];
+        s.ButtonState = button;
+        s.IsOn = isOn;
+        s.SectionOnRequest = onRequest;
+        s.SectionOffRequest = offRequest;
+        Assert.That(s.ColorCode, Is.EqualTo(code), "the scenario");
+
+        foreach (double lookAheadOff in new[] { 0.0, 0.5 })
+        {
+            ConfigurationStore.Instance.Tool.LookAheadOffSetting = lookAheadOff;
+            Assert.That((_service.GetSectionBits() & 1) != 0, Is.EqualTo(StripSaysAsked(code, lookAheadOff > 0)),
+                $"colour code {code}, look-ahead off {lookAheadOff}");
+        }
+    }
+
     [Test]
     public void SetAllSectionsOn_MoreThan16Sections_BitsStopAtTheSectionCount()
     {

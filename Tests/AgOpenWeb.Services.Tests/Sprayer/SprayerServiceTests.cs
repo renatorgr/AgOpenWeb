@@ -275,6 +275,28 @@ public class SprayerServiceTests
     }
 
     [Test]
+    public void ModuleSilent_SoundsOnce_AndAgainAfterItCameBack()
+    {
+        // Nothing arrives from a module that went silent, so nothing sounded: the strip said
+        // "No data from the sprayer" with no sound.
+        Seconds(2, 3.0, 5, 0b11111);
+        _clock.Advance(TimeSpan.FromSeconds(2));
+        _ = _service.Status;
+        _audio.DidNotReceive().Play(Arg.Any<SoundEffect>());   // 2 s: a message late, not silence
+
+        _clock.Advance(TimeSpan.FromSeconds(2));
+        Assert.That(_service.Status!.Value.Alarms, Is.EqualTo(SprayerAlarms.NoData));
+        _audio.Received(1).Play(SoundEffect.SprayerAlarm);
+        for (int i = 0; i < 300; i++) { _clock.Advance(TimeSpan.FromMilliseconds(100)); _ = _service.Status; }
+        _audio.Received(1).Play(SoundEffect.SprayerAlarm);     // once: switched off at the end of the day
+
+        Seconds(2, 3.0, 5, 0b11111);                           // back, then silent again
+        _clock.Advance(TimeSpan.FromSeconds(4));
+        _ = _service.Status;
+        _audio.Received(2).Play(SoundEffect.SprayerAlarm);
+    }
+
+    [Test]
     public void ModuleSilent_ReportsNoData()
     {
         ModuleSeconds(1, 3.0, 0, 0, alarms: 2);

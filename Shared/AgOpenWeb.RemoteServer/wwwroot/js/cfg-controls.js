@@ -29,13 +29,14 @@ function cfgSend(key, val) {
 }
 // Ackermann scales every left angle the steer module reads (90 = ×0.90): at 0 a left turn reads
 // 0° and the motor drives on to the stop. A value under 50 is asked first (fork, Renato
-// 2026-11-13: it went 90 → 0 on the tractor with nobody meaning to). The panel shows the kept
-// value until Confirm, so Cancel or a tap beside the box leaves nothing changed.
+// 2026-11-13: it went 90 → 0 on the tractor with nobody meaning to), and so is any lower value
+// once under 50 (40 → 0 too); a step back up towards 50 is not. The panel shows the kept value
+// until Confirm, so Cancel or a tap beside the box leaves nothing changed.
 const ACKERMANN_ASK_BELOW = 50;
 function cfgAskFirst(key, val) {
   if (key !== 'autosteer.ackermann') return false;
   const v = Number(val), was = Number(cfgGet(key));
-  if (!(v < ACKERMANN_ASK_BELOW) || !(was >= ACKERMANN_ASK_BELOW)) return false;
+  if (!(v < ACKERMANN_ASK_BELOW) || (Number.isFinite(was) && !(v < was))) return false;
   if (typeof populateAutoSteer === 'function') populateAutoSteer(true);
   showConfirm(tr('Set Ackermann to {v}?', { v }),
     tr('The steer module will read every left angle at {v} % (now {was} %). Under 50, AutoSteer turns the wheels left much further than the angle asked for.', { v, was }),
@@ -116,14 +117,25 @@ function guardSliderTap(s, ro) {
     s.value = held;                        // the browser moved it to the finger: put it back
     if (ro) ro.textContent = fmtRo(s.value, s.dataset.fmt);
   };
+  let press = null; // the release listeners of the press under way
   s.addEventListener('pointerdown', e => {
     held = Math.abs(e.clientX - sliderThumbX(s)) <= SLIDER_THUMB_REACH_PX ? null : s.value;
+    // The release is heard on the window: a mouse let go off the slider left it held, and the
+    // arrow keys did nothing until the next press. After the release's own 'change', so the
+    // arrow keys on a focused slider work as before.
+    // Only the pointer that began the press ends it: a second finger lifted from the screen
+    // (a palm, the other hand on another slider) let the guard go while the first still dragged.
+    if (press) press.abort();
+    const c = press = new AbortController();
+    const end = up => {
+      if (up.pointerId !== e.pointerId) return;
+      c.abort(); setTimeout(() => { if (press === c) held = null; }, 0);
+    };
+    for (const ev of ['pointerup', 'pointercancel'])
+      window.addEventListener(ev, end, { capture: true, signal: c.signal });
   });
   s.addEventListener('input', keep);
   s.addEventListener('change', keep);
-  // After the release's own 'change': the arrow keys on a focused slider work as before.
-  for (const ev of ['pointerup', 'pointercancel'])
-    s.addEventListener(ev, () => setTimeout(() => { held = null; }, 0));
 }
 // A slider is hard to set to one exact value with a finger, so each gets − / + buttons (one
 // step a tap, repeating while held; sent once on release) and its value box can be tapped to

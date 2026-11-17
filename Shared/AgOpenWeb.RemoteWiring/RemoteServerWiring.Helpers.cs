@@ -835,4 +835,11 @@ public static partial class RemoteServerWiring
         // Dispatcher.UIThread, which does not exist in the headless host.
         dispatcher.Post(() => state.Connections.NtripTestStatus = result);
     }
+
+    /// <summary>
+    /// A text from a web screen as one line of the log: a line break in it would start a line of
+    /// its own in a bug report's logs.txt, which then reads as something the app wrote.
+    /// </summary>
+    internal static string OneLine(string text) =>
+        text.IndexOfAny(new[] { '\r', '\n' }) < 0 ? text : text.Replace("\r", "\\r").Replace("\n", "\\n");
 }

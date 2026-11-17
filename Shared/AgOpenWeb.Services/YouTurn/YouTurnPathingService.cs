@@ -679,13 +679,14 @@ public sealed class YouTurnPathingService
     /// </summary>
     public bool PassLeavesFieldAhead(Models.Track.Track track, double abHeading, int pathsAway,
         Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay,
-        IReadOnlyList<Vec3>? steeredLine = null)
+        IReadOnlyList<Vec3>? steeredLine = null, double nudge = 0, double toolShift = 0)
     {
         var outer = boundary?.OuterBoundary;
         if (outer == null || !outer.IsValid || track.Points.Count < 2) return false;
 
         double insideRun = 0;
-        foreach (var p in PassPointsAhead(track, abHeading, pathsAway, position, headingSameWay, steeredLine, MaxWalkToFence))
+        foreach (var p in PassPointsAhead(track, abHeading, pathsAway, position, headingSameWay, steeredLine, MaxWalkToFence,
+                     nudge, toolShift))
         {
             if (!outer.IsPointInside(p.Easting, p.Northing)) return true;
             if (IsPointInsideCultivatedArea(p.Easting, p.Northing, boundary, headlandLine))
@@ -707,31 +708,42 @@ public sealed class YouTurnPathingService
     /// <paramref name="reach"/> metres? Asked with the tractor outside a hard fence: AutoSteer
     /// steering it into the field from just outside (12 m before the fence, as the farm job
     /// harness starts) is the operator's choice, but one steering it on along a pass that stays
-    /// outside is not. True with no usable outer boundary or track. Fork only.
+    /// outside is not. <paramref name="steeredLine"/> (a pass bent round Go around obstacles) is
+    /// walked instead of the pass when given; <paramref name="nudge"/> and
+    /// <paramref name="toolShift"/> move the pass as the line steered is moved. True with no
+    /// usable outer boundary or track. Fork only.
     /// </summary>
     public bool PassComesIntoFieldAhead(Models.Track.Track track, double abHeading, int pathsAway,
-        Boundary? boundary, Position position, bool headingSameWay, double reach)
+        Boundary? boundary, Position position, bool headingSameWay, double reach,
+        IReadOnlyList<Vec3>? steeredLine = null, double nudge = 0, double toolShift = 0)
     {
         var outer = boundary?.OuterBoundary;
         if (outer == null || !outer.IsValid || track.Points.Count < 2) return true;
-        foreach (var p in PassPointsAhead(track, abHeading, pathsAway, position, headingSameWay, null, reach))
+        foreach (var p in PassPointsAhead(track, abHeading, pathsAway, position, headingSameWay, steeredLine, reach, nudge, toolShift))
             if (outer.IsPointInside(p.Easting, p.Northing)) return true;
         return false;
     }
 
     /// <summary>
-    /// The points of pass <paramref name="pathsAway"/> ahead of <paramref name="position"/>, a
-    /// metre apart, from abreast of the tractor, the way it travels, up to
-    /// <paramref name="maxWalk"/> m (or <paramref name="steeredLine"/>'s, when given).
+    /// The points of pass <paramref name="pathsAway"/> (moved by <paramref name="nudge"/> and the
+    /// implement's <paramref name="toolShift"/>, as the line steered is) ahead of
+    /// <paramref name="position"/>, a metre apart, from abreast of the tractor, the way it travels,
+    /// up to <paramref name="maxWalk"/> m (or <paramref name="steeredLine"/>'s, when given). A curve
+    /// is walked a metre at a time too, not from point to point: a curve with long straight
+    /// stretches went past <paramref name="maxWalk"/> by up to a stretch, and each point counted as
+    /// a metre of it.
     /// </summary>
     private IEnumerable<Vec2> PassPointsAhead(Models.Track.Track track, double abHeading, int pathsAway,
-        Position position, bool headingSameWay, IReadOnlyList<Vec3>? steeredLine, double maxWalk)
+        Position position, bool headingSameWay, IReadOnlyList<Vec3>? steeredLine, double maxWalk,
+        double nudge = 0, double toolShift = 0)
     {
-        double distAway = PassGeometry.Offset(track, pathsAway, _configStore.ActualToolWidth - _configStore.Tool.Overlap);
+        double distAway = PassGeometry.Offset(track, pathsAway, _configStore.ActualToolWidth - _configStore.Tool.Overlap,
+            nudge, toolShift);
         const double Step = WalkStep;
+        double travel = headingSameWay ? abHeading : abHeading + Math.PI;
         if (steeredLine is { Count: >= 2 })
         {
-            foreach (var p in WalkAhead(steeredLine, position, headingSameWay ? abHeading : abHeading + Math.PI, Step, maxWalk))
+            foreach (var p in WalkAhead(steeredLine, position, travel, Step, maxWalk))
                 yield return p;
             yield break;
         }
@@ -739,25 +751,8 @@ public sealed class YouTurnPathingService
         {
             var curve = CurveProcessing.CreateOffsetCurve(track.Points, distAway);
             if (curve.Count < 2) yield break;
-            int near = 0;
-            double best = double.MaxValue;
-            for (int i = 0; i < curve.Count; i++)
-            {
-                double de = curve[i].Easting - position.Easting, dn = curve[i].Northing - position.Northing;
-                double d = de * de + dn * dn;
-                if (d < best) { best = d; near = i; }
-            }
-            int i1 = Math.Min(near + 1, curve.Count - 1), i0 = Math.Max(near - 1, 0);
-            double tdx = curve[i1].Easting - curve[i0].Easting, tdy = curve[i1].Northing - curve[i0].Northing;
-            double travel = headingSameWay ? abHeading : abHeading + Math.PI;
-            int fwd = tdx * Math.Sin(travel) + tdy * Math.Cos(travel) >= 0 ? 1 : -1;
-            double walked = 0;
-            for (int i = near; i + fwd >= 0 && i + fwd < curve.Count && walked <= maxWalk; i += fwd)
-            {
-                double de = curve[i + fwd].Easting - curve[i].Easting, dn = curve[i + fwd].Northing - curve[i].Northing;
-                walked += Math.Sqrt(de * de + dn * dn);
-                yield return new Vec2(curve[i + fwd].Easting, curve[i + fwd].Northing);
-            }
+            foreach (var p in WalkAhead(curve, position, travel, Step, maxWalk))
+                yield return p;
             yield break;
         }
         var a = track.Points[0];
@@ -1339,8 +1334,8 @@ public sealed class YouTurnPathingService
         Func<double, double, (double From, double To)> distances;
         if (track.Points.Count > 2)
         {
-            var from = CurveProcessing.CreateOffsetCurve(track.Points, uFrom);
-            var to = CurveProcessing.CreateOffsetCurve(track.Points, uTo);
+            var from = CurveProcessing.CreateOffsetCurveWithInfo(track.Points, uFrom, track.IsClosed).Points;
+            var to = CurveProcessing.CreateOffsetCurveWithInfo(track.Points, uTo, track.IsClosed).Points;
             if (from.Count < 2 || to.Count < 2) return 0;
             distances = (e, n) => (DistanceToLine(from, e, n), DistanceToLine(to, e, n));
         }

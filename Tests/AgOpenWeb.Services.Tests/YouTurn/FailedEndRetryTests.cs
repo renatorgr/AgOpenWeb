@@ -118,6 +118,36 @@ public class FailedEndRetryTests
         });
     }
 
+    [TestCase(false, TestName = "Normal mode: the arrow refused and no turn built says there is no turn")]
+    [TestCase(true, TestName = "Alternative mode: the arrow refused and no turn built says there is no turn")]
+    public void The_arrow_refused_in_the_cycle_no_turn_builds_does_not_hide_that_there_is_no_turn(bool alternate)
+    {
+        // Pass 10 (x = 42), two passes from the east fence: the passes two over to the east are
+        // outside the field, so the arrow pointing east is refused, and the turn west does not
+        // build (the fixture's 32 m loop). The refusal's text took the place of the reason, with
+        // the failure sound, and the end is then tried again silently.
+        (string Message, bool ArrowRefused) Told(bool? arrow)
+        {
+            SetUp();
+            var guidance = new GuidanceWorkingState { HowManyPathsAway = 10, IsHeadingSameWay = false };
+            var turn = new YouTurnWorkingState { IsEnabled = true, NextUTurnDirectionLeftOverride = arrow };
+            var effects = _sm.Tick(Ctx(PassX(10), -18, 180, alternate), guidance, turn);
+            Assert.That(turn.TurnPath, Is.Null, $"the scenario: no turn fits (\"{effects.StatusMessage}\")");
+            Assert.That(effects.TurnCreationFailedSound, Is.True, "the scenario: the failure is sounded");
+            return (effects.StatusMessage ?? "", effects.DirectionSwapRefused);
+        }
+
+        var none = Told(null);
+        Assert.That(none.Message, Is.Not.Empty.And.Not.EqualTo(YouTurnStateMachine.DirectionNotChangedMessage));
+        Assert.That(none.ArrowRefused, Is.False);
+        // Whichever way the arrow points, the operator reads why there is no turn.
+        var left = Told(true);
+        var right = Told(false);
+        Assert.That(left.ArrowRefused || right.ArrowRefused, Is.True, "the scenario: one way of the arrow is refused");
+        Assert.That(left.Message, Is.EqualTo(none.Message), "arrow left");
+        Assert.That(right.Message, Is.EqualTo(none.Message), "arrow right");
+    }
+
     [Test]
     public void Normal_mode_an_end_where_no_turn_built_is_tried_again_at_once_when_something_changes()
     {
@@ -140,9 +170,35 @@ public class FailedEndRetryTests
         guidance.HowManyPathsAway = 1;
         TriedAgain("another pass", Ctx(PassX(1), -18, 180, false));
 
+        // The alternative mode chosen.
+        TriedAgain("the alternative mode", Ctx(PassX(1), -18, 180, true));
+
         // The fence made soft: the turn may now swing over it.
         _boundary.OuterBoundary!.IsHard = false;
         TriedAgain("the fence made soft", Ctx(PassX(1), -18, 180, false));
+    }
+
+    [Test]
+    public void Normal_mode_a_heading_flickering_off_the_line_does_not_build_the_turn_again()
+    {
+        // Parked with AutoSteer on, a single antenna's heading swings past the 20 degrees the turn is
+        // looked for within, and back: the end is not tried again until the 1.5 s are up.
+        var (guidance, turn) = OnPass0();
+        _sm.Tick(Ctx(PassX(0), -18, 180, false), guidance, turn);
+        int builds = _creation.TurnPathBuilds;
+        Assert.That(builds, Is.GreaterThan(0), "the scenario: a turn was built and did not fit");
+
+        for (int i = 1; i <= 6; i++)
+        {
+            _sm.Tick(Ctx(PassX(0), -18, 180 + 30, false), guidance, turn); // off the line
+            _sm.Tick(Ctx(PassX(0), -18, 180, false), guidance, turn);
+        }
+        Assert.That(_creation.TurnPathBuilds, Is.EqualTo(builds), "not built again at each flicker");
+
+        // Off the line for 1.5 s (turned away, and back): tried again at once.
+        for (int i = 0; i < 15; i++) _sm.Tick(Ctx(PassX(0), -18, 180 + 30, false), guidance, turn);
+        _sm.Tick(Ctx(PassX(0), -18, 180, false), guidance, turn);
+        Assert.That(_creation.TurnPathBuilds, Is.GreaterThan(builds), "tried again after 1.5 s off the line");
     }
 
     [Test]

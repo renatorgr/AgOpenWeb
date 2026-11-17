@@ -115,4 +115,20 @@ public class YouTurnNoticeCycleTests
         _gpsService.UpdateGpsData(ValidFix());
         Assert.That(_results[^1].YouTurnNotice, Is.Null, "said once");
     }
+
+    [Test]
+    public void AManualPressWithNoLine_IsAnsweredToo()
+    {
+        // No track chosen (or contour, a recorded path): the state machine is not asked, and the
+        // press got no answer at all.
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(_results[^1].YouTurnNotice, Is.Null, "nothing pressed");
+
+        _intents.RequestManualYouTurn(turnLeft: false);
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(_results[^1].YouTurnNotice, Is.EqualTo(YouTurnEffects.NoLineForManualTurn));
+
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(_results[^1].YouTurnNotice, Is.Null, "said once");
+    }
 }

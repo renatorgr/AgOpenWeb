@@ -27,7 +27,7 @@ namespace AgOpenWeb.Services.Sprayer;
 /// target and alarms, and sounds the alarms. The app has no sprayer settings of its own (as the
 /// official AgOpenWeb's rate controllers, Docs/PGN.md "Rate controllers"); it only adds the
 /// width of the open sections (Tool tab) and <see cref="SprayerAlarms.NoData"/> when the module
-/// stops sending. A module that sends only PGN 160 (an older program) gets the readings shown,
+/// stops sending (shown, and sounded once). A module that sends only PGN 160 (an older program) gets the readings shown,
 /// without a rate or alarms.
 /// </summary>
 public sealed class SprayerService : ISprayerService
@@ -59,6 +59,7 @@ public sealed class SprayerService : ISprayerService
     private DateTime _lastMessage;     // default = never
     private SprayerStatus _status;
     private DateTime _lastSound;
+    private bool _silenceSounded;       // the sound for a module gone silent was played (once per silence)
     private DateTime _lastProcessData;  // default = never; only messages with the module's alarms count
     private SprayerProcessData _module;
 
@@ -91,9 +92,16 @@ public sealed class SprayerService : ISprayerService
                         Alarms = _module.Alarms ?? SprayerAlarms.None,
                     };
                 }
-                return now - _lastMessage < NoDataTimeout
-                    ? s
-                    : s with { Alarms = s.Alarms | SprayerAlarms.NoData };
+                if (now - _lastMessage < NoDataTimeout) return s;
+                // The module went silent: nothing arrives to sound an alarm on, so the sound is
+                // played from here, where the screens read the status ten times a second. Once
+                // per silence: a module switched off at the end of the day says so and stays quiet.
+                if (!_silenceSounded)
+                {
+                    _silenceSounded = true;
+                    _audio.Play(SoundEffect.SprayerAlarm);
+                }
+                return s with { Alarms = s.Alarms | SprayerAlarms.NoData };
             }
         }
     }
@@ -116,6 +124,7 @@ public sealed class SprayerService : ISprayerService
         lock (_lock)
         {
             _lastMessage = Clock.Current.Now;
+            _silenceSounded = false;
             // The width of the open sections, from the Tool tab (the module's L/ha uses the same
             // widths, sent to it in PGN 235).
             double width = 0;

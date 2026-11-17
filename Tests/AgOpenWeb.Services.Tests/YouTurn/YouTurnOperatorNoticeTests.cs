@@ -115,6 +115,16 @@ public class YouTurnOperatorNoticeTests
         var planned = b.Tick(g, t);
         Assert.That(t.TurnPath, Is.Not.Null, "the scenario: a turn planned");
         Assert.That(planned.TellOperator, Is.False);
+
+        // Driven on up the pass until the turn starts: no tick on the way, nor the one that
+        // starts it, is a notice.
+        for (int i = 0; i < 600 && !t.IsExecuting; i++)
+        {
+            b.Y += 0.25;
+            var effects = b.Tick(g, t);
+            Assert.That(effects.TellOperator, Is.False, $"at y = {b.Y:F1}: {effects.StatusMessage}");
+        }
+        Assert.That(t.IsExecuting, Is.True, "the scenario: the turn started");
     }
 
     /// <summary>The real planner on a 76 x 120 m field (8 m tool, 8 m radius, 16 m headland).</summary>
