@@ -18,7 +18,11 @@ namespace AgOpenWeb.Services.Track;
 /// across it. Steered on a bend of radius √(R² − h²) instead, the pivot keeps the implement on
 /// the pass: each point of the line is moved towards the bend's centre by R − √(R² − h²), with
 /// R the bend where the implement is (half way between the pivot and it, over a few metres
-/// either side), never tighter than the tractor turns.
+/// either side), never tighter than the tractor turns. That is how a closed pass is moved. An
+/// open pass is moved to the line the implement's pull draws (<see cref="TowedShifts"/>): the pivot
+/// follows the implement as a trailer follows its hitch, which is the same √(R² − h²) on a steady
+/// bend and also holds through a short S, such as a Go around bend round a tree; it depends on
+/// the way the pass is driven.
 /// </summary>
 public static class FrontToolLine
 {
@@ -42,10 +46,14 @@ public static class FrontToolLine
     /// <param name="closed">The pass is a loop.</param>
     /// <param name="reach">How far ahead of the pivot the implement is, m (positive).</param>
     /// <param name="minRadius">The tightest the tractor turns, m.</param>
-    public static List<Vec3>? Steered(IReadOnlyList<Vec3> pass, bool closed, double reach, double minRadius)
+    /// <param name="forward">The tractor drives the pass in its own order (false: against it). An open
+    /// pass's line depends on it (<see cref="TowedShifts"/>).</param>
+    public static List<Vec3>? Steered(IReadOnlyList<Vec3> pass, bool closed, double reach, double minRadius, bool forward = true)
     {
         if (pass.Count < 3 || reach <= 0.05) return null;
-        if (!closed) pass = WithPointsNearStretchEnds(pass, Math.Max(reach, MinWindow) + reach / 2 + Chord + StretchStep);
+        // The pull of a bend dies away over a few reaches past it (TowedShifts), so the points added
+        // near a stretch's ends reach that far.
+        if (!closed) pass = WithPointsNearStretchEnds(pass, Math.Max(Math.Max(reach, MinWindow) + reach / 2 + Chord, TowSettle * reach) + StretchStep);
         int n = pass.Count;
 
         // Along the pass, and its heading on each stretch.
@@ -56,23 +64,40 @@ public static class FrontToolLine
         if (loop < 1e-6) return null;
 
         double window = Math.Max(reach, MinWindow);
-        double lead = reach / 2;
+        // The implement is ahead in the way the tractor drives.
+        double lead = (closed || forward ? 1 : -1) * reach / 2;
         var shifts = new double[n];
-        double most = 0;
+        // On an open pass, how far the pivot may be moved where the bend is tighter than the
+        // tractor can follow with the implement on it; unlimited elsewhere.
+        var limit = new double[n];
         for (int i = 0; i < n; i++)
         {
+            limit[i] = double.PositiveInfinity;
             double s = cum[i] + lead;
             double turn = AngleDiff(HeadingAt(s + window), HeadingAt(s - window));
             double k = turn / (2 * window); // + turning right (clockwise)
             if (Math.Abs(k) < 1e-6) continue;
             double r = 1 / Math.Abs(k);
             double pivotR = Math.Sqrt(Math.Max(r * r - reach * reach, 0));
+            if (pivotR < minRadius) limit[i] = Math.Max(r - minRadius, 0);
             pivotR = Math.Max(pivotR, minRadius);
             double d = r - pivotR;
             if (d <= 0) continue;
             shifts[i] = Math.Sign(k) * d;
-            most = Math.Max(most, d);
         }
+        if (!closed)
+        {
+            // An open pass: the line the implement's pull draws (a tractrix), which holds through a
+            // short S as well as round a long bend. Measured over a window, a Go around bend's S
+            // (out of the pass and back at the curve radius, a few metres each way) averaged out
+            // to nearly straight and was hardly moved: the Maxxum's boom 4.8 m ahead cut the first
+            // bend by 1.5 m and ran 0.85 m over a 3 m tree (a tester's field, the farm job harness).
+            var towed = TowedShifts(pass, cum, reach, forward);
+            for (int i = 0; i < n; i++)
+                shifts[i] = Math.Sign(towed[i]) * Math.Min(Math.Abs(towed[i]), limit[i]);
+        }
+        double most = 0;
+        for (int i = 0; i < n; i++) most = Math.Max(most, Math.Abs(shifts[i]));
         if (most < MinShift) return null;
 
         var line = new List<Vec3>(n);
@@ -107,6 +132,103 @@ public static class FrontToolLine
             double t = segLen > 1e-9 ? Math.Clamp((s - cum[i]) / segLen, 0, 1) : 0;
             return new Vec2(a.Easting + (b.Easting - a.Easting) * t, a.Northing + (b.Northing - a.Northing) * t);
         }
+    }
+
+    /// <summary>The step the implement's line is walked in for <see cref="TowedShifts"/>, m.</summary>
+    private const double TowStep = 0.05;
+
+    /// <summary>A move of the pivot's line smaller than this is none, m: the pull dies away along a
+    /// straight stretch without ever reaching 0.</summary>
+    private const double TowNoise = 0.001;
+
+    /// <summary>Past a bend the pivot comes back onto a straight pass as e^(−s/reach): within
+    /// <see cref="TowNoise"/> of it after this many reaches from 2 m off.</summary>
+    private const double TowSettle = 8.0;
+
+    /// <summary>
+    /// How far, right of the pass in its own order (+), the pivot is beside each point of the pass
+    /// when the implement <paramref name="reach"/> ahead of it runs on the pass. The pivot follows
+    /// the implement as a trailer follows its hitch: each step, it moves towards where the
+    /// implement now is until it is <paramref name="reach"/> behind it. Round a bend of radius R
+    /// that settles on √(R² − h²), as <see cref="Steered"/> has it; into and out of a bend, and
+    /// through an S, it is where the pivot must be, which no measure of the bend at one place gives.
+    /// </summary>
+    internal static double[] TowedShifts(IReadOnlyList<Vec3> pass, double[] cum, double reach, bool forward)
+    {
+        int n = pass.Count;
+        double length = cum[n - 1];
+        var shifts = new double[n];
+        int steps = (int)Math.Ceiling(length / TowStep);
+        if (steps < 1) return shifts;
+
+        // The implement along the pass the way the tractor drives, and the pivot behind it.
+        var tow = new List<Vec2>(steps + 1);
+        var towAt = new List<double>(steps + 1);  // where on the pass the implement was
+        Vec2 Implement(int k) => PointOn(pass, cum, forward ? Math.Min(k * TowStep, length) : Math.Max(length - k * TowStep, 0));
+        var q0 = Implement(0);
+        var q1 = Implement(1);
+        double dx = q1.Easting - q0.Easting, dy = q1.Northing - q0.Northing, dl = Math.Sqrt(dx * dx + dy * dy);
+        if (dl < 1e-9) return shifts;
+        var pivot = new Vec2(q0.Easting - dx / dl * reach, q0.Northing - dy / dl * reach);
+        for (int k = 0; k <= steps; k++)
+        {
+            var q = Implement(k);
+            double ex = q.Easting - pivot.Easting, ey = q.Northing - pivot.Northing, el = Math.Sqrt(ex * ex + ey * ey);
+            if (el > 1e-9) pivot = new Vec2(q.Easting - ex / el * reach, q.Northing - ey / el * reach);
+            tow.Add(pivot);
+            towAt.Add(forward ? Math.Min(k * TowStep, length) : Math.Max(length - k * TowStep, 0));
+        }
+
+        // Beside each point of the pass: where the pivot's line crosses the pass's square there,
+        // the pivot then being about the reach behind the implement.
+        for (int i = 0; i < n; i++)
+        {
+            double h = HeadingOn(pass, cum, cum[i]);
+            double ae = Math.Sin(h), an = Math.Cos(h);   // along the pass's own order
+            double re = Math.Cos(h), rn = -Math.Sin(h);  // right of it
+            double target = forward ? cum[i] + reach : cum[i] - reach;
+            int k0 = (int)Math.Round((forward ? target : length - target) / TowStep);
+            int span = (int)Math.Ceiling(2 * reach / TowStep) + 2;
+            int from = Math.Max(0, k0 - span), to = Math.Min(tow.Count - 2, k0 + span);
+            double best = double.PositiveInfinity, shift = 0;
+            for (int k = from; k <= to; k++)
+            {
+                double a0 = (tow[k].Easting - pass[i].Easting) * ae + (tow[k].Northing - pass[i].Northing) * an;
+                double a1 = (tow[k + 1].Easting - pass[i].Easting) * ae + (tow[k + 1].Northing - pass[i].Northing) * an;
+                if ((a0 > 0 && a1 > 0) || (a0 < 0 && a1 < 0)) continue;
+                double t = Math.Abs(a1 - a0) > 1e-12 ? a0 / (a0 - a1) : 0;
+                double pe = tow[k].Easting + (tow[k + 1].Easting - tow[k].Easting) * t;
+                double pn = tow[k].Northing + (tow[k + 1].Northing - tow[k].Northing) * t;
+                double lateral = (pe - pass[i].Easting) * re + (pn - pass[i].Northing) * rn;
+                // A pivot line that loops near a tight bend crosses a square more than once: the
+                // crossing with the implement the reach ahead.
+                double off = Math.Abs(towAt[k] - target);
+                if (off < best) { best = off; shift = lateral; }
+            }
+            shifts[i] = Math.Abs(shift) < TowNoise ? 0 : shift;
+        }
+        return shifts;
+    }
+
+    private static Vec2 PointOn(IReadOnlyList<Vec3> pass, double[] cum, double s)
+    {
+        int n = pass.Count;
+        s = Math.Clamp(s, 0, cum[n - 1]);
+        int i = Array.BinarySearch(cum, s);
+        if (i < 0) i = ~i - 1;
+        i = Math.Clamp(i, 0, n - 2);
+        var a = pass[i];
+        var b = pass[i + 1];
+        double segLen = cum[i + 1] - cum[i];
+        double t = segLen > 1e-9 ? Math.Clamp((s - cum[i]) / segLen, 0, 1) : 0;
+        return new Vec2(a.Easting + (b.Easting - a.Easting) * t, a.Northing + (b.Northing - a.Northing) * t);
+    }
+
+    private static double HeadingOn(IReadOnlyList<Vec3> pass, double[] cum, double s)
+    {
+        var a = PointOn(pass, cum, s - Chord);
+        var b = PointOn(pass, cum, s + Chord);
+        return Math.Atan2(b.Easting - a.Easting, b.Northing - a.Northing);
     }
 
     /// <summary>The spacing of the points added near the ends of a long straight stretch, m.</summary>

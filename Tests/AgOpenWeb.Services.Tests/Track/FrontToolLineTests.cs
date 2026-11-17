@@ -121,9 +121,99 @@ public class FrontToolLineTests
         Assert.Multiple(() =>
         {
             Assert.That(Math.Abs(EastingAt(line, 65)), Is.GreaterThan(0.05), "the bend itself moves");
-            Assert.That(Math.Abs(EastingAt(line, 95)), Is.LessThan(0.01), "15 m past the bend, back on the pass");
+            // The pivot follows the implement as a trailer its hitch (FrontToolLine.TowedShifts):
+            // back on the pass as e^(−s/4.5 m), 4 cm off 15 m past the bump.
+            Assert.That(Math.Abs(EastingAt(line, 95)), Is.LessThan(0.05), "15 m past the bend, nearly back on the pass");
+            Assert.That(Math.Abs(EastingAt(line, 120)), Is.LessThan(0.005), "40 m past it, back on the pass");
             Assert.That(Math.Abs(EastingAt(line, 180)), Is.LessThan(1e-9), "and on it along the stretch");
             Assert.That(line[^1].Northing, Is.EqualTo(280), "to the pass's end");
+        });
+    }
+
+    // A pass north that steps right round a tree as a Go around bend does: out at 45° and back,
+    // each bend an arc of the curve radius, the step 4 m. Points every 0.25 m.
+    private static List<Vec3> GoAroundS(double radius, double step = 4.0)
+    {
+        var pts = new List<Vec3>();
+        double e = 0, n = 0, h = 0; // heading clockwise from north
+        void Straight(double len)
+        {
+            for (double s = 0; s < len; s += 0.25)
+            {
+                pts.Add(new Vec3(e, n, h));
+                e += 0.25 * Math.Sin(h);
+                n += 0.25 * Math.Cos(h);
+            }
+        }
+        void Arc(double turn) // + right
+        {
+            double len = Math.Abs(turn) * radius;
+            for (double s = 0; s < len; s += 0.25)
+            {
+                pts.Add(new Vec3(e, n, h));
+                h += Math.Sign(turn) * 0.25 / radius;
+                e += 0.25 * Math.Sin(h);
+                n += 0.25 * Math.Cos(h);
+            }
+        }
+        double q = Math.PI / 4;
+        double slant = Math.Max(0, (step - 2 * radius * (1 - Math.Cos(q))) / Math.Sin(q));
+        Straight(60); Arc(q); Straight(slant); Arc(-q); Straight(10); Arc(-q); Straight(slant); Arc(q); Straight(120);
+        pts.Add(new Vec3(e, n, h));
+        return pts;
+    }
+
+    private static double DistanceToLine(IReadOnlyList<Vec3> line, double e, double n)
+    {
+        double best = double.MaxValue;
+        for (int i = 0; i + 1 < line.Count; i++)
+        {
+            var a = line[i];
+            var b = line[i + 1];
+            double dx = b.Easting - a.Easting, dy = b.Northing - a.Northing, l2 = dx * dx + dy * dy;
+            double t = l2 > 1e-12 ? Math.Clamp(((e - a.Easting) * dx + (n - a.Northing) * dy) / l2, 0, 1) : 0;
+            best = Math.Min(best, Math.Sqrt(Math.Pow(a.Easting + dx * t - e, 2) + Math.Pow(a.Northing + dy * t - n, 2)));
+        }
+        return best;
+    }
+
+    // The implement, reach ahead of a pivot driven exactly along the line steered (on it, facing
+    // along it): the furthest it gets from the pass, along the stretch from 10 m to 200 m.
+    private static double ImplementOffPass(List<Vec3> pass, List<Vec3> steered, double reach, bool forward)
+    {
+        var line = forward ? steered : Enumerable.Reverse(steered).ToList();
+        double worst = 0;
+        for (int i = 0; i + 1 < line.Count; i++)
+        {
+            var a = line[i];
+            var b = line[i + 1];
+            double dx = b.Easting - a.Easting, dy = b.Northing - a.Northing, l = Math.Sqrt(dx * dx + dy * dy);
+            if (l < 1e-9) continue;
+            // The pivot half way along the stretch, where the stretch is the line's tangent.
+            double ie = (a.Easting + b.Easting) / 2 + dx / l * reach, inn = (a.Northing + b.Northing) / 2 + dy / l * reach;
+            if (inn < 10 || inn > 200) continue;
+            worst = Math.Max(worst, DistanceToLine(pass, ie, inn));
+        }
+        return worst;
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void Round_a_go_around_tree_the_implement_stays_on_the_bend(bool forward)
+    {
+        // The farm job harness on a tester's field: the Maxxum's boom 4.8 m ahead on a 6 m Go
+        // around bend. Measured over a window either side, the S out of the pass and back
+        // averaged to nearly straight and the line was hardly moved: the boom cut the first bend
+        // by 1.5 m and ran 0.85 m over a 3 m tree. Steered as the boom's pull draws it, the boom
+        // runs on the bend, whichever way the pass is driven.
+        const double reach = 4.8, minRadius = 3.0, radius = 6.0;
+        var pass = GoAroundS(radius);
+        var steered = FrontToolLine.Steered(pass, closed: false, reach, minRadius, forward);
+        Assert.That(steered, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(ImplementOffPass(pass, steered!, reach, forward), Is.LessThan(0.03), "the implement on the bend");
+            Assert.That(ImplementOffPass(pass, pass, reach, forward), Is.GreaterThan(1.0), "steered on the pass itself, it cuts the bends");
         });
     }
 
