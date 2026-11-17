@@ -191,6 +191,7 @@ public sealed class JobAreas
     public double MissedAlongBoundary;  // of which, with no headland: within 1.5 m of the outer boundary
     public double MissedLeftInMiddle;   // of which: the middle no lap reached, left by the operator
     public double MissedAtCorners;      // of which: at a lap's corners
+    public double MissedAtLapChange;    // of which: where the operator moved a width in by hand to the next lap
     public double MissedInWorkedPasses; // of the rest: lying in a pass that was driven (worked along part of its length)
     public double Twice;                // truth ≥ 2 inside the work area
     public double OutsideBoundary;      // truth outside the outer boundary
@@ -210,6 +211,8 @@ public sealed class JobAreas
     public double AppTotalWorked, AppActualCovered;
     public double LargestMissedStripM;  // widest strip between passes, m (from the pass edges)
     public string LargestStripWhere = "";   // which passes and where along the line
+    public double LargestSettlingStripM;    // widest gap where a pass starts, the implement still settling after the turn (JobRun.SettlingM)
+    public string LargestSettlingWhere = "";
     public double MissedBetweenE, MissedBetweenN;   // area-weighted sums, for the centre of the missed strips
     public double LargestOverlapM;      // widest overlap between neighbouring passes, m
 }

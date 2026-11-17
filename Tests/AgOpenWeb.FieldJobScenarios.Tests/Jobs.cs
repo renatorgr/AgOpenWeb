@@ -183,12 +183,12 @@ public static class Jobs
         }
         else if (!r.FieldDone)
             flag(Severity.Bug, "FIELD-NOT-FINISHED", F($"AgOpenWeb never reported the end of the field; the job stopped after {r.Seconds / 60:0} min with {Pct(a.Missed, a.Work)} of the cultivated area unsprayed. {string.Join(" | ", r.Problems)}"));
-        else if (a.Missed - a.MissedBetweenPasses - a.MissedLeftInMiddle - a.MissedAtCorners > 0.05 * a.Work)
+        else if (a.Missed - a.MissedBetweenPasses - a.MissedLeftInMiddle - a.MissedAtCorners - a.MissedAtLapChange > 0.05 * a.Work)
         {
             // Where the ground left lies: in passes that were driven but not along their whole
             // length (a U-turn cut a corner off them), or in no driven pass (a side of the field,
             // passes skipped). Said apart, since the two have different causes.
-            double left = a.Missed - a.MissedBetweenPasses - a.MissedAtEnds - a.MissedAtObstacles - a.MissedAlongBoundary - a.MissedLeftInMiddle - a.MissedAtCorners;
+            double left = a.Missed - a.MissedBetweenPasses - a.MissedAtEnds - a.MissedAtObstacles - a.MissedAlongBoundary - a.MissedLeftInMiddle - a.MissedAtCorners - a.MissedAtLapChange;
             string where = a.MissedInWorkedPasses >= 0.9 * left ? "unsprayed inside the worked passes (passes it drove, but not along their whole length)"
                 : a.MissedInWorkedPasses <= 0.1 * left ? "a side of the field, or passes it skipped"
                 : F($"{a.MissedInWorkedPasses:0} m² unsprayed inside the worked passes, {left - a.MissedInWorkedPasses:0} m² on a side of the field or in passes it skipped");
@@ -202,6 +202,8 @@ public static class Jobs
             sc.Ok(F($"the whole field was worked: {Pct(a.Sprayed, a.Work)} of the cultivated area sprayed, {(r.EndedBy.Length > 0 ? r.EndedBy : F($"AgOpenWeb reported the end of the field after {r.Turns.Count} U-turns"))}"));
         if (r.EarlyEnds.Count > 0)
             flag(Severity.Bug, "END-OF-FIELD-TOO-EARLY", F($"AgOpenWeb said \"End of field reached\" (or that there was no room at this end) and then made a U-turn onto another pass after all ({string.Join("; ", r.EarlyEnds)}): an operator who stops at the message leaves the rest of the field undone. The operator here drove on."));
+        if (a.MissedAtLapChange > 0)
+            sc.Note(F($"{a.MissedAtLapChange:0} m² ({Pct(a.MissedAtLapChange, a.Work)}) where the operator moved a width in by hand at the end of a lap were never sprayed: the implement crossing from one lap to the next"));
         if (a.MissedAtCorners > 0)
             sc.Note(F($"{a.MissedAtCorners:0} m² ({Pct(a.MissedAtCorners, a.Work)}) at the laps' corners were never sprayed: a lap is rounded where it turns tighter than the rig can (the U-turn radius, {r.Rig.Store.Guidance.UTurnRadius:0} m), so at a corner the next lap in pulls away from it"));
 
@@ -227,6 +229,8 @@ public static class Jobs
             flag(Severity.Bug, "MISSED-STRIPS", F($"strips of ground between neighbouring passes were never sprayed: {a.MissedBetweenPasses:0} m² ({Pct(a.MissedBetweenPasses, a.Work)}), the widest {a.LargestMissedStripM:0.00} m{(a.LargestStripWhere.Length > 0 ? " " + a.LargestStripWhere : "")}; the strips centre on ({a.MissedBetweenE / Math.Max(a.MissedBetweenPasses, 1e-9):0},{a.MissedBetweenN / Math.Max(a.MissedBetweenPasses, 1e-9):0}). AgOpenWeb's passes are {r.Spacing:0.00} m apart for a {spec.T.Width:0.00} m implement with {spec.T.Overlap:0.00} m overlap."));
         else
             sc.Ok(F($"no strip was left between passes (widest {a.LargestMissedStripM:0.00} m, {a.MissedBetweenPasses:0} m² in all)"));
+        if (a.LargestSettlingStripM > 0.15 + askedGap)
+            sc.Note(F($"where a pass starts, the implement still settling onto it after the U-turn handed back (the first {JobRun.SettlingM:0} m of its edges), the widest gap to the pass beside it was {a.LargestSettlingStripM:0.00} m ({a.LargestSettlingWhere}): a wedge at the start of the pass, closing as the implement comes onto its line, as in AgOpenGPS"));
         // ---- the edge of a field worked with no headland (laps along the boundary)
         if (r.Work == null)
         {
@@ -390,7 +394,7 @@ public static class Jobs
             // cultivated ground, no loop at 8 m radius fits): the refusal is right, and noted.
             if (p.Contains("refused the U-turn", StringComparison.Ordinal))
             {
-                double left = a.Missed - a.MissedBetweenPasses - a.MissedAtEnds - a.MissedAtObstacles - a.MissedAlongBoundary - a.MissedLeftInMiddle - a.MissedAtCorners;
+                double left = a.Missed - a.MissedBetweenPasses - a.MissedAtEnds - a.MissedAtObstacles - a.MissedAlongBoundary - a.MissedLeftInMiddle - a.MissedAtCorners - a.MissedAtLapChange;
                 if (!r.ShortStopped && left <= RefusedWithNothingLeft * a.Work)
                     sc.Note(F($"AgOpenWeb refused a U-turn with the field done ({Pct(left, a.Work)} of the cultivated area left outside the strips between passes, the pass ends and the boundary); the operator took over and the job stopped there: ") + p);
                 // The geometry refused it: the planner tried every start along the pass with both
