@@ -202,12 +202,12 @@ public static partial class RemoteServerWiring
             case "uturn.smoothing": if (I(out var u3)) gd.UTurnSmoothing = u3; return;
             case "uturn.radius": if (D(out var u4)) gd.UTurnRadius = u4; return;
             case "uturn.distanceFromBoundary": if (D(out var u5)) gd.UTurnDistanceFromBoundary = u5; return;
-            case "uturn.goAroundRadius": if (D(out var u6)) gd.GoAroundRadius = Math.Clamp(u6, 1.0, 50.0); return;
-            case "uturn.goAroundMargin": if (D(out var u7)) gd.GoAroundMargin = Math.Clamp(u7, 0.3, 10.0); return;
+            case "uturn.goAroundRadius": if (D(out var u6)) gd.GoAroundRadius = Math.Clamp(u6, AgOpenWeb.Models.Configuration.GuidanceConfig.MinGoAroundRadius, AgOpenWeb.Models.Configuration.GuidanceConfig.MaxGoAroundRadius); return;
+            case "uturn.goAroundMargin": if (D(out var u7)) gd.GoAroundMargin = Math.Clamp(u7, AgOpenWeb.Models.Configuration.GuidanceConfig.MinGoAroundMargin, AgOpenWeb.Models.Configuration.GuidanceConfig.MaxGoAroundMargin); return;
             case "uturn.crossGap": if (D(out var u8)) gd.UTurnCrossGap = Math.Max(0, u8); return;
             // Joining a new line in the headland (fork only): 0 nearest point, 1 ask, 2 start of the pass.
             case "uturn.entryMode": if (I(out var u9) && u9 >= 0 && u9 <= 2) gd.LineEntryMode = (AgOpenWeb.Models.Configuration.LineEntryMode)u9; return;
-            case "uturn.entryStraight": if (D(out var u10)) gd.LineEntryStraight = Math.Clamp(u10, 0.0, 50.0); return;
+            case "uturn.entryStraight": if (D(out var u10)) gd.LineEntryStraight = Math.Clamp(u10, 0.0, AgOpenWeb.Models.Configuration.GuidanceConfig.MaxLineEntryStraight); return;
             // --- Tram (ConfigStore.Guidance + Tram.TramWidth; saved with the tool profile, #330) ---
             case "tram.passes": if (I(out var tp)) gd.TramPasses = tp; return;
             case "tram.display": gd.TramDisplay = B(); return;

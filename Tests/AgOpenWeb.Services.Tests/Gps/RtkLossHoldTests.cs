@@ -189,6 +189,32 @@ public class RtkLossHoldTests
     }
 
     [Test]
+    public void On_the_second_fix_after_a_start_the_travel_is_not_taken_for_a_step()
+    {
+        // One fix, then RTK lost on the next: the travel between them is not known yet. Measured
+        // from the first fix alone, the 0.25 m driven was taken out with the jump, and the
+        // position was held that far behind the tractor.
+        Fix(4);
+
+        var step = Fix(1, error: 0.9);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(step.StepM, Is.Zero, "no step measured");
+            Assert.That(_hold.OffsetN, Is.Zero, "the travel north stays");
+            Assert.That(_hold.OffsetE, Is.Zero, "the jump is followed, as with the hold off");
+        });
+
+        // The same after a gap: the first fix after it says nothing about the travel.
+        _hold.Reset();
+        Drive(30, 4);
+        Fix(4, epochs: 15);
+        step = Fix(1, error: 0.9);
+        Assert.That(step.StepM, Is.Zero);
+        Assert.That(_hold.OffsetN, Is.Zero);
+    }
+
+    [Test]
     public void A_fix_handled_late_or_skipped_by_the_receiver_is_measured_by_its_epochs()
     {
         Drive(30, 4);

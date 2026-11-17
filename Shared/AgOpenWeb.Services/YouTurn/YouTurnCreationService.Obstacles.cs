@@ -96,9 +96,18 @@ public partial class YouTurnCreationService
             List<Vec2>? line = off > 0.1 ? _polygonOffsetService.CreateOutwardOffset(fence, off)
                 : off < -0.1 ? _polygonOffsetService.CreateInwardOffset(fence, -off)
                 : fence;
-            if (line == null || line.Count < 3) continue; // shrunk away: nothing left to turn at
+            if (line == null || line.Count < 3)
+            {
+                if (off <= 0.1) continue; // shrunk away: nothing left to turn at
+                // Could not be grown (an outline the offset gives up on: no area, crossing itself):
+                // the box round it, grown by the same distance, is the turn line. Never nearer the
+                // obstacle than the line asked for, so the clearance holds. Left out, the pass ran
+                // on through the obstacle with no turn and no alarm.
+                line = GrownBox(fence, off);
+            }
 
             var withHeadings = _polygonOffsetService.CalculatePointHeadings(line);
+            if (withHeadings == null || withHeadings.Count < 3) continue;
             var area = PolygonSlabIndex.Build(withHeadings);
             if (area == null) continue;
             double tightDistance = off - ArcTolerance;
@@ -148,31 +157,20 @@ public partial class YouTurnCreationService
 
     /// <summary>
     /// A fingerprint of the field's obstacles as a turn sees them: how many there are, each one's
-    /// choice, Hard and outline (its point count and two of its points, so a circle that is moved
-    /// or resized counts too). A planned turn is planned again when it changes, and the obstacle
-    /// turn lines are built again. Every cycle while a turn is planned, so it reads two points of
-    /// each obstacle, not its outline.
+    /// choice, Hard and whole outline (every corner, <see cref="BoundaryPolygon.OutlineStamp"/>).
+    /// A planned turn is planned again when it changes, and the obstacle turn lines are built
+    /// again. Every cycle while a turn is planned, so it reads one number per obstacle, worked out
+    /// with the obstacle's index when its points change. Two of its points were read before: a
+    /// corner moved anywhere else kept the turn planned for the old outline.
     /// </summary>
     public static long ObstacleStamp(Boundary? boundary)
     {
         if (boundary == null) return 0;
         long h = boundary.InnerBoundaries.Count;
         foreach (var inner in boundary.InnerBoundaries)
-        {
-            var pts = inner.Points;
-            h = ((h * 31 + pts.Count) * 31 + (int)inner.AtObstacle) * 31 + (inner.IsHard ? 1 : 0);
-            if (pts.Count == 0) continue;
-            var a = pts[0];
-            var b = pts[pts.Count / 2];
-            h = h * 31 + Cm(a.Easting);
-            h = h * 31 + Cm(a.Northing);
-            h = h * 31 + Cm(b.Easting);
-            h = h * 31 + Cm(b.Northing);
-        }
+            h = ((h * 31 + inner.OutlineStamp) * 31 + (int)inner.AtObstacle) * 31 + (inner.IsHard ? 1 : 0);
         return h;
     }
-
-    private static long Cm(double metres) => (long)Math.Round(metres * 100);
 
     /// <summary>
     /// The turn area test with the obstacles, AgOpenGPS's IsPointInsideTurnArea: -1 outside the
@@ -190,6 +188,36 @@ public partial class YouTurnCreationService
                 if (obstacles[k].Area.Contains(point.Easting, point.Northing)) return k + 1;
             return 0;
         };
+    }
+
+    /// <summary>
+    /// The box round <paramref name="outline"/> grown by <paramref name="grow"/> metres, a point at
+    /// least every 2 m as a turn line has them, going round the way the outline does.
+    /// </summary>
+    internal static List<Vec2> GrownBox(IReadOnlyList<Vec2> outline, double grow)
+    {
+        double minE = double.MaxValue, minN = double.MaxValue, maxE = double.MinValue, maxN = double.MinValue, twiceArea = 0;
+        for (int i = 0; i < outline.Count; i++)
+        {
+            var p = outline[i];
+            var q = outline[(i + 1) % outline.Count];
+            minE = Math.Min(minE, p.Easting); maxE = Math.Max(maxE, p.Easting);
+            minN = Math.Min(minN, p.Northing); maxN = Math.Max(maxN, p.Northing);
+            twiceArea += p.Easting * q.Northing - q.Easting * p.Northing;
+        }
+        minE -= grow; minN -= grow; maxE += grow; maxN += grow;
+        var corners = new List<Vec2> { new(minE, minN), new(maxE, minN), new(maxE, maxN), new(minE, maxN) };
+        if (twiceArea < 0) corners.Reverse(); // clockwise, as the outline
+        var box = new List<Vec2>();
+        for (int i = 0; i < corners.Count; i++)
+        {
+            var a = corners[i];
+            var b = corners[(i + 1) % corners.Count];
+            int steps = Math.Max(1, (int)Math.Ceiling(GeometryMath.Distance(a, b) / 2.0));
+            for (int k = 0; k < steps; k++)
+                box.Add(new Vec2(a.Easting + (b.Easting - a.Easting) * k / steps, a.Northing + (b.Northing - a.Northing) * k / steps));
+        }
+        return box;
     }
 
     /// <summary>

@@ -222,6 +222,13 @@ public class ObstacleDetourTests
         foreach (var (e, n) in new[] { (0.0, 60.0), (0.5, 70.0), (-0.5, 80.0) })
             Assert.That(ClearanceFrom(bend.Points, e, n), Is.GreaterThanOrEqualTo(2.5 + KeepOut - 0.05));
         Assert.That(TightestRadius(bend.Points), Is.GreaterThanOrEqualTo(Radius * 0.9));
+        // One bend, on one side: off the pass all the way from the first tree to the last, never
+        // back on it between two trees and never across it.
+        var beside = bend.Points.Where(p => p.Northing >= 60 && p.Northing <= 80).ToList();
+        Assert.That(beside, Is.Not.Empty);
+        Assert.That(beside.All(p => p.Easting < -2) || beside.All(p => p.Easting > 2), Is.True,
+            "the same side of the pass past all three trees");
+        Assert.That(bend.Rounds.Select(r => r.Side).Distinct().Count(), Is.EqualTo(1), "one side for the row");
     }
 
     [Test]
@@ -271,6 +278,8 @@ public class ObstacleDetourTests
         Assert.That(bend.GoneRound, Is.EqualTo(new[] { 0 }));
         Assert.That(ClearanceFrom(bend.Points, onArc.Easting, onArc.Northing), Is.GreaterThanOrEqualTo(3.0 + KeepOut - 0.05));
         Assert.That(bend.Points[0].Easting, Is.EqualTo(arc[0].Easting).Within(1e-9));
+        Assert.That(bend.Points[0].Northing, Is.EqualTo(arc[0].Northing).Within(1e-9));
+        Assert.That(bend.Points[^1].Easting, Is.EqualTo(arc[^1].Easting).Within(1e-9));
         Assert.That(bend.Points[^1].Northing, Is.EqualTo(arc[^1].Northing).Within(1e-9));
     }
 
@@ -281,12 +290,94 @@ public class ObstacleDetourTests
         var track = new AgOpenWeb.Models.Track.Track { Points = new List<Vec3>(North) };
         var field = Field(-100, 100, Tree(0, 100, 6));
         var first = detour.For(track, 0, North, field, KeepOut, Radius, 1.0);
+        Assert.That(first, Is.Not.Null, "the scenario: the pass is bent");
+        Assert.That(ClearanceFrom(first!.Points, 0, 100), Is.GreaterThanOrEqualTo(3.0 + KeepOut - 0.05));
         Assert.That(detour.For(track, 0, North, field, KeepOut, Radius, 1.0), Is.SameAs(first));
 
         field.InnerBoundaries[0].SetCircle(new ObstacleCircle(0, 120, 6)); // moved
         var moved = detour.For(track, 0, North, field, KeepOut, Radius, 1.0);
         Assert.That(moved, Is.Not.SameAs(first));
         Assert.That(ClearanceFrom(moved!.Points, 0, 120), Is.GreaterThanOrEqualTo(3.0 + KeepOut - 0.05));
+    }
+
+    [Test]
+    public void A_corner_moved_anywhere_on_an_obstacle_or_the_fields_edge_gets_a_new_bend()
+    {
+        // A pond of six corners beside the pass, clear of the implement. Its corner 4, neither the
+        // first nor the middle one (the two the key read before), is pulled out across the pass: the
+        // bend kept for the old outline was null, and the pass ran straight through the pond.
+        var detour = new ObstacleDetour(new PolygonOffsetService());
+        var track = new AgOpenWeb.Models.Track.Track { Points = new List<Vec3>(North) };
+        var pond = new BoundaryPolygon { AtObstacle = ObstacleAction.GoRound };
+        foreach (var (e, n) in new[] { (12.0, 90.0), (28.0, 90.0), (28.0, 110.0), (12.0, 110.0), (12.0, 104.0), (12.0, 96.0) })
+            pond.Points.Add(new BoundaryPoint(e, n, 0));
+        pond.UpdateBounds();
+        var field = Field(-100, 100, pond);
+        Assert.That(detour.For(track, 0, North, field, KeepOut, Radius, 1.0), Is.Null, "the scenario: clear of the pond");
+
+        var corners = new List<BoundaryPoint>(pond.Points);
+        corners[4] = new BoundaryPoint(-1, 100, 0);
+        pond.Points = corners;
+        var bent = detour.For(track, 0, North, field, KeepOut, Radius, 1.0);
+        Assert.That(bent, Is.Not.Null, "the moved corner is seen");
+        Assert.That(bent!.GoneRound, Is.EqualTo(new[] { 0 }));
+        Assert.That(ClearanceFrom(bent.Points, -1, 100), Is.GreaterThanOrEqualTo(KeepOut - 0.05));
+
+        // The field's edge moved in beside the bend (the same Boundary, its outline replaced): the
+        // bend to the west no longer fits, and the one kept is not given back.
+        var west = bent.Points.Min(p => p.Easting);
+        Assert.That(west, Is.LessThan(-4), "the scenario: the bend goes west");
+        field.OuterBoundary!.Points = Rect(-4, -100, 100, 300).Points;
+        var after = detour.For(track, 0, North, field, KeepOut, Radius, 1.0);
+        Assert.That(after, Is.Not.SameAs(bent));
+        Assert.That(after!.Points.Min(p => p.Easting), Is.GreaterThan(-4), "inside the new edge");
+    }
+
+    [Test]
+    public void The_bend_keeps_the_implement_out_of_a_U_turn_obstacle_beside_it()
+    {
+        // A tree on the pass to go round, to the west (the smaller move). A pond chosen as U-turn
+        // lies 1 m west of where that bend runs: the line stays outside the pond, so the bend was
+        // made, with half the 6 m implement through the pond. It goes round to the east.
+        var alone = Detour.Compute(North, Field(-100, 100, Tree(1, 100, 4)), KeepOut, Radius)!;
+        double west = alone.Points.Min(p => p.Easting);
+        Assert.That(west, Is.LessThan(-4), "the scenario: alone, the bend goes west");
+
+        var pond = Rect(west - 11, 90, west - 1, 110);
+        pond.AtObstacle = ObstacleAction.Turn;
+        var bend = Detour.Compute(North, Field(-100, 100, Tree(1, 100, 4), pond), KeepOut, Radius)!;
+        Assert.That(bend.GoneRound, Is.EqualTo(new[] { 0 }));
+        Assert.That(bend.Points.Min(p => p.Easting), Is.GreaterThan(-1e-6), "not towards the pond");
+        Assert.That(bend.Points.Max(p => p.Easting), Is.GreaterThan(4), "round the tree on the other side");
+    }
+
+    [Test]
+    public void A_U_turn_obstacle_the_pass_already_runs_beside_does_not_stop_a_bend_away_from_it()
+    {
+        // The pond 2 m west of the pass all along: the pass itself runs nearer than half the
+        // implement. A bend to the east moves away from it and is made.
+        var pond = Rect(-12, 50, -2, 150);
+        pond.AtObstacle = ObstacleAction.Turn;
+        var bend = Detour.Compute(North, Field(-100, 100, Tree(1, 100, 4), pond), KeepOut, Radius)!;
+        Assert.That(bend.GoneRound, Is.EqualTo(new[] { 0 }));
+        Assert.That(bend.Points.Max(p => p.Easting), Is.GreaterThan(4));
+    }
+
+    [Test]
+    public void An_obstacle_across_the_pass_that_cannot_be_grown_is_told_as_one_with_no_room()
+    {
+        // The offset of its outline fails: there is no bend for it. Left out, the pass counted as
+        // clear of it and nothing was said.
+        var noGrowth = NSubstitute.Substitute.For<IPolygonOffsetService>();
+        var detour = new ObstacleDetour(noGrowth);
+        var bend = detour.Compute(North, Field(-100, 100, Tree(0, 100, 6)), KeepOut, Radius);
+        Assert.That(bend, Is.Not.Null);
+        Assert.That(bend!.GoneRound, Is.Empty);
+        Assert.That(bend.Blocked, Is.EqualTo(new[] { 0 }));
+        Assert.That(bend.Points.All(p => Math.Abs(p.Easting) < 1e-6), "the pass stays straight");
+
+        // Beside the pass, clear of it: nothing to tell.
+        Assert.That(detour.Compute(North, Field(-100, 100, Tree(20, 100, 6)), KeepOut, Radius), Is.Null);
     }
 
     private static ToolConfig Trailed(string type, double hitch, double toPivot = 0, double tank = 3.0)

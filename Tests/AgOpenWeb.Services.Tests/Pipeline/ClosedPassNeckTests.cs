@@ -187,6 +187,25 @@ public class ClosedPassNeckTests
     }
 
     [Test]
+    public void An_implement_shifted_to_one_side_is_judged_on_its_own_line()
+    {
+        // The implement 2 m to the right of the tractor: on lap 2 the tractor steers 10 m in, the
+        // implement runs 12 m in as before. The tractor's line clears the notch by 7 m, more than
+        // its own limit, and was all that was looked at; the implement's line is the one across
+        // the neck 5 m from the notch, its right end 1 m from the fence.
+        ConfigurationStore.Instance.Tool.Offset = 2.0;
+        Open(pass: 1);
+        var (offAt, last) = DriveNorth(-40, untilN: 40);
+
+        Assert.That(offAt, Is.Not.Null, "AutoSteer went off");
+        Assert.Multiple(() =>
+        {
+            Assert.That(offAt!.Value.Northing, Is.InRange(-5.0, 4.0), "before the stretch, as without the shift");
+            Assert.That(last.DisengageReason, Is.EqualTo(GpsPipelineService.PassDoesNotFitReason));
+        });
+    }
+
+    [Test]
     public void AutoSteer_put_back_on_before_the_neck_goes_off_again()
     {
         Open(pass: 1);
@@ -211,7 +230,8 @@ public class ClosedPassNeckTests
             Assert.That(shown.Any(p => p.Northing < 15), "the lap round the south block");
             Assert.That(shown.Any(InNeck), Is.False, "not across the neck");
             Assert.That(shown.Any(p => p.Northing > 45), Is.False, "nor the north block's, on the other side of it");
-            Assert.That(band.Any(InNeck), Is.False, "the implement's band neither");
+            Assert.That(band.Any(p => p.Northing < 15), "the implement's band is drawn, round the south block");
+            Assert.That(band.Any(InNeck), Is.False, "and not across the neck either");
         });
 
         // AutoSteer off: the lap nearest the tractor, the same.

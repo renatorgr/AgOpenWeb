@@ -210,4 +210,101 @@ public class AgShareDownloadTests
         }
         finally { Directory.Delete(dir, true); }
     }
+
+    [Test]
+    public async Task Redownload_KeepsWhatTheOperatorChoseForAHoleThatIsStillThere()
+    {
+        // AgShare stores a hole's outline, not what the tractor does there. A tree chosen as
+        // U-turn and a pond to go round, uploaded and downloaded again: both came back
+        // drive-through. A hole the field did not have is drive-through, as before.
+        var dir = Path.Combine(Path.GetTempPath(), "agshare-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var boundary = new Boundary { OuterBoundary = Box(0, 0, 100, 100) };
+            var tree = Box(10, 10, 14, 14); tree.AtObstacle = ObstacleAction.Turn;
+            var pond = Box(40, 40, 60, 55); pond.AtObstacle = ObstacleAction.GoRound;
+            boundary.AddNewObstacle(tree);
+            boundary.AddNewObstacle(pond);
+            pond.IsHard = false;
+            var fields = new FieldService();
+            fields.SaveField(new Field
+            {
+                Name = "F", DirectoryPath = dir,
+                Origin = new Position { Latitude = Origin.Latitude, Longitude = Origin.Longitude },
+                Boundary = boundary,
+            });
+
+            var outer = new List<CoordinateDto> { Up(0, 0), Up(100, 0), Up(100, 100), Up(0, 100) };
+            // The pond first, the tree 0.2 m off (a round trip through WGS84), and a new hole.
+            var pondUp = new List<CoordinateDto> { Up(40, 40), Up(60, 40), Up(60, 55), Up(40, 55) };
+            var treeUp = new List<CoordinateDto> { Up(10.2, 10), Up(14.2, 10), Up(14.2, 14), Up(10.2, 14) };
+            var newUp = new List<CoordinateDto> { Up(80, 80), Up(90, 80), Up(90, 90), Up(80, 90) };
+            await FieldFileWriter.WriteAllFilesAsync(AgShareFieldParser.Parse(Dto(new() { outer, pondUp, treeUp, newUp })), dir);
+
+            var holes = fields.LoadField(dir).Boundary!.InnerBoundaries;
+            Assert.That(holes, Has.Count.EqualTo(3));
+            Assert.Multiple(() =>
+            {
+                Assert.That(holes[0].AtObstacle, Is.EqualTo(ObstacleAction.GoRound), "the pond: go round, as chosen");
+                Assert.That(holes[0].IsHard, Is.False, "and not hard, as chosen");
+                Assert.That(holes[1].AtObstacle, Is.EqualTo(ObstacleAction.Turn), "the tree: U-turn, as chosen");
+                Assert.That(holes[1].IsHard, Is.True);
+                Assert.That(holes[2].AtObstacle, Is.EqualTo(ObstacleAction.DriveThrough), "a hole the field did not have");
+            });
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public async Task Redownload_GivesEachOfTwoHolesCloseTogetherItsOwnChoice()
+    {
+        // Two posts 0.45 m apart: each one's box is within the tolerance of the other's. The
+        // first of the field's holes within it was taken, so both came back as the first post.
+        var dir = Path.Combine(Path.GetTempPath(), "agshare-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var boundary = new Boundary { OuterBoundary = Box(0, 0, 100, 100) };
+            var first = Box(10, 10, 10.3, 10.3); first.AtObstacle = ObstacleAction.Turn;
+            var second = Box(10.45, 10, 10.75, 10.3); second.AtObstacle = ObstacleAction.GoRound;
+            boundary.AddNewObstacle(first);
+            boundary.AddNewObstacle(second);
+            second.IsHard = false;
+            var fields = new FieldService();
+            fields.SaveField(new Field
+            {
+                Name = "F", DirectoryPath = dir,
+                Origin = new Position { Latitude = Origin.Latitude, Longitude = Origin.Longitude },
+                Boundary = boundary,
+            });
+
+            var outer = new List<CoordinateDto> { Up(0, 0), Up(100, 0), Up(100, 100), Up(0, 100) };
+            // The second post first, then the first, then a third beside them the field did not have.
+            var secondUp = new List<CoordinateDto> { Up(10.45, 10), Up(10.75, 10), Up(10.75, 10.3), Up(10.45, 10.3) };
+            var firstUp = new List<CoordinateDto> { Up(10, 10), Up(10.3, 10), Up(10.3, 10.3), Up(10, 10.3) };
+            var thirdUp = new List<CoordinateDto> { Up(10.2, 10.1), Up(10.5, 10.1), Up(10.5, 10.4), Up(10.2, 10.4) };
+            await FieldFileWriter.WriteAllFilesAsync(AgShareFieldParser.Parse(Dto(new() { outer, secondUp, firstUp, thirdUp })), dir);
+
+            var holes = fields.LoadField(dir).Boundary!.InnerBoundaries;
+            Assert.That(holes, Has.Count.EqualTo(3));
+            Assert.Multiple(() =>
+            {
+                Assert.That(holes[0].AtObstacle, Is.EqualTo(ObstacleAction.GoRound), "the second post: go round, as chosen");
+                Assert.That(holes[0].IsHard, Is.False);
+                Assert.That(holes[1].AtObstacle, Is.EqualTo(ObstacleAction.Turn), "the first post: U-turn, as chosen");
+                Assert.That(holes[2].AtObstacle, Is.EqualTo(ObstacleAction.DriveThrough), "each of the field's holes is given once");
+            });
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    private static BoundaryPolygon Box(double e0, double n0, double e1, double n1)
+    {
+        var p = new BoundaryPolygon();
+        foreach (var (e, n) in new[] { (e0, n0), (e1, n0), (e1, n1), (e0, n1) })
+            p.Points.Add(new BoundaryPoint(e, n, 0));
+        p.UpdateBounds();
+        return p;
+    }
 }

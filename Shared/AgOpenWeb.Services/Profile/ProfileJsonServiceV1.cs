@@ -247,12 +247,12 @@ public static class ProfileJsonServiceV1
         store.Guidance.UTurnCrossGap = dto.YouTurn?.CrossGap ?? 0.0;
         store.Guidance.LineEntryMode = dto.YouTurn?.EntryMode is int em && Enum.IsDefined(typeof(LineEntryMode), em)
             ? (LineEntryMode)em : LineEntryMode.Nearest;
-        store.Guidance.LineEntryStraight = dto.YouTurn?.EntryStraight ?? GuidanceConfig.DefaultLineEntryStraight;
+        store.Guidance.LineEntryStraight = GuidanceConfig.InRange(dto.YouTurn?.EntryStraight ?? GuidanceConfig.DefaultLineEntryStraight, GuidanceConfig.DefaultLineEntryStraight, 0.0, GuidanceConfig.MaxLineEntryStraight);
         store.Guidance.UTurnStyle = dto.YouTurn?.Style ?? (int)Models.YouTurn.YouTurnType.SagittaStyle;
         store.Guidance.UTurnSmoothing = dto.YouTurn?.Smoothing ?? 14;
         var dgo = new GuidanceConfig();
-        store.Guidance.GoAroundRadius = dto.YouTurn?.GoAroundRadius ?? dgo.GoAroundRadius;
-        store.Guidance.GoAroundMargin = dto.YouTurn?.GoAroundMargin ?? dgo.GoAroundMargin;
+        store.Guidance.GoAroundRadius = GuidanceConfig.InRange(dto.YouTurn?.GoAroundRadius ?? dgo.GoAroundRadius, dgo.GoAroundRadius, GuidanceConfig.MinGoAroundRadius, GuidanceConfig.MaxGoAroundRadius);
+        store.Guidance.GoAroundMargin = GuidanceConfig.InRange(dto.YouTurn?.GoAroundMargin ?? dgo.GoAroundMargin, dgo.GoAroundMargin, GuidanceConfig.MinGoAroundMargin, GuidanceConfig.MaxGoAroundMargin);
 
         // Tool config
         store.Tool.Width = dto.Tool?.Width ?? 6.0;
