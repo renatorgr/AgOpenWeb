@@ -353,7 +353,40 @@ public partial class YouTurnCreationService
         IReadOnlyList<Vec3> rest = start == 0 ? path : path.Skip(start).ToList();
         // The entry leg is the pass, as at planning (ClearsTurnObstacles' arcFrom).
         int arcFrom = arcStart is { } at ? Math.Max(0, PassEnds.NearestIndex(path, at.Easting, at.Northing) - start) : 0;
-        return ClearsTurnObstacles(rest, boundary, _configStore, out int inner, ExitReach, turnedAt, promoted: promoted, arcFrom: arcFrom) ? -1 : inner;
+        if (!ClearsTurnObstacles(rest, boundary, _configStore, out int inner, ExitReach, turnedAt, promoted: promoted, arcFrom: arcFrom))
+            return inner;
+        return arcFrom > 0 ? EntryLegRunsInto(rest, arcFrom, boundary, promoted) : -1;
+    }
+
+    /// <summary>
+    /// The Go around obstacle (its inner index) that the entry leg still to be driven, the path's
+    /// points up to <paramref name="arcFrom"/>, runs into, or -1. The leg is the pass as it was bent
+    /// round the Go around obstacles there were when the turn was planned, so it is not held to a
+    /// turn's room (<see cref="ClearsTurnObstacles"/>); one added or moved onto it since is not gone
+    /// round, and the tractor would drive the leg into it, or the implement over it. The pivot is kept
+    /// out of each Go around obstacle grown by what the bend keeps from it less its margin: half the
+    /// implement and its offset, or half the track if wider (<see cref="AgOpenWeb.Services.Track.ObstacleDetour.KeepOutFor"/>
+    /// with no margin). A leg bent round an obstacle keeps that and the margin (0.3 m at least), so it
+    /// is clear of it by construction. Obstacles with no room on this pass (<paramref name="promoted"/>)
+    /// are U-turn obstacles, tested with the whole path. Fork only.
+    /// </summary>
+    private int EntryLegRunsInto(IReadOnlyList<Vec3> path, int arcFrom, Boundary boundary, IReadOnlyList<int>? promoted)
+    {
+        var c = _configStore;
+        double grow = AgOpenWeb.Services.Track.ObstacleDetour.KeepOutFor(c.ActualToolWidth, c.Tool.Offset, c.Vehicle.TrackWidth, 0);
+        var leg = Densified(path.Take(Math.Min(arcFrom, path.Count - 1) + 1).ToList(), 0.5).ToList();
+        for (int i = 0; i < boundary.InnerBoundaries.Count; i++)
+        {
+            var obstacle = boundary.InnerBoundaries[i];
+            if (!obstacle.IsValid || obstacle.AtObstacle != ObstacleAction.GoRound) continue;
+            if (promoted != null && promoted.Contains(i)) continue;
+            var outline = obstacle.Points.Select(p => new Vec2(p.Easting, p.Northing)).ToList();
+            // An outline that can't be grown is held to itself, not left out.
+            var ring = _polygonOffsetService.CreateOutwardOffset(outline, grow);
+            if (ring == null || ring.Count < 3) ring = outline;
+            if (leg.Exists(p => GeometryMath.IsPointInPolygon(ring, p.Easting, p.Northing))) return i;
+        }
+        return -1;
     }
 
     // The path's points with more between any two further apart than the step, so a turn line
@@ -381,17 +414,19 @@ public partial class YouTurnCreationService
         if (obstacles.Count == 0) return null;
         int step = input.IsHeadingSameWay ? 1 : -1;
         var points = input.GuidancePoints;
-        // The pass must have been in the workable area first, as its end (PassEnds.Find): at the
-        // start of a job the tractor drives in over the turn line, and the stretch outside it under
-        // the tractor is where the pass begins. Taken for the end, a U-turn obstacle ahead was not
-        // seen, and a turn that did not fit before it was told as the implement swinging into the
-        // hard boundary (fork only: the spreaders on a tester's field, the farm job harness).
+        // Outside the outer turn line the pass must have been in the workable area first, as its end
+        // (PassEnds.Find): at the start of a job the tractor drives in over the turn line, and the
+        // stretch outside it under the tractor is where the pass begins. Taken for the end, a U-turn
+        // obstacle ahead was not seen, and a turn that did not fit before it was told as the
+        // implement swinging into the hard boundary (fork only: the spreaders on a tester's field,
+        // the farm job harness). An obstacle's turn area counts wherever it is met, the tractor
+        // already in it too, as before. Index 0 is looked at as well, as PassEnds.Find does.
         bool seenInside = false;
-        for (int j = input.CurrentLocationIndex; j > 0 && j < points.Count; j += step)
+        for (int j = input.CurrentLocationIndex; j >= 0 && j < points.Count; j += step)
         {
             int area = input.IsPointInsideTurnArea(points[j]);
             if (area == 0) { seenInside = true; continue; }
-            if (!seenInside) continue;
+            if (area < 0 && !seenInside) continue;
             return area > 0 && area <= obstacles.Count ? obstacles[area - 1] : null;
         }
         return null;

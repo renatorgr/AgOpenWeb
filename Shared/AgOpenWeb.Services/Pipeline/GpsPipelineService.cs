@@ -2230,26 +2230,30 @@ public sealed class GpsPipelineService : IGpsPipelineService
     // The line a front-mounted implement's pivot steers (FrontToolLine), for the pass, bend and
     // implement it was made for. Cycle-owned. Fork only.
     private (Models.Track.Track? Track, List<Vec3>? TrackPoints, double DistAway, List<Vec3>? Bent, int Count,
-        bool Closed, double Reach, double MinRadius, double PassRadius) _frontLineKey;
+        bool Closed, double Reach, double MinRadius, double PassRadius, bool Forward) _frontLineKey;
     private List<Vec3>? _frontLine;
 
     private List<Vec3>? FrontToolSteered(Models.Track.Track track, double distAway, List<Vec3>? bent,
-        Models.Track.Track steered)
+        Models.Track.Track steered, bool forward)
     {
         var config = _configStore;
         // The working point ahead of the rear axle: the vehicle's front hitch plus the tool's distance from it (#547).
         double reach = Math.Abs(Models.Tool.RigGeometry.AttachX(config.Vehicle, config.Tool));
         double minRadius = config.Vehicle.MinTurningRadius;
         double passRadius = config.Guidance.UTurnRadius; // the passes' bends are opened to it
-        var key = (track, track.Points, distAway, bent, steered.Points.Count, steered.IsClosed, reach, minRadius, passRadius);
+        // An open pass's line depends on the way it is driven (FrontToolLine.TowedShifts).
+        if (steered.IsClosed) forward = true;
+        var key = (track, track.Points, distAway, bent, steered.Points.Count, steered.IsClosed, reach, minRadius, passRadius, forward);
         if (!ReferenceEquals(key.track, _frontLineKey.Track) || !ReferenceEquals(key.Points, _frontLineKey.TrackPoints)
             || key.distAway != _frontLineKey.DistAway || !ReferenceEquals(bent, _frontLineKey.Bent)
             || key.Count != _frontLineKey.Count || key.IsClosed != _frontLineKey.Closed
             || reach != _frontLineKey.Reach || minRadius != _frontLineKey.MinRadius
-            || passRadius != _frontLineKey.PassRadius)
+            || passRadius != _frontLineKey.PassRadius || forward != _frontLineKey.Forward)
         {
+            // The line first, then the key with it: a line that failed is not taken for this pass's.
+            var line = Track.FrontToolLine.Steered(steered.Points, steered.IsClosed, reach, minRadius, forward);
+            _frontLine = line;
             _frontLineKey = key;
-            _frontLine = Track.FrontToolLine.Steered(steered.Points, steered.IsClosed, reach, minRadius);
         }
         return _frontLine;
     }
@@ -2369,7 +2373,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // inside it, so the implement runs on the pass (FrontToolLine). The same points, moved.
         // Fork only.
         if (Models.Tool.RigGeometry.Mount(config.Tool) == Models.Tool.ToolMount.FrontFixed && currentTrack.Points.Count > 2
-            && FrontToolSteered(track, distAway, bent, currentTrack) is { } frontLine)
+            && FrontToolSteered(track, distAway, bent, currentTrack, isHeadingSameWay) is { } frontLine)
             currentTrack = new Models.Track.Track
             {
                 Name = currentTrack.Name, Points = frontLine, Type = currentTrack.Type,
