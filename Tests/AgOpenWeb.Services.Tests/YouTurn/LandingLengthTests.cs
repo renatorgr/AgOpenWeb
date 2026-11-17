@@ -129,6 +129,43 @@ public class LandingLengthTests
         Assert.That(gap!.Value, Is.EqualTo(35.3).Within(1.5));
     }
 
+    /// <summary>The AB line as a curve drawn by taps: a point every 20 m, at the odd tens.</summary>
+    private static Models.Track.Track SparseCurve()
+    {
+        var points = new List<Vec3>();
+        for (double n = -110; n <= 110; n += 20) points.Add(new Vec3(0, n, 0));
+        return Models.Track.Track.FromCurve("drawn", points);
+    }
+
+    [Test]
+    public void A_curve_with_a_point_every_20_m_is_measured_along_it_not_at_its_points()
+    {
+        // The same passes as the AB line's. Pass 6 (x = 26) has 22.4 m at the south end, y -40 to
+        // -17.6, with one point of the curve in them (y = -30): asked at its points only, the run
+        // back from that point was 0 m and the turn onto it was refused. Pass 7 has 18.8 m (to
+        // y = -21.2) and the same one point. A curve's run is counted in whole metres between its
+        // points, so it reads up to a metre short at each end.
+        var curve = SparseCurve();
+        Assert.Multiple(() =>
+        {
+            Assert.That(_pathing.LandingLength(curve, 0, 6, _boundary, _cultivated, At(22, -30), false, 10), Is.EqualTo(22.4).Within(2.0));
+            Assert.That(_pathing.IsPathLandable(curve, 0, 6, _boundary, _cultivated, At(22, -30), false, 10), Is.True);
+            Assert.That(_pathing.LandingLength(curve, 0, 7, _boundary, _cultivated, At(22, -30), false, 10), Is.EqualTo(18.8).Within(2.0));
+            Assert.That(_pathing.IsPathLandable(curve, 0, 7, _boundary, _cultivated, At(22, -30), false, 10), Is.False);
+            // All of pass 6 in the field: twice 22.4 m, not the 40 m of two points' stretches.
+            Assert.That(_pathing.InsideLength(curve, 0, 6, _boundary, _cultivated), Is.EqualTo(44.8).Within(4.0));
+        });
+    }
+
+    [Test]
+    public void A_gap_on_a_curve_with_a_point_every_20_m_is_measured_along_it()
+    {
+        // As the AB line's pass 6 through the notch: 35.3 m of headland, then field again.
+        double? gap = _pathing.GapAhead(SparseCurve(), 0, 6, _boundary, _cultivated, At(26, -35), true, 17.4);
+        Assert.That(gap, Is.Not.Null);
+        Assert.That(gap!.Value, Is.EqualTo(35.3).Within(2.5));
+    }
+
     [Test]
     public void A_sliver_of_the_headland_line_past_the_end_is_not_more_field()
     {

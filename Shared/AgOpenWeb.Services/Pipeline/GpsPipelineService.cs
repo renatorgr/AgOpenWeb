@@ -275,6 +275,16 @@ public sealed class GpsPipelineService : IGpsPipelineService
     // cultivated area, looked at once as it gets HeadlandEntryCheckAfter metres into the headland.
     private bool _headlandEntryArmed;
     private Vec2? _headlandEntryAt;
+    // A turn was planned or driven since the entry: the end is looked at when that turn is gone
+    // and no other has taken its place for HeadlandEntryTurnWait cycles.
+    private bool _headlandEntryTurnSeen;
+    private int _headlandEntryNoTurnCycles;
+
+    /// <summary>
+    /// GPS cycles without a planned turn before a turn lost in the headland counts as lost: one
+    /// dropped by a nudge, the skip or the arrow is planned again within a cycle or two.
+    /// </summary>
+    internal const int HeadlandEntryTurnWait = 5;
 
     /// <summary>
     /// How far into the headland the tractor is when the end of its pass is looked at: the turn
@@ -1350,12 +1360,24 @@ public sealed class GpsPipelineService : IGpsPipelineService
             {
                 _headlandEntryArmed = true;
                 _headlandEntryAt = null;
+                _headlandEntryTurnSeen = false;
+                _headlandEntryNoTurnCycles = 0;
             }
             else if (_headlandEntryArmed)
             {
                 var at = _headlandEntryAt ??= new Vec2(driftedEasting, driftedNorthing);
                 double de = driftedEasting - at.Easting, dn = driftedNorthing - at.Northing;
-                if (de * de + dn * dn >= HeadlandEntryCheckAfter * HeadlandEntryCheckAfter)
+                // A turn planned or driven here is the end of this pass taken care of, so the end
+                // is not looked at while there is one. It stays to be looked at, though: a planned
+                // turn lost in the headland (the obstacles changed, U-turn switched off, a turn
+                // that no longer fits) left AutoSteer steering on to the fence, the one look
+                // having been spent a metre in, when the turn was still there. A turn planned
+                // again at once (a nudge, the skip, the arrow) is not a turn lost.
+                bool turnHere = _youTurn.TurnPath != null || _youTurn.IsExecuting;
+                if (turnHere) { _headlandEntryTurnSeen = true; _headlandEntryNoTurnCycles = 0; }
+                else _headlandEntryNoTurnCycles++;
+                if (de * de + dn * dn >= HeadlandEntryCheckAfter * HeadlandEntryCheckAfter && !turnHere
+                    && (!_headlandEntryTurnSeen || _headlandEntryNoTurnCycles > HeadlandEntryTurnWait))
                 {
                     _headlandEntryArmed = false;
                     if (autoSteerEngaged && !_isReverse && fence.IsPointInside(driftedEasting, driftedNorthing)
@@ -1375,6 +1397,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
         {
             _headlandEntryArmed = false;
             _headlandEntryAt = null;
+            _headlandEntryTurnSeen = false;
+            _headlandEntryNoTurnCycles = 0;
         }
 
         // (5b'''') AutoSteer joining a line (engaged, the line moved a pass, another track) with the

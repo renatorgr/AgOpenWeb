@@ -73,7 +73,9 @@ public static partial class RemoteServerWiring
         AgOpenWeb.Services.Interfaces.IConfigurationService cfg, string key, string val)
     {
         var inv = System.Globalization.CultureInfo.InvariantCulture;
-        bool D(out double d) => double.TryParse(val, System.Globalization.NumberStyles.Float, inv, out d);
+        // A number only: "NaN" and "Infinity" parse as doubles, and Math.Max, Math.Clamp and every
+        // range test let one that is not a number through into the settings.
+        bool D(out double d) => double.TryParse(val, System.Globalization.NumberStyles.Float, inv, out d) && double.IsFinite(d);
         // Whole-number settings accept a decimal and round it: metric input like "12.5" was
         // silently dropped by a strict int parse (imperial input was already rounded, #112).
         bool I(out int i) => TryParseRoundedInt(val, out i);
