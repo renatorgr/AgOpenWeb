@@ -82,7 +82,7 @@ public static class HardFencePasses
         return nearest;
     }
 
-    // Points about Step apart along the reference moved distAway to its right; an open curve's run on
+    // Points Step apart along the reference moved distAway to its right; an open curve's run on
     // straight past each end.
     private static IEnumerable<(double E, double N)> Samples(IReadOnlyList<Vec3> pts, bool closed, double distAway)
     {
@@ -112,19 +112,24 @@ public static class HardFencePasses
                     yield return (e0 - dx / len * s, n0 - dy / len * s);
         }
 
-        double since = Step;
-        for (int i = 0; i < count; i++)
+        // Every Step along the moved reference, a long stretch between two points too: a drawn curve
+        // whose stretch crosses a corner of the field between its points was taken for wholly outside.
+        // A closed track's stretch from its last point back to its first too.
+        var prev = At(0);
+        yield return prev;
+        double since = 0; // along the line since the last point looked at
+        int last = closed ? count : count - 1;
+        for (int i = 1; i <= last; i++)
         {
-            if (i > 0)
-            {
-                double dx = pts[i].Easting - pts[i - 1].Easting, dy = pts[i].Northing - pts[i - 1].Northing;
-                since += Math.Sqrt(dx * dx + dy * dy);
-            }
-            if (since >= Step || i == count - 1)
-            {
-                since = 0;
-                yield return At(i);
-            }
+            var next = At(i % count);
+            double dx = next.E - prev.E, dy = next.N - prev.N;
+            double len = Math.Sqrt(dx * dx + dy * dy);
+            double s = Step - since;
+            for (; s < len; s += Step)
+                yield return (prev.E + dx / len * s, prev.N + dy / len * s);
+            since = len - (s - Step);
+            if (i == last) yield return next;
+            prev = next;
         }
 
         if (!closed)

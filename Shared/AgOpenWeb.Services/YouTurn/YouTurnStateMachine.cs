@@ -333,6 +333,7 @@ public sealed class YouTurnStateMachine
 
         if (turn.TurnPath == null && !turn.IsExecuting && canCreateTurn && isAlignedWithABLine)
         {
+            _failedEndIdle = 0;
             if (ctx.IsSkipWorkedMode)
                 HandleSnakeCreation(in ctx, track, abHeading, currentPosition, headingRadians, guidance, turn, effects);
             else if (!TriedJustNow(in ctx, track, guidance, turn))
@@ -352,12 +353,16 @@ public sealed class YouTurnStateMachine
                 }
             }
         }
-        else
+        else if (turn.TurnPath != null || turn.IsExecuting
+                 || (_failedEnd != null && ++_failedEndIdle >= FailedEndRetryCycles))
         {
-            // Not looking for a turn (a turn planned or driven, off the line, out of the creation
-            // window): an end where none built is tried again next time. A pass that crosses a
-            // headland strip has another end past it.
+            // A turn planned or driven, or not looking for one for 1.5 s (off the line, out of the
+            // creation window): an end where none built is tried again next time. A pass that crosses
+            // a headland strip has another end past it. A shorter spell keeps it: the heading or the
+            // distance to the end flickering at the edge of the gate (a tractor parked with AutoSteer
+            // on, a single antenna's heading) built the turn again every other cycle. Fork only.
             _failedEnd = null;
+            _failedEndIdle = 0;
         }
         // ── NO TURN, HEADING OUT ────────────────────────────────────────
         // In the headland on the line, heading out of the field, with no turn planned or under
@@ -847,8 +852,11 @@ public sealed class YouTurnStateMachine
         if (Math.Abs(diff) > AlignmentTolerance && Math.PI - Math.Abs(diff) > AlignmentTolerance) return false;
         bool sameWay = Math.Abs(Math.IEEERemainder(heading - abHeading, 2 * Math.PI)) < Math.PI / 2;
         return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.WorkEndLine, p, sameWay,
-            steeredLine);
+            steeredLine, guidance.NudgeOffset, ToolShift(sameWay));
     }
+
+    /// <summary>The implement's side shift as the line steered has it, driven the way of <paramref name="sameWay"/>.</summary>
+    private double ToolShift(bool sameWay) => Models.Track.PassGeometry.ToolShift(_configStore.Tool.Offset, sameWay);
 
     /// <summary>The compass heading (radians) of the segment of <paramref name="line"/> nearest (e, n).</summary>
     private static double NearestSegmentHeading(IReadOnlyList<Vec3> line, double e, double n)
@@ -873,9 +881,10 @@ public sealed class YouTurnStateMachine
     /// way within 90 degrees of the heading), leaves the outer boundary before it reaches the
     /// cultivated area: the tractor, in the headland, faces out of the field, and AutoSteer would
     /// steer it to the fence. Unlike <see cref="EndOfPassWithoutTurn"/> the tractor need not be on
-    /// the line or along it. Fork only.
+    /// the line or along it. <paramref name="steeredLine"/> is the line steered on this pass when it
+    /// is not the plain pass (bent round Go around obstacles), walked instead of it. Fork only.
     /// </summary>
-    public bool LineAheadLeavesField(in TickContext ctx, GuidanceWorkingState guidance)
+    public bool LineAheadLeavesField(in TickContext ctx, GuidanceWorkingState guidance, IReadOnlyList<Vec3>? steeredLine = null)
     {
         var track = ctx.SelectedTrack;
         if (track == null || track.Points.Count < 2) return false;
@@ -885,15 +894,20 @@ public sealed class YouTurnStateMachine
             ? LocalCurveHeading(track, p)
             : Math.Atan2(track.Points[1].Easting - track.Points[0].Easting, track.Points[1].Northing - track.Points[0].Northing);
         bool sameWay = Math.Abs(Math.IEEERemainder(heading - abHeading, 2 * Math.PI)) < Math.PI / 2;
-        return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.WorkEndLine, p, sameWay);
+        return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.WorkEndLine, p, sameWay,
+            steeredLine is { Count: >= 2 } ? steeredLine : null, guidance.NudgeOffset, ToolShift(sameWay));
     }
 
     /// <summary>
     /// The line AutoSteer steers, driven the way the tractor faces, comes inside the outer
     /// boundary within <paramref name="reach"/> metres. Asked with the tractor and its implement
-    /// outside a hard fence. Fork only.
+    /// outside a hard fence. <paramref name="fence"/> is the field's own boundary: the context's
+    /// can be the U-turn's, which closes an open curve's opening (<see cref="CurveEndOpening"/>),
+    /// so a line coming in through the opening looked as if it stayed outside.
+    /// <paramref name="steeredLine"/> is the pass bent round Go around obstacles, when it is. Fork only.
     /// </summary>
-    public bool LineComesIntoFieldAhead(in TickContext ctx, GuidanceWorkingState guidance, double reach)
+    public bool LineComesIntoFieldAhead(in TickContext ctx, GuidanceWorkingState guidance, double reach,
+        Boundary? fence = null, IReadOnlyList<Vec3>? steeredLine = null)
     {
         var track = ctx.SelectedTrack;
         if (track == null || track.Points.Count < 2) return true;
@@ -903,7 +917,8 @@ public sealed class YouTurnStateMachine
             ? LocalCurveHeading(track, p)
             : Math.Atan2(track.Points[1].Easting - track.Points[0].Easting, track.Points[1].Northing - track.Points[0].Northing);
         bool sameWay = Math.Abs(Math.IEEERemainder(heading - abHeading, 2 * Math.PI)) < Math.PI / 2;
-        return _pathing.PassComesIntoFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, p, sameWay, reach);
+        return _pathing.PassComesIntoFieldAhead(track, abHeading, guidance.HowManyPathsAway, fence ?? ctx.Boundary, p, sameWay, reach,
+            steeredLine is { Count: >= 2 } ? steeredLine : null, guidance.NudgeOffset, ToolShift(sameWay));
     }
 
     /// <summary>
@@ -1399,6 +1414,7 @@ public sealed class YouTurnStateMachine
     // looking for a turn, the track changes or U-turn is switched off.
     private EndTried? _failedEnd;
     private int _failedEndCycles;
+    private int _failedEndIdle; // cycles in a row not looking for a turn since one did not build
     private const int FailedEndRetryCycles = 15; // GPS cycles at 10 Hz
 
     private readonly record struct EndTried(Models.Track.Track Track, int Pass, bool HeadingSameWay, double Nudge,
@@ -1436,10 +1452,11 @@ public sealed class YouTurnStateMachine
         var c = _configStore;
         var g = c.Guidance;
         int settings = HashCode.Combine(
-            HashCode.Combine(g.UTurnRadius, g.UTurnDistanceFromBoundary, g.UTurnExtension, g.UTurnSmoothing, g.UTurnStyle),
+            HashCode.Combine(g.UTurnRadius, g.UTurnDistanceFromBoundary, g.UTurnExtension, g.UTurnSmoothing, g.UTurnStyle,
+                g.UTurnCrossGap, g.GoAroundRadius, g.GoAroundMargin),
             HashCode.Combine(c.ActualToolWidth, c.Tool.Width, c.Tool.Overlap,
-                AgOpenWeb.Models.Tool.RigGeometry.Stamp(c.Vehicle, c.Tool)),
-            HashCode.Combine(ctx.HeadlandCalculatedWidth, ctx.HeadlandDistance));
+                AgOpenWeb.Models.Tool.RigGeometry.Stamp(c.Vehicle, c.Tool), c.Vehicle.TrackWidth),
+            HashCode.Combine(ctx.HeadlandCalculatedWidth, ctx.HeadlandDistance, ctx.IsAlternateSkipMode));
         return new EndTried(track, guidance.HowManyPathsAway, guidance.IsHeadingSameWay, guidance.NudgeOffset,
             turn.SnakeSequence, fieldStamp, ctx.UTurnSkipRows, turn.NextUTurnDirectionLeftOverride, settings);
     }
@@ -2108,10 +2125,14 @@ public sealed class YouTurnStateMachine
         effects.TellOperator = true;
     }
 
+    /// <summary>The U-turn arrow pointed at a side with no pass to land on: the turn keeps its side.</summary>
+    internal const string DirectionNotChangedMessage = "U-turn direction not changed: no pass on that side inside the field";
+
     private void RefuseDirectionSwap(int swappedPath, YouTurnEffects effects)
     {
         _logger.LogDebug("[YouTurn] Direction swap refused: path {Path} is outside the field", swappedPath);
-        effects.StatusMessage = "U-turn direction not changed: no pass on that side inside the field";
+        effects.StatusMessage = DirectionNotChangedMessage;
+        effects.DirectionSwapRefused = true;
     }
 
     private void CreatePathAndSync(
@@ -2202,6 +2223,10 @@ public sealed class YouTurnStateMachine
     /// <summary>No turn built: say why, and sound once (<see cref="SoundCreationFailed"/>).</summary>
     private void ReportNoTurn(YouTurnCreationService.TurnPathResult result, YouTurnEffects effects)
     {
+        // The arrow refused in this same cycle said only that the direction was not changed, and
+        // every reason below gave way to it: the failure sound came with that text, and the end is
+        // tried again silently, so the operator never read that there is no turn here at all.
+        if (effects.StatusMessage == DirectionNotChangedMessage) effects.StatusMessage = null;
         // A turn built (the fallback too) that would hand over past the end of the next pass's line.
         if (result.LandsPastLineEnd && effects.StatusMessage == null)
             effects.StatusMessage = "No U-turn: the next pass ends before this end - take over manually";
@@ -2511,8 +2536,16 @@ public sealed class YouTurnStateMachine
 /// </summary>
 public sealed class YouTurnEffects
 {
+    /// <summary>The answer to a manual U-turn asked for with no line to turn on (no track,
+    /// contour, a recorded path): the pipeline's, the state machine not being asked then.</summary>
+    public const string NoLineForManualTurn = "No U-turn: it needs an AB line or curve being followed";
+
     /// <summary>Set when a user-visible status message should be raised.</summary>
     public string? StatusMessage { get; set; }
+
+    /// <summary>The U-turn arrow was refused in this cycle (no pass on that side inside the
+    /// field); the turn keeps its side.</summary>
+    public bool DirectionSwapRefused { get; set; }
 
     /// <summary>True when the caller should push <c>YouTurnState.TurnPath</c> to the map.</summary>
     public bool SyncTurnPathToMap { get; set; }

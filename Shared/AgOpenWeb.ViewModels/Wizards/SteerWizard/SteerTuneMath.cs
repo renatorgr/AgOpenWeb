@@ -149,4 +149,23 @@ internal static class SteerTuneMath
         double between = p0 + (wantedSpeed - s0) / (s1 - s0) * (p1 - p0);
         return (int)Math.Ceiling(Math.Clamp(between, p0, p1));
     }
+
+    /// <summary>
+    /// The wheel speed (degrees per second) at <paramref name="pwm"/>, from the levels measured
+    /// (rising PWM) and the PWM that starts the wheels moving (speed 0 there): on the line between
+    /// the two points either side of it; the last level's speed above the last level, 0 below the start.
+    /// </summary>
+    internal static double SpeedAtPwm(IReadOnlyList<(int Pwm, double Speed)> levels, int pwm, int startsMovingPwm)
+    {
+        double p0 = startsMovingPwm, s0 = 0;
+        if (pwm <= p0) return 0;
+        foreach (var (p1, s1) in levels)
+        {
+            if (p1 <= p0) { s0 = s1; continue; }
+            if (pwm <= p1) return s0 + (s1 - s0) * (pwm - p0) / (p1 - p0);
+            p0 = p1;
+            s0 = s1;
+        }
+        return s0;
+    }
 }
