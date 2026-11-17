@@ -8,6 +8,21 @@ using System.Collections.Generic;
 namespace AgOpenWeb.Models.YouTurn
 {
     /// <summary>
+    /// Why no turn was built (<see cref="YouTurnCreationOutput.Failure"/>), for the operator's
+    /// message: only <see cref="DoesNotFit"/> means the turn does not fit at this end (fork only).
+    /// </summary>
+    public enum TurnFailure
+    {
+        /// <summary>A turn was built.</summary>
+        None,
+        /// <summary>No turn of the right shape fits at this end (the arc, its landing, the radius).</summary>
+        DoesNotFit,
+        /// <summary>The pass crosses the turn line within 3 m of the tractor, or not at all ahead of it
+        /// (the tractor at the turn line or past it): too late to turn at this end.</summary>
+        TooLate,
+    }
+
+    /// <summary>
     /// Output data from U-turn path creation.
     /// </summary>
     public class YouTurnCreationOutput
@@ -21,6 +36,12 @@ namespace AgOpenWeb.Models.YouTurn
         /// Reason for failure (if Success = false).
         /// </summary>
         public string FailureReason { get; set; }
+
+        /// <summary>
+        /// The kind of failure (if Success = false): the operator is told that no turn fits only
+        /// for <see cref="TurnFailure.DoesNotFit"/> (fork only).
+        /// </summary>
+        public TurnFailure Failure { get; set; }
 
         /// <summary>
         /// Generated U-turn path points.

@@ -2207,6 +2207,10 @@ public sealed class YouTurnStateMachine
         // refused it: "a hard boundary" sent the operator looking at the field's edge.
         if (result.Path == null && result.AtObstacle && effects.StatusMessage == null)
             effects.StatusMessage = "No room for a U-turn before the obstacle. Take over manually.";
+        // The tractor at the turn line, or past it: too late to turn at this end, said as such, not as
+        // a turn that does not fit here (fork only).
+        if (result.Path == null && result.Failure == TurnFailure.TooLate && effects.StatusMessage == null)
+            effects.StatusMessage = TooLateMessage;
         // Near a hard fence no turn of the right shape was built: said as such, not as the implement
         // swinging into the fence (fork only).
         if (result.Path == null && result.NoTurnBuilt && effects.StatusMessage == null)
@@ -2228,6 +2232,9 @@ public sealed class YouTurnStateMachine
                 : "No U-turn fits inside the boundary at this end - take over manually";
         SoundCreationFailed(effects);
     }
+
+    /// <summary>No turn: the tractor is at the turn line or past it (<see cref="TurnFailure.TooLate"/>).</summary>
+    public const string TooLateMessage = "Too late for a U-turn at this end - take over manually";
 
     /// <summary>The operator's message when no arc of this radius fits inside the turn line at
     /// this end: the geometry refuses the turn, and this says by how much.</summary>
