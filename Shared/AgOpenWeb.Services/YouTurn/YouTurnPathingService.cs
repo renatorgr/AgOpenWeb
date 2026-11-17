@@ -217,7 +217,7 @@ public sealed class YouTurnPathingService
         double length = 0;
         if (track.Points.Count > 2)
         {
-            var curve = CurveProcessing.CreateOffsetCurve(track.Points, distAway);
+            var curve = WalkedPass(track.Points, distAway);
             for (int i = 1; i < curve.Count && length < stopAt; i++)
                 if (IsPointInsideCultivatedArea(curve[i].Easting, curve[i].Northing, boundary, headlandLine))
                     length += GeometryMath.Distance(curve[i - 1].Easting, curve[i - 1].Northing, curve[i].Easting, curve[i].Northing);
@@ -348,7 +348,7 @@ public sealed class YouTurnPathingService
 
         if (track.Points.Count > 2)
         {
-            var curve = CurveProcessing.CreateOffsetCurve(track.Points, distAway);
+            var curve = WalkedPass(track.Points, distAway);
             if (curve.Count < 2) return default;
             int near = 0;
             double best = double.MaxValue;
@@ -552,7 +552,7 @@ public sealed class YouTurnPathingService
 
         if (track.Points.Count > 2)
         {
-            var curve = CurveProcessing.CreateOffsetCurve(track.Points, distAway);
+            var curve = WalkedPass(track.Points, distAway);
             if (curve.Count < 2) return null;
             int near = 0;
             double best = double.MaxValue;
@@ -836,7 +836,7 @@ public sealed class YouTurnPathingService
 
         if (track.Points.Count > 2)
         {
-            var curve = CurveProcessing.CreateOffsetCurve(track.Points, distAway);
+            var curve = WalkedPass(track.Points, distAway);
             if (curve.Count < 2) return false;
             int near = 0;
             double best = double.MaxValue;
@@ -891,6 +891,23 @@ public sealed class YouTurnPathingService
     private static bool InsideFence(double e, double n, Boundary? boundary)
         => boundary?.OuterBoundary is { IsValid: true } outer && outer.IsPointInside(e, n);
 
+    /// <summary>
+    /// A curve's pass at <paramref name="distAway"/> for the walks that ask each of its points
+    /// whether it is in the cultivated area: with a point every <see cref="WalkStep"/> when the
+    /// curve has stretches over twice that. A curve drawn by taps has a point every tenth of the
+    /// way between two taps (20 m with taps 200 m apart), and asked at its points only, a pass
+    /// with 22 m in the field at this end and one point in them had no landing (0 m), while one
+    /// with two points in 21 m of crop had 20 m and one more in the headland.
+    /// </summary>
+    private static List<Vec3> WalkedPass(IReadOnlyList<Vec3> points, double distAway)
+    {
+        var curve = CurveProcessing.CreateOffsetCurve(points, distAway);
+        for (int i = 1; i < curve.Count; i++)
+            if (GeometryMath.DistanceSquared(curve[i - 1], curve[i]) > 4 * WalkStep * WalkStep)
+                return CurveProcessing.Densify(curve, WalkStep);
+        return curve;
+    }
+
     private bool CheckOffsetLineInsideCultivated(
         Models.Track.Track currentTrack, double abHeading, int nextPathsAway,
         Boundary? boundary, IReadOnlyList<Vec3>? headlandLine,
@@ -906,7 +923,7 @@ public sealed class YouTurnPathingService
         // bug). Offsetting the real curve points is accurate for either direction.
         if (currentTrack.Points.Count > 2)
         {
-            var offsetCurve = CurveProcessing.CreateOffsetCurve(currentTrack.Points, nextDistAway);
+            var offsetCurve = WalkedPass(currentTrack.Points, nextDistAway);
             foreach (var p in offsetCurve)
                 if (IsPointInsideCultivatedArea(p.Easting, p.Northing, boundary, headlandLine))
                     return true;

@@ -45,8 +45,13 @@ public class EndOfPassWithoutTurnTests
     private double _northing;
     private Boundary? _boundary;
 
+    private PipelineIntents _intents = null!;
+
     [SetUp]
-    public void SetUp()
+    public void SetUp() => Build(Substitute.For<AgOpenWeb.Services.Geometry.IPolygonOffsetService>());
+
+    /// <summary>The pipeline, with <paramref name="offsetService"/> for the U-turn's turn lines (the real one plans turns).</summary>
+    private void Build(AgOpenWeb.Services.Geometry.IPolygonOffsetService offsetService)
     {
         _cycles.Clear();
         ConfigurationStore.SetInstance(new ConfigurationStore());
@@ -76,12 +81,11 @@ public class EndOfPassWithoutTurnTests
             sections, coverage, autoSteer,
             new YouTurnGuidanceService(),
             new YouTurnStateMachine(
-                new YouTurnCreationService(NullLogger<YouTurnCreationService>.Instance,
-                    Substitute.For<AgOpenWeb.Services.Geometry.IPolygonOffsetService>(), config),
+                new YouTurnCreationService(NullLogger<YouTurnCreationService>.Instance, offsetService, config),
                 new YouTurnPathingService(NullLogger<YouTurnPathingService>.Instance, config),
                 NullLogger<YouTurnStateMachine>.Instance, config),
             Substitute.For<IAudioService>(),
-            new PipelineIntents(),
+            _intents = new PipelineIntents(),
             headingFusion,
             NullLogger<GpsPipelineService>.Instance,
             config,
@@ -148,6 +152,21 @@ public class EndOfPassWithoutTurnTests
         }
     }
 
+    /// <summary>One fix on pass 0 at <paramref name="northing"/>, facing <paramref name="heading"/> degrees.</summary>
+    private void Fix(double northing, double heading)
+    {
+        _northing = northing;
+        var ll = _plane.ConvertGeoCoordToWgs84(new GeoCoord(northing, PassEasting));
+        _gps.UpdateGpsData(new GpsData
+        {
+            CurrentPosition = new Position { Latitude = ll.Latitude, Longitude = ll.Longitude, Heading = heading, Speed = 2.0 },
+            FixQuality = 4,
+            SatellitesInUse = 14,
+            Hdop = 0.7,
+            IsValid = true,
+        });
+    }
+
     private (double Northing, GpsCycleResult Result)? WentOff() =>
         _cycles.Where(c => c.Result.AutoSteerDisengagedThisCycle).Select(c => ((double, GpsCycleResult)?)c).FirstOrDefault();
 
@@ -175,8 +194,76 @@ public class EndOfPassWithoutTurnTests
     public void Heading_into_the_field_from_the_headland_is_not_the_end()
     {
         Field(hard: true);
-        Drive(46, 20);
+        // Out of the crop into the headland (the look is armed in the crop), turned round there
+        // less than a metre in, and back towards the field: the look comes a metre from where the
+        // tractor came in, facing the field.
+        Drive(39, 40.4);
+        Fix(42.0, 180);
+        Assert.That(_cycles[^1].Result.AutoSteerDisengagedThisCycle, Is.False, "facing the field a metre into the headland");
+        Drive(41.8, 20);
         Assert.That(WentOff(), Is.Null);
+
+        // The look was made there: out again the same way, it is made again and takes AutoSteer off.
+        Drive(20.2, 41.6);
+        Assert.That(WentOff()?.Northing, Is.InRange(Headland + 0.9, Headland + 1.6), "the scenario: the look is armed");
+    }
+
+    /// <summary>A hard field with U-turns on and a headland 20 m wide: the turn is planned from inside the crop and starts well into the headland.</summary>
+    private void FieldWithUTurns()
+    {
+        TearDown();
+        Build(new AgOpenWeb.Services.Geometry.PolygonOffsetService());
+        var config = ConfigurationStore.Instance;
+        config.Vehicle.Wheelbase = 2.5;
+        config.Vehicle.MaxSteerAngle = 35;
+        config.Guidance.UTurnRadius = 4.0;
+        config.Guidance.UTurnDistanceFromBoundary = 2.0;
+        Field(hard: true, Square(30));
+        _pipeline.SetYouTurnEnabled(true);
+    }
+
+    private bool TurnPlanned() => _cycles[^1].Result.YouTurn?.TurnPath is { Count: > 0 };
+
+    [Test]
+    public void A_planned_turn_lost_in_the_headland_is_the_end_of_the_pass()
+    {
+        // The turn is planned when the tractor comes into the headland, so the end of the pass is
+        // not looked at a metre in. Then the turn is lost (here: U-turn switched off) with the
+        // tractor in the headland heading for the fence. The one look had been spent on the turn,
+        // and AutoSteer steered on.
+        FieldWithUTurns();
+        Drive(10, 33);
+        Assert.That(TurnPlanned(), Is.True, "the scenario: a turn is planned");
+        Assert.That(WentOff(), Is.Null, "the scenario: nothing to stop for with a turn planned");
+
+        _pipeline.SetYouTurnEnabled(false);
+        Drive(33.2, 36);
+
+        var off = WentOff();
+        Assert.That(off, Is.Not.Null, "AutoSteer steered on towards the fence with the turn gone");
+        Assert.Multiple(() =>
+        {
+            Assert.That(off!.Value.Result.DisengageReason, Does.Contain("end of the pass and no U-turn"));
+            Assert.That(off.Value.Northing, Is.LessThan(35), "within a second of the turn being lost");
+        });
+    }
+
+    [Test]
+    public void A_planned_turn_planned_again_in_the_headland_is_not_the_end_of_the_pass()
+    {
+        // A nudge drops the planned turn and the next cycle plans it for the moved line.
+        FieldWithUTurns();
+        Drive(10, 33);
+        Assert.That(TurnPlanned(), Is.True, "the scenario: a turn is planned");
+
+        _intents.RequestGuidanceNudge(0.05);
+        Drive(33.2, 36);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(WentOff(), Is.Null);
+            Assert.That(TurnPlanned(), Is.True, "the turn for the moved line");
+        });
     }
 
     [Test]

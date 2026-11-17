@@ -166,11 +166,13 @@ public class GuidanceConfig : ObservableObject
     // headland only (inside the field, outside the headland line and every obstacle), the
     // U-turn is planned beyond that gap and the pass is driven on through it with the sections
     // off: a narrow tip of the field, a notch in its edge. 0 turns at the first crossing.
+    // A value that is no length (not a number, infinite, negative) is 0: every "longer than the
+    // setting" test is false for one that is not a number, so a gap of any length was crossed.
     private double _uTurnCrossGap = 0.0;
     public double UTurnCrossGap
     {
         get => _uTurnCrossGap;
-        set => SetProperty(ref _uTurnCrossGap, value);
+        set => SetProperty(ref _uTurnCrossGap, double.IsFinite(value) && value > 0 ? value : 0.0);
     }
 
     // How AutoSteer joins a new line (engaged, the line moved a pass or another track chosen)

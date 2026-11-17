@@ -68,4 +68,24 @@ public class GuidanceConfigTests
             Assert.That(g.UTurnRadius, Is.EqualTo(12), "Not a steering-tuning value — must be left alone");
         });
     }
+
+    // "NaN" parses as a number and passes Math.Max(0, x); every "gap longer than the setting"
+    // test is then false, so a headland gap of any length was driven across.
+    [TestCase(double.NaN)]
+    [TestCase(double.PositiveInfinity)]
+    [TestCase(double.NegativeInfinity)]
+    [TestCase(-5.0)]
+    public void A_gap_setting_that_is_no_length_is_off(double value)
+    {
+        var g = new GuidanceConfig { UTurnCrossGap = 12 };
+        g.UTurnCrossGap = value;
+        Assert.That(g.UTurnCrossGap, Is.EqualTo(0.0));
+    }
+
+    [Test]
+    public void A_gap_setting_keeps_a_length()
+    {
+        var g = new GuidanceConfig { UTurnCrossGap = 12.5 };
+        Assert.That(g.UTurnCrossGap, Is.EqualTo(12.5));
+    }
 }

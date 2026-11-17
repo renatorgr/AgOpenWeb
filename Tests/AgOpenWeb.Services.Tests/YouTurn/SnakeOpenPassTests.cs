@@ -114,6 +114,61 @@ public class SnakeOpenPassTests
     }
 
     [Test]
+    public void The_arrow_pointing_the_order_s_way_keeps_the_nearest_pass_on_that_side()
+    {
+        // As above, and the operator's arrow says east (left, heading south): the way the order
+        // goes. East has no pass with room at this end, so there is no turn; the arrow was taken
+        // only when it asked for the other side, and the turn went west onto pass 4.
+        var cultivated = Hourglass();
+        var guidance = new GuidanceWorkingState { HowManyPathsAway = 6, IsHeadingSameWay = false };
+        var turn = new YouTurnWorkingState { IsEnabled = true, NextUTurnDirectionLeftOverride = true };
+
+        var effects = _sm.Tick(Ctx(cultivated, PassX(6), -25, 180), guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null, $"no turn against the arrow (aimed at {turn.ReturnPassTargetPath})");
+            Assert.That(effects.StatusMessage, Does.Contain("still to do, but no room on the next pass at this end"));
+            Assert.That(effects.TurnCreationFailedSound, Is.True);
+        });
+
+        // Tried again 1.5 s later: still on the arrow's side.
+        for (int i = 1; i <= 16; i++)
+            _sm.Tick(Ctx(cultivated, PassX(6), -25 - 0.2 * i, 180), guidance, turn);
+        Assert.That(turn.TurnPath, Is.Null, $"the retry turned against the arrow (onto {turn.ReturnPassTargetPath})");
+
+        // The arrow the other way: west, onto pass 4.
+        turn.NextUTurnDirectionLeftOverride = false;
+        _sm.Tick(Ctx(cultivated, PassX(6), -28.4, 180), guidance, turn);
+        Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4));
+        Assert.That(turn.TurnPath, Is.Not.Null);
+    }
+
+    [Test]
+    public void A_nearest_pass_whose_turn_did_not_build_is_not_left_as_the_next_line()
+    {
+        // The order's pass 8 has no room at this end (18.7 m, pass 6's own 27 m) and pass 4, the
+        // nearest still to do with room, takes no turn: a 32 m loop and a hard fence 2 m past the
+        // headland line. Pass 4 stayed aimed at, drawn as the next line with no turn to it.
+        ConfigurationStore.Instance.Guidance.UTurnRadius = 16.0;
+        _boundary.OuterBoundary!.IsHard = true;
+        var cultivated = Ring((-48, -48), (48, -48), (48, -44), (6, 0), (48, 44), (48, 48), (-48, 48));
+        var guidance = new GuidanceWorkingState { HowManyPathsAway = 6, IsHeadingSameWay = false };
+        var turn = new YouTurnWorkingState { IsEnabled = true };
+
+        var effects = _sm.Tick(Ctx(cultivated, PassX(6), -30, 180), guidance, turn);
+
+        Assert.That(_creation.TurnPathBuilds, Is.GreaterThan(0), "the scenario: a turn onto a nearest pass was tried");
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null, "the scenario: no turn fits");
+            Assert.That(effects.StatusMessage, Does.Contain("still to do, but no room on the next pass at this end"));
+            Assert.That(turn.NextTrack, Is.Null, "no next line without a turn");
+            Assert.That(turn.ReturnPassTargetPath, Is.Null);
+        });
+    }
+
+    [Test]
     public void No_pass_still_to_do_with_room_here_is_still_no_room_at_this_end()
     {
         // As above with every pass west of the notch worked: only the short passes east are left.
