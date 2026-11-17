@@ -176,7 +176,9 @@ public class TurnPlannedEnteringTheFieldTests
         var told = Drive(field, guidance, turn, turnLineNorth - 15, turnLineNorth - 14);
 
         Assert.That(turn.TurnPath, Is.Null, "no turn");
-        Assert.That(told, Has.Some.Contains("creation failed sound").And.Some.Contains("implement would swing into a hard boundary"),
+        // One telling: the sound and the message together.
+        Assert.That(told, Has.Some.Matches<string>(t =>
+                t.Contains("creation failed sound") && t.Contains("implement would swing into a hard boundary")),
             "the operator is told, with the sound");
     }
 }
