@@ -156,4 +156,38 @@ public class ToolProfileUTurnTramTests
             Assert.That(tram.IsOuterInverted, Is.True);
         });
     }
+
+    [Test]
+    public void GoAroundAndLineEntrySettings_OutOfRangeInAFile_AreReadInsideTheirLimits()
+    {
+        // A profile edited by hand, or written by a build with other limits: a Go around radius of
+        // 0 bent the pass at a corner, a margin of 0 took the implement along the tree's bark, and
+        // 500 m of straight before the crop found no way onto any pass.
+        var odd = new ConfigurationStore();
+        odd.Guidance.GoAroundRadius = 0;
+        odd.Guidance.GoAroundMargin = -2;
+        odd.Guidance.LineEntryStraight = 500;
+        ToolProfileJsonService.Save(_tools, "Odd", odd);
+
+        var d = new ConfigurationStore();
+        Assert.That(ToolProfileJsonService.Load(_tools, "Odd", d), Is.True);
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.Guidance.GoAroundRadius, Is.EqualTo(GuidanceConfig.MinGoAroundRadius));
+            Assert.That(d.Guidance.GoAroundMargin, Is.EqualTo(GuidanceConfig.MinGoAroundMargin));
+            Assert.That(d.Guidance.LineEntryStraight, Is.EqualTo(GuidanceConfig.MaxLineEntryStraight));
+        });
+
+        odd.Guidance.GoAroundRadius = 900;
+        odd.Guidance.GoAroundMargin = 90;
+        odd.Guidance.LineEntryStraight = -3;
+        ToolProfileJsonService.Save(_tools, "Odd", odd);
+        Assert.That(ToolProfileJsonService.Load(_tools, "Odd", d), Is.True);
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.Guidance.GoAroundRadius, Is.EqualTo(GuidanceConfig.MaxGoAroundRadius));
+            Assert.That(d.Guidance.GoAroundMargin, Is.EqualTo(GuidanceConfig.MaxGoAroundMargin));
+            Assert.That(d.Guidance.LineEntryStraight, Is.EqualTo(0));
+        });
+    }
 }

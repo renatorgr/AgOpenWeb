@@ -155,6 +155,17 @@ namespace AgOpenWeb.Services.AgShare
                 field = new Field { Name = Path.GetFileName(fieldDir), CreatedDate = DateTime.Now };
             }
             field.DirectoryPath = fieldDir;
+            // AgShare stores the holes' outlines, not what the tractor does at each one. A hole of
+            // a re-download that is still where the field has one keeps the operator's choice
+            // (U-turn, Go around, drive through, Hard): written drive-through like a new one, a
+            // tree chosen as U-turn was driven through after the field was downloaded again. Only
+            // with the origin unchanged: the outlines are in the origin's plane.
+            bool sameOrigin = field.Origin != null
+                && Math.Abs(field.Origin.Latitude - origin.Latitude) < 1e-9
+                && Math.Abs(field.Origin.Longitude - origin.Longitude) < 1e-9;
+            var holesBefore = sameOrigin && field.Boundary != null
+                ? new List<BoundaryPolygon>(field.Boundary.InnerBoundaries)
+                : new List<BoundaryPolygon>();
             field.Origin = new Position { Latitude = origin.Latitude, Longitude = origin.Longitude };
             field.LastModifiedDate = DateTime.Now;
 
@@ -176,12 +187,50 @@ namespace AgOpenWeb.Services.AgShare
                         // Holes were written drive-through, as before.
                         polygon.IsDriveThrough = true;
                         boundary.AddNewObstacle(polygon);
+                        if (SameHole(polygon, holesBefore) is { } was)
+                        {
+                            polygon.AtObstacle = was.AtObstacle;
+                            polygon.IsHard = was.IsHard;
+                        }
                     }
                 }
                 field.Boundary = boundary;
             }
 
             fields.SaveField(field);
+        }
+
+        /// <summary>How far a hole's box may differ from the field's own hole and still be that hole, m.</summary>
+        private const double SameHoleTolerance = 0.5;
+
+        /// <summary>
+        /// The field's own hole a downloaded one is: every side of its bounding box within
+        /// <see cref="SameHoleTolerance"/> of that hole's. Null for a hole the field did not have.
+        /// </summary>
+        private static BoundaryPolygon? SameHole(BoundaryPolygon hole, List<BoundaryPolygon> before)
+        {
+            if (hole.Points.Count == 0) return null;
+            var box = Box(hole);
+            foreach (var was in before)
+            {
+                if (was.Points.Count == 0) continue;
+                var b = Box(was);
+                if (Math.Abs(b.MinE - box.MinE) <= SameHoleTolerance && Math.Abs(b.MaxE - box.MaxE) <= SameHoleTolerance
+                    && Math.Abs(b.MinN - box.MinN) <= SameHoleTolerance && Math.Abs(b.MaxN - box.MaxN) <= SameHoleTolerance)
+                    return was;
+            }
+            return null;
+        }
+
+        private static (double MinE, double MaxE, double MinN, double MaxN) Box(BoundaryPolygon polygon)
+        {
+            double minE = double.MaxValue, maxE = double.MinValue, minN = double.MaxValue, maxN = double.MinValue;
+            foreach (var p in polygon.Points)
+            {
+                minE = Math.Min(minE, p.Easting); maxE = Math.Max(maxE, p.Easting);
+                minN = Math.Min(minN, p.Northing); maxN = Math.Max(maxN, p.Northing);
+            }
+            return (minE, maxE, minN, maxN);
         }
 
         /// <summary>

@@ -99,7 +99,9 @@ public sealed class ObstacleDetour
     {
         if (boundary == null || boundary.InnerBoundaries.Count == 0) return null;
         if (pass.Count < 2) return null;
-        long key = YouTurn.YouTurnCreationService.ObstacleStamp(boundary);
+        // Every corner of every obstacle and of the field's edge (the bend keeps the implement
+        // inside it): a corner moved anywhere gets a bend of its own.
+        long key = YouTurn.YouTurnCreationService.ObstacleStamp(boundary) * 31 + (boundary.OuterBoundary?.OutlineStamp ?? 0);
         long pins = PinsKey(pinnedSides);
         // The pass is part of the key by its shape: the pipeline's two-point AB pass and the
         // planner's densified one get bends of their own (the same geometry, on different points),
@@ -209,22 +211,30 @@ public sealed class ObstacleDetour
         var frame = new Frame(line);
 
         var fences = new List<Fence>();      // Go around obstacles, grown by the keep-out distance
-        var others = new List<List<Vec2>>(); // obstacles chosen as U-turn: the bent line stays out of them
+        var others = new List<Fence>();      // obstacles chosen as U-turn: the bent line stays out of them
+        var ungrown = new List<int>();       // Go around obstacles across the pass whose outline could not be grown
         var hits = new List<Hit>();
         for (int i = 0; i < boundary.InnerBoundaries.Count; i++)
         {
             var inner = boundary.InnerBoundaries[i];
             if (!inner.IsValid) continue;
             var outline = inner.Points.Select(p => new Vec2(p.Easting, p.Northing)).ToList();
-            if (inner.AtObstacle == ObstacleAction.Turn) { others.Add(outline); continue; }
+            if (inner.AtObstacle == ObstacleAction.Turn) { others.Add(new Fence(i, outline)); continue; }
             if (inner.AtObstacle != ObstacleAction.GoRound) continue;
             var grown = _offset.CreateOutwardOffset(outline, keepOut);
-            if (grown == null || grown.Count < 3) continue;
+            if (grown == null || grown.Count < 3)
+            {
+                // No grown outline, no bend. Across the pass it is told as one with no room (a
+                // U-turn before it on this pass), not left out as if the pass were clear of it.
+                if (Across(frame, new Fence(i, outline), force: false) != null) ungrown.Add(i);
+                continue;
+            }
             var fence = new Fence(i, grown);
             fences.Add(fence);
             if (Across(frame, fence, force: false) is { } hit) hits.Add(hit);
         }
-        if (hits.Count == 0) return null;
+        if (hits.Count == 0)
+            return ungrown.Count == 0 ? null : new Bend(new List<Vec3>(pass), Array.Empty<int>(), ungrown, Array.Empty<RoundedObstacle>());
         radius = Math.Max(radius, 1.0);
         Group(hits, radius);
         Pin(hits, pinnedSides);
@@ -234,7 +244,7 @@ public sealed class ObstacleDetour
         double edge = Math.Max(0, keepOut - Math.Max(0, margin));
         double most = MaxOffset(keepOut, margin);
 
-        var blocked = new List<int>();
+        var blocked = new List<int>(ungrown);
         for (int attempt = 0; attempt < 3 * fences.Count + 3 && hits.Count > 0; attempt++)
         {
             // An obstacle whose bend would move the line further than a bend may is not gone round:
@@ -495,13 +505,14 @@ public sealed class ObstacleDetour
     }
 
     // Where the bent line first goes wrong, among the points it moved: into a grown Go around
-    // obstacle (which, and the side the line is on there), into a U-turn obstacle, or closer to
-    // the field's edge than `edge` (unless it moved away from the edge). Null when it is clear.
+    // obstacle (which, and the side the line is on there), into a U-turn obstacle or closer to it
+    // than `edge` (half the implement; unless it moved away from it), or closer to the field's
+    // edge than `edge` (unless it moved away from the edge). Null when it is clear.
     // The pass's own points are not tested: a pass through an obstacle with no room (blocked) is
     // the U-turn planner's business, not the bend's, and a dense pass has such points where a
     // two-point line has none.
     private static (Fence? Fence, Vec3 At, int Side)? FirstConflict(List<Vec3> points,
-        List<(double E, double N)?> bases, List<Fence> fences, List<List<Vec2>> others, List<Vec2>? outer, double edge)
+        List<(double E, double N)?> bases, List<Fence> fences, List<Fence> others, List<Vec2>? outer, double edge)
     {
         for (int k = 0; k < points.Count; k++)
         {
@@ -522,7 +533,15 @@ public sealed class ObstacleDetour
                 if (f.Holds(p.Easting, p.Northing) && DistanceToRing(f.Ring, p.Easting, p.Northing) > 0.05)
                     return (f, p, side);
             foreach (var o in others)
-                if (GeometryMath.IsPointInPolygon(o, p.Easting, p.Northing)) return (null, p, side);
+            {
+                if (p.Easting < o.MinE - edge || p.Easting > o.MaxE + edge
+                    || p.Northing < o.MinN - edge || p.Northing > o.MaxN + edge) continue;
+                if (o.Holds(p.Easting, p.Northing)) return (null, p, side);
+                // The line stayed out of the obstacle but the bend took the implement's end into
+                // it: nearer than half the implement, and nearer than the pass itself runs.
+                double near = DistanceToRing(o.Ring, p.Easting, p.Northing);
+                if (near < edge && near < DistanceToRing(o.Ring, b.E, b.N) - 0.01) return (null, p, side);
+            }
             if (outer == null) continue;
             if (!GeometryMath.IsPointInPolygon(outer, p.Easting, p.Northing)) return (null, p, side);
             double d = DistanceToRing(outer, p.Easting, p.Northing);

@@ -247,12 +247,12 @@ public static class ProfileJsonServiceV1
         store.Guidance.UTurnCrossGap = dto.YouTurn?.CrossGap ?? 0.0;
         store.Guidance.LineEntryMode = dto.YouTurn?.EntryMode is int em && Enum.IsDefined(typeof(LineEntryMode), em)
             ? (LineEntryMode)em : LineEntryMode.Nearest;
-        store.Guidance.LineEntryStraight = dto.YouTurn?.EntryStraight ?? GuidanceConfig.DefaultLineEntryStraight;
+        store.Guidance.LineEntryStraight = Math.Clamp(dto.YouTurn?.EntryStraight ?? GuidanceConfig.DefaultLineEntryStraight, 0.0, GuidanceConfig.MaxLineEntryStraight);
         store.Guidance.UTurnStyle = dto.YouTurn?.Style ?? (int)Models.YouTurn.YouTurnType.SagittaStyle;
         store.Guidance.UTurnSmoothing = dto.YouTurn?.Smoothing ?? 14;
         var dgo = new GuidanceConfig();
-        store.Guidance.GoAroundRadius = dto.YouTurn?.GoAroundRadius ?? dgo.GoAroundRadius;
-        store.Guidance.GoAroundMargin = dto.YouTurn?.GoAroundMargin ?? dgo.GoAroundMargin;
+        store.Guidance.GoAroundRadius = Math.Clamp(dto.YouTurn?.GoAroundRadius ?? dgo.GoAroundRadius, GuidanceConfig.MinGoAroundRadius, GuidanceConfig.MaxGoAroundRadius);
+        store.Guidance.GoAroundMargin = Math.Clamp(dto.YouTurn?.GoAroundMargin ?? dgo.GoAroundMargin, GuidanceConfig.MinGoAroundMargin, GuidanceConfig.MaxGoAroundMargin);
 
         // Tool config
         store.Tool.Width = dto.Tool?.Width ?? 6.0;

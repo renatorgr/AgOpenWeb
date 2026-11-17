@@ -316,11 +316,11 @@ public static class ToolProfileJsonService
         store.Guidance.UTurnCrossGap = dto.YouTurn?.CrossGap ?? dg.UTurnCrossGap;
         store.Guidance.LineEntryMode = dto.YouTurn?.EntryMode is int em && Enum.IsDefined(typeof(LineEntryMode), em)
             ? (LineEntryMode)em : dg.LineEntryMode;
-        store.Guidance.LineEntryStraight = dto.YouTurn?.EntryStraight ?? dg.LineEntryStraight;
+        store.Guidance.LineEntryStraight = Math.Clamp(dto.YouTurn?.EntryStraight ?? dg.LineEntryStraight, 0.0, GuidanceConfig.MaxLineEntryStraight);
         store.Guidance.UTurnStyle = dto.YouTurn?.Style ?? dg.UTurnStyle;
         store.Guidance.UTurnSmoothing = dto.YouTurn?.Smoothing ?? dg.UTurnSmoothing;
-        store.Guidance.GoAroundRadius = dto.YouTurn?.GoAroundRadius ?? dg.GoAroundRadius;
-        store.Guidance.GoAroundMargin = dto.YouTurn?.GoAroundMargin ?? dg.GoAroundMargin;
+        store.Guidance.GoAroundRadius = Math.Clamp(dto.YouTurn?.GoAroundRadius ?? dg.GoAroundRadius, GuidanceConfig.MinGoAroundRadius, GuidanceConfig.MaxGoAroundRadius);
+        store.Guidance.GoAroundMargin = Math.Clamp(dto.YouTurn?.GoAroundMargin ?? dg.GoAroundMargin, GuidanceConfig.MinGoAroundMargin, GuidanceConfig.MaxGoAroundMargin);
 
         store.Tram.TramWidth = dto.Tram?.Width ?? new TramConfig().TramWidth;
         store.Guidance.TramPasses = dto.Tram?.Passes ?? dg.TramPasses;

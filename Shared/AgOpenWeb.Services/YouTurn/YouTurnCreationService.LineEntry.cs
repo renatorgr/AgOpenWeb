@@ -166,10 +166,12 @@ public partial class YouTurnCreationService
             tried++;
             if (PathLength(candidate) + LineEntryStartLead > LineEntryMaxLength) continue;
 
-            var path = new List<Vec3>(candidate.Count + straight.Count + 1)
-            {
-                new Vec3(pivot.Easting, pivot.Northing, headingRad),
-            };
+            // From the tractor straight on to where the turn starts, a point every LineEntrySpacing
+            // as the rest of the way has: the checks below look at points, and 3 m between two of
+            // them could cross a corner of the headland line or the fence unseen.
+            var path = new List<Vec3>(candidate.Count + straight.Count + 16);
+            for (double d = 0; d < LineEntryStartLead - 1e-9; d += LineEntrySpacing)
+                path.Add(new Vec3(pivot.Easting + Math.Sin(headingRad) * d, pivot.Northing + Math.Cos(headingRad) * d, headingRad));
             path.AddRange(candidate);
             int onPassFrom = path.Count - 1; // the goal: from here on the tractor is on the pass
             path.AddRange(straight);

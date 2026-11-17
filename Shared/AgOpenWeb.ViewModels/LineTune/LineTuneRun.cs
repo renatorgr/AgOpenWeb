@@ -149,9 +149,9 @@ public sealed class LineTuneRun
     /// <summary>A value must be this much quicker than the best so far for the run to go on to a quicker one.</summary>
     public const double QuickerShare = 0.95;
     /// <summary>After a value that swung or ran away, the tractor is brought back to the line with a
-    /// calm value: with Stanley the distance gain divided by this (never quicker than the
-    /// operator's own, nor under <see cref="RescueMinStanley"/>); with Pure Pursuit the calmest
-    /// Steer Response of the ladder.</summary>
+    /// calm value: with Stanley the distance gain divided by this (not under
+    /// <see cref="RescueMinStanley"/>, and never quicker than the operator's own, one under that
+    /// floor too); with Pure Pursuit the calmest Steer Response of the ladder.</summary>
     public const double RescueShare = 2.5;
     public const double RescueMinStanley = 0.3;
     public const double MaxHold = 10.0;
@@ -253,6 +253,7 @@ public sealed class LineTuneRun
     private double _outstanding;      // this run's moves not moved back (cycle frame)
     private double _requestAt;
     private double _movingBackUntil;  // a move back asked: the cycle shows it by then
+    private double _pendingShift;     // the move asked last (cycle frame): the line shows it or not yet
     private object? _track;
     private int _pass;
     private double _phaseStart;
@@ -291,6 +292,7 @@ public sealed class LineTuneRun
         _outstanding = 0;
         _expectNudge = double.NaN;
         _movingBackUntil = 0;
+        _pendingShift = 0;
         _concludePending = false;
         _lastTurningAt = double.NegativeInfinity;
         _interrupt = "";
@@ -321,6 +323,18 @@ public sealed class LineTuneRun
         ResultText = text;
     }
 
+    /// <summary>The value found no longer fits what it was measured with (a steering setting
+    /// changed, another vehicle loaded): it can't be taken any more.</summary>
+    public void DropResult(string why)
+    {
+        if (Stage != LineTuneStage.Result)
+            return;
+        Found = null;
+        Stage = LineTuneStage.Stopped;
+        Description = "";
+        ResultText = why + " The value found was not used: run it again.";
+    }
+
     public bool Active => Stage is LineTuneStage.Waiting or LineTuneStage.Measuring;
 
     // ------------------------------------------------------------ each cycle
@@ -339,8 +353,12 @@ public sealed class LineTuneRun
         // line chosen: the operator has taken the line over, and the run ends.
         if (!double.IsNaN(_expectNudge))
         {
-            bool ours = Stage == LineTuneStage.Measuring && _phase == Phase.AwaitNudge || s.TimeS < _movingBackUntil;
+            // A move of this run on its way shows as the line where it was before the move, then
+            // where the run expects it. Anywhere else, the operator moved the line in that moment
+            // too (a nudge button, the reset): taken as the run's own, the move back shifted his line.
+            bool pending = Stage == LineTuneStage.Measuring && _phase == Phase.AwaitNudge || s.TimeS < _movingBackUntil;
             bool there = Math.Abs(s.NudgeOffset - _expectNudge) <= 0.005;
+            bool ours = pending && Math.Abs(s.NudgeOffset - (_expectNudge - _pendingShift)) <= 0.005;
             if (there)
                 _movingBackUntil = 0;
             else if (!ours)
@@ -417,13 +435,14 @@ public sealed class LineTuneRun
     }
 
     /// <summary>The operator moved the line or chose another: the run ends. Its own move is moved
-    /// back only while the line still carries it (a snap or the nudge reset already took it away).</summary>
+    /// back only while the line still carries it (a snap or the nudge reset already took it away),
+    /// and never on another track: a track has its own nudge, and the run's move is not in it.</summary>
     private void HandTookTheLine(in LineTuneSample s, string why)
     {
         _act.SetGains(null);
-        bool sameLine = ReferenceEquals(s.Track, _track) && s.Pass == _pass;
-        bool stillCarried = Math.Abs(_outstanding) > 1e-9 && Math.Abs(s.NudgeOffset) > 0.005
-            && (!sameLine || Math.Abs(s.NudgeOffset - _expectNudge) > 0.005);
+        bool sameTrack = ReferenceEquals(s.Track, _track);
+        bool stillCarried = Math.Abs(_outstanding) > 1e-9 && sameTrack && Math.Abs(s.NudgeOffset) > 0.005
+            && (s.Pass != _pass || Math.Abs(s.NudgeOffset - _expectNudge) > 0.005);
         if (stillCarried)
             MoveBack(s.HeadingSameWay, s.TimeS);
         _outstanding = 0;
@@ -552,6 +571,7 @@ public sealed class LineTuneRun
         _requestAt = s.TimeS;
         _outstanding += shift;
         _expectNudge += shift;
+        _pendingShift = shift;
         _act.Nudge(meters);
         _phase = Phase.AwaitNudge;
         Describe(_stepNo == 0 ? "line moved 30 cm to the right" : "line moved back");
@@ -579,7 +599,14 @@ public sealed class LineTuneRun
             return;
         }
         if (s.TimeS - _requestAt > NudgeTimeoutS)
+        {
+            // The move never showed (the nudge reset in the same cycle took it away): it is not on
+            // the line, so there is nothing to move back. Moved back, it shifted the operator's line.
+            _expectNudge -= _pendingShift;
+            _outstanding -= _pendingShift;
+            _pendingShift = 0;
             Interrupt("The line did not move as asked.", s);
+        }
     }
 
     private void TrackMove(in LineTuneSample s)
@@ -683,6 +710,7 @@ public sealed class LineTuneRun
         _act.Nudge(headingSameWay ? -_outstanding : _outstanding);
         if (!double.IsNaN(_expectNudge))
             _expectNudge -= _outstanding;
+        _pendingShift = -_outstanding;
         _outstanding = 0;
         _movingBackUntil = now + NudgeTimeoutS;
     }
@@ -732,7 +760,7 @@ public sealed class LineTuneRun
         BeginLevel(s);
     }
 
-    private GuidanceGainsOverride RescueFor(LineTuneLevel cut)
+    internal GuidanceGainsOverride RescueFor(LineTuneLevel cut)
     {
         if (cut.HeadingTrial && Found != null)
             return Found;
@@ -743,7 +771,8 @@ public sealed class LineTuneRun
         if (Stanley)
             return _operator with
             {
-                StanleyDistanceGain = Math.Max(RescueMinStanley, Math.Min(cut.Gains.StanleyDistanceGain / RescueShare, _operator.StanleyDistanceGain)),
+                StanleyDistanceGain = Math.Min(_operator.StanleyDistanceGain,
+                    Math.Max(RescueMinStanley, cut.Gains.StanleyDistanceGain / RescueShare)),
             };
         return _operator with { LookAheadHold = Math.Max(HoldLadder[0], _operator.LookAheadHold) };
     }
