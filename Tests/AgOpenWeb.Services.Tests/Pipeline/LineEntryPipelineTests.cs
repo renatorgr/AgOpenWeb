@@ -437,6 +437,61 @@ public class LineEntryPipelineTests
     }
 
     [Test]
+    public void Ask_facing_out_and_keeping_the_nearest_point_goes_off_and_says_to_face_the_field()
+    {
+        // The way round to the start of the pass is offered; AutoSteer steers the nearest point
+        // meanwhile, towards the fence. "Keep" left it steering there: the look at where the line
+        // leads was made only in the cycle the line was joined, when the offer stood in for it.
+        OpenField(LineEntryMode.Ask, hard: true);
+        var first = Cycle(0, 5, Math.PI);
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.LineEntryOfferPass, Is.Not.Null, "the way round is offered");
+            Assert.That(first.AutoSteerDisengagedThisCycle, Is.False, "and AutoSteer waits for the answer");
+        });
+
+        _intents.RequestLineEntryAnswer(take: false);
+        var kept = Cycle(0, 4.8, Math.PI);
+        Assert.Multiple(() =>
+        {
+            Assert.That(kept.AutoSteerDisengagedThisCycle, Is.True);
+            Assert.That(kept.DisengageReason, Is.EqualTo(FaceTheField));
+        });
+    }
+
+    [Test]
+    public void Ask_facing_out_and_left_unanswered_goes_off_when_the_offer_runs_out()
+    {
+        OpenField(LineEntryMode.Ask, hard: true);
+        long now = 1_000_000;
+        _pipeline.NowMs = () => now;
+        Assert.That(Cycle(0, 5, Math.PI).LineEntryOfferPass, Is.Not.Null);
+
+        now += GpsPipelineService.LineEntryOfferMs - 100;
+        var waiting = Cycle(0, 4.8, Math.PI);
+        Assert.That(waiting.AutoSteerDisengagedThisCycle, Is.False, "still offered");
+
+        now += 200;
+        var ranOut = Cycle(0, 4.6, Math.PI);
+        Assert.Multiple(() =>
+        {
+            Assert.That(ranOut.LineEntryOfferPass, Is.Null);
+            Assert.That(ranOut.DisengageReason, Is.EqualTo(FaceTheField));
+        });
+    }
+
+    [Test]
+    public void Ask_facing_the_field_and_keeping_the_nearest_point_stays_on()
+    {
+        // In the south headland heading north-east: the line, driven north, leads into the crop.
+        OpenField(LineEntryMode.Ask, hard: true);
+        Assert.That(Cycle(0, 0, Math.PI / 3).LineEntryOfferPass, Is.Not.Null);
+        _intents.RequestLineEntryAnswer(take: false);
+        var kept = Cycle(0.2, 0.1, Math.PI / 3);
+        Assert.That(kept.AutoSteerDisengagedThisCycle, Is.False, kept.DisengageReason);
+    }
+
+    [Test]
     public void Start_of_the_pass_facing_out_with_no_room_to_turn_goes_off_and_says_to_face_the_field()
     {
         // 3 m from a hard fence, facing it: no way round.

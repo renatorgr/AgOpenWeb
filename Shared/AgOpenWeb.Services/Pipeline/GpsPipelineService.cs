@@ -232,6 +232,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private int _lineEntryOfferPass;
     private double _lineEntryOfferNudge;
     private long _lineEntryOfferUntilMs;
+    // The offer ended in this cycle with AutoSteer still steering the nearest point: the operator
+    // chose to keep it, did not answer in time, or the way could not be planned again.
+    private bool _lineEntryOfferUntaken;
     private string? _lineEntryNotice;
     private bool _lineEntryWasEngaged;
     private Models.Track.Track? _lineEntryTrack;
@@ -1385,8 +1388,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // to a hard fence before any crop, so AutoSteer would steer it there. AutoSteer off with
         // the alarm, and the operator is told to turn the tractor to the field. Not when a way to
         // the start of the pass is driven or offered (Joining a new line in the headland), which
-        // turns round through the headland when it fits. Fork only.
-        if (joinedNewLine && autoSteerEngaged && !_isReverse && !_youTurn.IsExecuting
+        // turns round through the headland when it fits; looked at again when an offer (Ask) is
+        // answered with "keep", cannot be planned again, or is left unanswered: the nearest point
+        // is then what is steered, and facing the fence that is the way to it. Fork only.
+        if ((joinedNewLine || _lineEntryOfferUntaken) && autoSteerEngaged && !_isReverse && !_youTurn.IsExecuting
             && _lineEntryPath == null && _lineEntryOffer == null
             && boundary?.OuterBoundary is { IsHard: true, IsValid: true } && hasValidHeadlandLine && hasTickableTrack
             && InHeadland(boundary, headlandLine!, driftedEasting, driftedNorthing)
@@ -3041,11 +3046,24 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // An offer runs out with its time, when the line or the mode changes, when a manual U-turn
         // is asked for (the operator's own move, made or refused), and when the tractor has left the
         // headland (it is on its way to the nearest point).
-        if (_lineEntryOffer != null && (!possible || mode != LineEntryMode.Ask || trackSwitched
+        // One left unanswered on its line, or answered with "keep" (below), leaves AutoSteer on the
+        // nearest point: where that leads is looked at as when the line was joined
+        // (_lineEntryOfferUntaken, step 5b'''').
+        _lineEntryOfferUntaken = false;
+        if (_lineEntryOffer != null)
+        {
+            bool gone = !possible || mode != LineEntryMode.Ask || trackSwitched
                 || passNumber != _lineEntryOfferPass || Math.Abs(nudgeOffset - _lineEntryOfferNudge) > 1e-6
                 || intents.ManualYouTurn.HasValue
-                || NowMs() > _lineEntryOfferUntilMs || !InHeadland(boundary!, headlandLine!, e, n)))
-            _lineEntryOffer = null;
+                || !InHeadland(boundary!, headlandLine!, e, n);
+            if (gone)
+                _lineEntryOffer = null;
+            else if (NowMs() > _lineEntryOfferUntilMs)
+            {
+                _lineEntryOffer = null;
+                _lineEntryOfferUntaken = true;
+            }
+        }
         // The offer the operator saw: an answer is for this one, not for one made in this cycle
         // (the line moved a pass in the cycle of the answer makes a new offer below).
         var offerSeen = _lineEntryOffer;
@@ -3123,11 +3141,15 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // since: the way is planned again from where it is now.
         if (intents.LineEntryAnswer is { } take && offerSeen != null && ReferenceEquals(_lineEntryOffer, offerSeen))
         {
+            _lineEntryOfferUntaken = true;
             if (take && possible)
             {
                 var plan = PlanLineEntry(config, track!, passNumber, nudgeOffset, headlandLine!, boundary!, e, n, headingRad);
                 if (plan.Outcome == LineEntryOutcome.Planned)
+                {
                     StartLineEntry(plan, passNumber, nudgeOffset);
+                    _lineEntryOfferUntaken = false;
+                }
                 else
                     _lineEntryNotice = $"No way through the headland to the start of pass {PassName(passNumber)} from here any more - staying on the nearest point";
             }
