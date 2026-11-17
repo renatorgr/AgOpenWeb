@@ -280,6 +280,28 @@ public class SteerWizardTuneTests
     }
 
     [Test]
+    public async Task A_short_last_step_up_to_the_max_limit_is_not_read_as_the_wheels_at_their_top()
+    {
+        // Levels 80, 100, then 110 (the Max Limit) instead of 125: 10 PWM add little speed on any
+        // steering, so that is not the knee, and the operator's own limit is kept.
+        _fake.BreakawayRight = _fake.BreakawayLeft = 50;
+        _fake.DegPerSecPerPwm = 0.3;
+        _fake.MaxRate = 16;
+        _store.AutoSteer.MaxPwm = 110;
+        var step = CreateStep();
+
+        await RunAsync(step);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(step.Stage, Is.EqualTo(TuneStage.Result), step.PhaseResult);
+            Assert.That(step.FoundMaxPwm, Is.EqualTo(110), step.PhaseResult);
+            Assert.That(step.PhaseResult, Does.Contain("At your Max Limit 110"));
+            Assert.That(_fake.PeakPwm, Is.LessThanOrEqualTo(110));
+        });
+    }
+
+    [Test]
     public async Task Wheels_that_do_not_move_up_to_the_max_limit_stop_the_search_there()
     {
         // A valve that opens only at PWM 120 on a tractor whose Max Limit is 100.

@@ -892,7 +892,10 @@ public class TuneSteeringStepViewModel : SwitchGatedWizardStep
                 int at = SteerTuneMath.PwmForSpeed(levels, wanted, startsMovingPwm);
                 return (at, wanted, "");
             }
-            bool flat = levels.Count >= 2 && levels[^2].Speed > 1 && speed < levels[^2].Speed * WorthwhileGain;
+            // Judged on a whole step only: the last step up to the operator's Max Limit can be a
+            // few PWM, and a few PWM add little speed on any steering.
+            bool wholeStep = levels.Count >= 2 && pwm >= (int)Math.Ceiling(levels[^2].Pwm * LevelRatio);
+            bool flat = wholeStep && levels[^2].Speed > 1 && speed < levels[^2].Speed * WorthwhileGain;
             if (flat)
             {
                 var (knee, kneeSpeed, top) = SteerTuneMath.Knee(levels, KneeShare, startsMovingPwm);
