@@ -51,6 +51,14 @@ public partial class YouTurnCreationService
         public bool NoTurnBuilt { get; init; }
 
         /// <summary>
+        /// With no <see cref="Path"/> after the generator failed: why (<see cref="YouTurnCreationOutput.Failure"/>).
+        /// The tractor at the turn line or past it (<see cref="TurnFailure.TooLate"/>) is said as such,
+        /// not as a turn that does not fit: <see cref="NoTurnBuilt"/> is set only for
+        /// <see cref="TurnFailure.DoesNotFit"/>. Fork only.
+        /// </summary>
+        public TurnFailure Failure { get; init; }
+
+        /// <summary>
         /// True when the turn built would hand over past the end of the next pass's line
         /// (<see cref="TurnLanding.PastLineEnd"/>), so it was not taken: <see cref="Path"/> is null.
         /// </summary>
@@ -255,7 +263,9 @@ public partial class YouTurnCreationService
                     while (netHeadingChange > Math.PI) netHeadingChange -= 2 * Math.PI;
                     while (netHeadingChange < -Math.PI) netHeadingChange += 2 * Math.PI;
 
-                    for (int i = Math.Max(1, arcFrom); i < dirs.Count; i++)
+                    // From the entry leg's last stretch into the arc on: dirs[arcFrom] is that last
+                    // stretch, so the bend's own turning before it is left out.
+                    for (int i = arcFrom > 0 ? arcFrom + 1 : 1; i < dirs.Count; i++)
                     {
                         double delta = dirs[i] - dirs[i - 1];
                         while (delta > Math.PI) delta -= 2 * Math.PI;
@@ -416,7 +426,8 @@ public partial class YouTurnCreationService
                     output.FailureReason ?? "unknown");
                 return new TurnPathResult(null, UsedFallback: false)
                 {
-                    ClearanceBlocked = true, NoTurnBuilt = true, OutsideTurnLineBy = output.OutsideTurnLineBy,
+                    ClearanceBlocked = true, NoTurnBuilt = output.Failure == TurnFailure.DoesNotFit,
+                    Failure = output.Failure, OutsideTurnLineBy = output.OutsideTurnLineBy,
                 };
             }
 
@@ -427,6 +438,7 @@ public partial class YouTurnCreationService
             return new TurnPathResult(fallbackPath.Count > 10 ? fallbackPath : null, UsedFallback: true)
             {
                 OutsideTurnLineBy = fallbackPath.Count > 10 ? null : output.OutsideTurnLineBy,
+                Failure = fallbackPath.Count > 10 ? TurnFailure.None : output.Failure,
             };
         }
     }
