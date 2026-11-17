@@ -256,6 +256,49 @@ public class AgShareDownloadTests
         finally { Directory.Delete(dir, true); }
     }
 
+    [Test]
+    public async Task Redownload_GivesEachOfTwoHolesCloseTogetherItsOwnChoice()
+    {
+        // Two posts 0.45 m apart: each one's box is within the tolerance of the other's. The
+        // first of the field's holes within it was taken, so both came back as the first post.
+        var dir = Path.Combine(Path.GetTempPath(), "agshare-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var boundary = new Boundary { OuterBoundary = Box(0, 0, 100, 100) };
+            var first = Box(10, 10, 10.3, 10.3); first.AtObstacle = ObstacleAction.Turn;
+            var second = Box(10.45, 10, 10.75, 10.3); second.AtObstacle = ObstacleAction.GoRound;
+            boundary.AddNewObstacle(first);
+            boundary.AddNewObstacle(second);
+            second.IsHard = false;
+            var fields = new FieldService();
+            fields.SaveField(new Field
+            {
+                Name = "F", DirectoryPath = dir,
+                Origin = new Position { Latitude = Origin.Latitude, Longitude = Origin.Longitude },
+                Boundary = boundary,
+            });
+
+            var outer = new List<CoordinateDto> { Up(0, 0), Up(100, 0), Up(100, 100), Up(0, 100) };
+            // The second post first, then the first, then a third beside them the field did not have.
+            var secondUp = new List<CoordinateDto> { Up(10.45, 10), Up(10.75, 10), Up(10.75, 10.3), Up(10.45, 10.3) };
+            var firstUp = new List<CoordinateDto> { Up(10, 10), Up(10.3, 10), Up(10.3, 10.3), Up(10, 10.3) };
+            var thirdUp = new List<CoordinateDto> { Up(10.2, 10.1), Up(10.5, 10.1), Up(10.5, 10.4), Up(10.2, 10.4) };
+            await FieldFileWriter.WriteAllFilesAsync(AgShareFieldParser.Parse(Dto(new() { outer, secondUp, firstUp, thirdUp })), dir);
+
+            var holes = fields.LoadField(dir).Boundary!.InnerBoundaries;
+            Assert.That(holes, Has.Count.EqualTo(3));
+            Assert.Multiple(() =>
+            {
+                Assert.That(holes[0].AtObstacle, Is.EqualTo(ObstacleAction.GoRound), "the second post: go round, as chosen");
+                Assert.That(holes[0].IsHard, Is.False);
+                Assert.That(holes[1].AtObstacle, Is.EqualTo(ObstacleAction.Turn), "the first post: U-turn, as chosen");
+                Assert.That(holes[2].AtObstacle, Is.EqualTo(ObstacleAction.DriveThrough), "each of the field's holes is given once");
+            });
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
     private static BoundaryPolygon Box(double e0, double n0, double e1, double n1)
     {
         var p = new BoundaryPolygon();

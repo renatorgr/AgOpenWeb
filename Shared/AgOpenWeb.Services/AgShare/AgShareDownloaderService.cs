@@ -205,21 +205,32 @@ namespace AgOpenWeb.Services.AgShare
 
         /// <summary>
         /// The field's own hole a downloaded one is: every side of its bounding box within
-        /// <see cref="SameHoleTolerance"/> of that hole's. Null for a hole the field did not have.
+        /// <see cref="SameHoleTolerance"/> of that hole's, the nearest such hole when several are
+        /// (two posts half a metre apart), and each of the field's holes for one downloaded hole
+        /// only: it is taken out of <paramref name="before"/>. Null for a hole the field did not have.
         /// </summary>
         private static BoundaryPolygon? SameHole(BoundaryPolygon hole, List<BoundaryPolygon> before)
         {
             if (hole.Points.Count == 0) return null;
             var box = Box(hole);
-            foreach (var was in before)
+            int best = -1;
+            double bestOff = double.MaxValue;
+            for (int i = 0; i < before.Count; i++)
             {
-                if (was.Points.Count == 0) continue;
-                var b = Box(was);
-                if (Math.Abs(b.MinE - box.MinE) <= SameHoleTolerance && Math.Abs(b.MaxE - box.MaxE) <= SameHoleTolerance
-                    && Math.Abs(b.MinN - box.MinN) <= SameHoleTolerance && Math.Abs(b.MaxN - box.MaxN) <= SameHoleTolerance)
-                    return was;
+                if (before[i].Points.Count == 0) continue;
+                var b = Box(before[i]);
+                double dMinE = Math.Abs(b.MinE - box.MinE), dMaxE = Math.Abs(b.MaxE - box.MaxE);
+                double dMinN = Math.Abs(b.MinN - box.MinN), dMaxN = Math.Abs(b.MaxN - box.MaxN);
+                if (dMinE > SameHoleTolerance || dMaxE > SameHoleTolerance
+                    || dMinN > SameHoleTolerance || dMaxN > SameHoleTolerance)
+                    continue;
+                double off = dMinE + dMaxE + dMinN + dMaxN;
+                if (off < bestOff) { bestOff = off; best = i; }
             }
-            return null;
+            if (best < 0) return null;
+            var was = before[best];
+            before.RemoveAt(best);
+            return was;
         }
 
         private static (double MinE, double MaxE, double MinN, double MaxN) Box(BoundaryPolygon polygon)
