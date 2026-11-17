@@ -2113,6 +2113,7 @@ public sealed class YouTurnStateMachine
     {
         _logger.LogDebug("[YouTurn] Direction swap refused: path {Path} is outside the field", swappedPath);
         effects.StatusMessage = DirectionNotChangedMessage;
+        effects.DirectionSwapRefused = true;
     }
 
     private void CreatePathAndSync(
@@ -2518,6 +2519,10 @@ public sealed class YouTurnEffects
 {
     /// <summary>Set when a user-visible status message should be raised.</summary>
     public string? StatusMessage { get; set; }
+
+    /// <summary>The U-turn arrow was refused in this cycle (no pass on that side inside the
+    /// field); the turn keeps its side.</summary>
+    public bool DirectionSwapRefused { get; set; }
 
     /// <summary>True when the caller should push <c>YouTurnState.TurnPath</c> to the map.</summary>
     public bool SyncTurnPathToMap { get; set; }

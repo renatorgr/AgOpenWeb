@@ -126,7 +126,7 @@ public class FailedEndRetryTests
         // outside the field, so the arrow pointing east is refused, and the turn west does not
         // build (the fixture's 32 m loop). The refusal's text took the place of the reason, with
         // the failure sound, and the end is then tried again silently.
-        string Told(bool? arrow)
+        (string Message, bool ArrowRefused) Told(bool? arrow)
         {
             SetUp();
             var guidance = new GuidanceWorkingState { HowManyPathsAway = 10, IsHeadingSameWay = false };
@@ -134,14 +134,18 @@ public class FailedEndRetryTests
             var effects = _sm.Tick(Ctx(PassX(10), -18, 180, alternate), guidance, turn);
             Assert.That(turn.TurnPath, Is.Null, $"the scenario: no turn fits (\"{effects.StatusMessage}\")");
             Assert.That(effects.TurnCreationFailedSound, Is.True, "the scenario: the failure is sounded");
-            return effects.StatusMessage ?? "";
+            return (effects.StatusMessage ?? "", effects.DirectionSwapRefused);
         }
 
-        string reason = Told(null);
-        Assert.That(reason, Is.Not.Empty.And.Not.EqualTo(YouTurnStateMachine.DirectionNotChangedMessage));
+        var none = Told(null);
+        Assert.That(none.Message, Is.Not.Empty.And.Not.EqualTo(YouTurnStateMachine.DirectionNotChangedMessage));
+        Assert.That(none.ArrowRefused, Is.False);
         // Whichever way the arrow points, the operator reads why there is no turn.
-        Assert.That(Told(true), Is.EqualTo(reason), "arrow left");
-        Assert.That(Told(false), Is.EqualTo(reason), "arrow right");
+        var left = Told(true);
+        var right = Told(false);
+        Assert.That(left.ArrowRefused || right.ArrowRefused, Is.True, "the scenario: one way of the arrow is refused");
+        Assert.That(left.Message, Is.EqualTo(none.Message), "arrow left");
+        Assert.That(right.Message, Is.EqualTo(none.Message), "arrow right");
     }
 
     [Test]
