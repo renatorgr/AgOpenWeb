@@ -501,14 +501,38 @@ public partial class YouTurnCreationService
         intrusion = clearance.MaxIntrusion;
         if (clearance.IsClear) return true;
 
+        return SweepKeepsToFence(swept, outerPolygon, margin);
+    }
+
+    /// <summary>
+    /// The second half of <see cref="ManualTurnClearsHardBoundary"/>, for an implement that does
+    /// not keep <paramref name="margin"/> from the fence along the whole turn. Refused when it has
+    /// the distance at the press (the turn would take it). Else each corner is held to its own
+    /// place at the press: one inside the fence stays inside it, one across it goes no further
+    /// across. Judged by the worst corner alone, a corner 0.5 m across at the press let another
+    /// one, inside then, cross by as much during the turn.
+    /// </summary>
+    internal static bool SweepKeepsToFence(ImplementSweptPathResult swept, IReadOnlyList<Vec2> outerPolygon, double margin)
+    {
+        var corners = new[] { swept.FrontLeft, swept.FrontRight, swept.RearLeft, swept.RearRight };
         // Where the implement is at the press: the path's first point is the tractor.
-        var atPress = TurnClearance.Evaluate(
-            new[] { swept.FrontLeft[0], swept.FrontRight[0], swept.RearLeft[0], swept.RearRight[0] },
-            outerPolygon, TurnClearance.KeepSide.Inside, margin);
-        if (atPress.IsClear) return false; // it has the distance now and the turn would take it
+        var atPress = new double[corners.Length];
+        bool clearAtPress = true;
+        for (int i = 0; i < corners.Length; i++)
+        {
+            if (corners[i].Count == 0) { atPress[i] = double.NegativeInfinity; continue; }
+            atPress[i] = TurnClearance.Evaluate(new[] { corners[i][0] }, outerPolygon, TurnClearance.KeepSide.Inside, margin).MaxIntrusion;
+            if (atPress[i] > 0.0) clearAtPress = false;
+        }
+        if (clearAtPress) return false; // it has the distance now and the turn would take it
 
         // Inside the distance already: up to the fence. Across it already: no further.
-        return clearance.MaxIntrusion <= Math.Max(margin, atPress.MaxIntrusion + ManualTurnFenceSlack);
+        for (int i = 0; i < corners.Length; i++)
+        {
+            double along = TurnClearance.Evaluate(corners[i], outerPolygon, TurnClearance.KeepSide.Inside, margin).MaxIntrusion;
+            if (along > Math.Max(margin, atPress[i] + ManualTurnFenceSlack)) return false;
+        }
+        return true;
     }
 
     /// <summary>What an implement already across a hard fence at the press may move in a manual

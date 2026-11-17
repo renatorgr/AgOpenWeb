@@ -2526,6 +2526,10 @@ public sealed class YouTurnStateMachine
 /// </summary>
 public sealed class YouTurnEffects
 {
+    /// <summary>The answer to a manual U-turn asked for with no line to turn on (no track,
+    /// contour, a recorded path): the pipeline's, the state machine not being asked then.</summary>
+    public const string NoLineForManualTurn = "No U-turn: it needs an AB line or curve being followed";
+
     /// <summary>Set when a user-visible status message should be raised.</summary>
     public string? StatusMessage { get; set; }
 
