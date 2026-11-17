@@ -140,8 +140,9 @@ send. A client can't take control from a live operator, only fill an empty seat.
 The deadman (1.5 s without the holder's presence) runs on a timer of its own. The page sends
 presence on a timer and on every frame from the host (`sendPresence` in `js/control.js`): a
 minimized window or a background tab gets its timers throttled but still hears the host (#766). When control
-ends, `MainViewModel.OnBrowserControlEnded` turns off AutoSteer, Free Drive, the sections (a
-section On by hand too) and the steer wizard, and the next screen to take control is told why.
+ends, `MainViewModel.OnBrowserControlEnded` turns off AutoSteer, Free Drive, the sections (every
+one whose own button is not Off: On by hand, or left in Auto with neither master on) and the steer wizard, and the
+next screen to take control is told why.
 `WebSocketHub` gives each browser its own outgoing queue: a broadcast never waits on a socket,
 and a browser that stops reading for 15 s is cut off (it reconnects and gets a fresh seed).
 The page drops a link that has carried no frame for 2.5 s and reconnects (`transport.js`).
@@ -745,6 +746,16 @@ is read with A where it was and B 100 m out along its heading (the stored one wh
 `TrackLines.txt` and `ABLines.txt`), and AutoSteer on a pass with no line goes off with the alarm
 (`GpsPipelineService.NoLineReason`). Tests: `ShortABLineTests` (Models), `ShortABLineLoadTests`,
 `NoLineAutoSteerOffTests`. The reading is official since #847; AutoSteer off on a pass with no line is fork only.
+
+## The fallback U-turn
+The simple fallback (`SimpleFallback`, a semicircle, used with a soft boundary when no real turn fits) is seated
+with the path as it is driven: smoothed at each step (`TurnPathSmoothing.Smooth`, which pulls an 8 m arc about
+0.2 m inwards, a tighter one more), so the distance from the fence and `LeavesField` are held by the smoothed
+path; checked unsmoothed, a notch of the fence inside the bend was 0.95 m from the path with 1.5 m asked. The
+last step is the limit itself (the headland crossing plus 30 m, or the tractor): a step past it skipped a turn
+that fitted only there. When the U-turn arrow is refused ("U-turn direction not changed", `RefuseDirectionSwap`)
+in the cycle where no turn builds, the operator reads why there is no turn (`ReportNoTurn`), not the arrow's
+refusal with the failure sound. Tests: `FallbackTurnInsideBoundaryTests`, `FailedEndRetryTests`. Fork only.
 
 ## Steer wizard: tuning the wheels
 The Steer Wizard's *Tune steering* step (`TuneSteeringStepViewModel`, after the Ackermann circle and before the

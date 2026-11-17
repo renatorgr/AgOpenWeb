@@ -1010,6 +1010,12 @@ public partial class YouTurnCreationService
         {
             path.Clear();
             int arcFrom = BuildSimplePath(path, setback);
+            // Smoothed before it is checked, so the path checked is the path driven: smoothing
+            // pulls the arc in towards its centre (0.2 m at the default 14 passes on an 8 m
+            // radius, 0.4 m on a 4 m one, more with more passes), which is nearer a fence that
+            // lies inside the bend (the tip of a bay between the two passes). It moves no point
+            // along the list, so the arc still starts at arcFrom.
+            TurnPathSmoothing.Smooth(path, config.Guidance.UTurnSmoothing);
             if (outerPolygon == null || !seatBack) break;
 
             var clearance = TurnClearance.Evaluate(path.Skip(arcFrom), outerPolygon, TurnClearance.KeepSide.Inside, distanceFromBoundary);
@@ -1020,6 +1026,9 @@ public partial class YouTurnCreationService
                 break;
             }
             double next = setback + Math.Max(SetbackStep, clearance.MaxIntrusion);
+            // The last step stops at the limit itself: a turn that fits only with its arc seated
+            // within that step of the limit was refused untried.
+            if (next > maxSetback && setback < maxSetback - 1e-9) next = maxSetback;
             if (next > maxSetback)
             {
                 _logger.LogWarning("[YouTurn] No simple turn seated up to {S:F0}m back (up to {F:F0}m into the field, starting ahead of the tractor) keeps the tractor {M:F1}m inside the boundary (intrusion {I:F1}m); no turn",
@@ -1031,8 +1040,6 @@ public partial class YouTurnCreationService
         }
 
         _logger.LogDebug("[YouTurn] Simple fallback path has {Count} points", path.Count);
-
-        TurnPathSmoothing.Smooth(path, config.Guidance.UTurnSmoothing);
 
         // A last check, after the seating above (which keeps clear of the outer boundary only):
         // no point outside the field or in an obstacle a turn may not drive through (#692).

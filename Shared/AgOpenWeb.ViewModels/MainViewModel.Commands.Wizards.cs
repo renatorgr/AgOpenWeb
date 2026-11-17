@@ -110,8 +110,13 @@ public partial class MainViewModel
             ToggleManualModeCommand.Execute(null);
         if (IsSectionMasterOn && ToggleSectionMasterCommand?.CanExecute(null) == true)
             ToggleSectionMasterCommand.Execute(null);
-        for (int i = 0; i < _sectionControlService.NumSections; i++)
-            if (_sectionControlService.SectionStates[i].ButtonState == Services.Interfaces.SectionButtonState.On)
+        // Every section whose own button is not Off, whatever the masters say: one section put in
+        // Auto by its button with neither master on works by itself, and went on working with
+        // nobody at the screen. Every state the service holds, not the count configured now: one
+        // beyond it comes back with the count.
+        var sectionStates = _sectionControlService.SectionStates;
+        for (int i = 0; i < sectionStates.Count; i++)
+            if (sectionStates[i].ButtonState != Services.Interfaces.SectionButtonState.Off)
             {
                 _sectionControlService.SetSectionState(i, Services.Interfaces.SectionButtonState.Off);
                 sections = true;

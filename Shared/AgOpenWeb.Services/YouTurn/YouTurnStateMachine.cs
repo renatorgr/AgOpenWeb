@@ -2123,10 +2123,14 @@ public sealed class YouTurnStateMachine
         effects.TellOperator = true;
     }
 
+    /// <summary>The U-turn arrow pointed at a side with no pass to land on: the turn keeps its side.</summary>
+    internal const string DirectionNotChangedMessage = "U-turn direction not changed: no pass on that side inside the field";
+
     private void RefuseDirectionSwap(int swappedPath, YouTurnEffects effects)
     {
         _logger.LogDebug("[YouTurn] Direction swap refused: path {Path} is outside the field", swappedPath);
-        effects.StatusMessage = "U-turn direction not changed: no pass on that side inside the field";
+        effects.StatusMessage = DirectionNotChangedMessage;
+        effects.DirectionSwapRefused = true;
     }
 
     private void CreatePathAndSync(
@@ -2217,6 +2221,10 @@ public sealed class YouTurnStateMachine
     /// <summary>No turn built: say why, and sound once (<see cref="SoundCreationFailed"/>).</summary>
     private void ReportNoTurn(YouTurnCreationService.TurnPathResult result, YouTurnEffects effects)
     {
+        // The arrow refused in this same cycle said only that the direction was not changed, and
+        // every reason below gave way to it: the failure sound came with that text, and the end is
+        // tried again silently, so the operator never read that there is no turn here at all.
+        if (effects.StatusMessage == DirectionNotChangedMessage) effects.StatusMessage = null;
         // A turn built (the fallback too) that would hand over past the end of the next pass's line.
         if (result.LandsPastLineEnd && effects.StatusMessage == null)
             effects.StatusMessage = "No U-turn: the next pass ends before this end - take over manually";
@@ -2532,6 +2540,10 @@ public sealed class YouTurnEffects
 
     /// <summary>Set when a user-visible status message should be raised.</summary>
     public string? StatusMessage { get; set; }
+
+    /// <summary>The U-turn arrow was refused in this cycle (no pass on that side inside the
+    /// field); the turn keeps its side.</summary>
+    public bool DirectionSwapRefused { get; set; }
 
     /// <summary>True when the caller should push <c>YouTurnState.TurnPath</c> to the map.</summary>
     public bool SyncTurnPathToMap { get; set; }
