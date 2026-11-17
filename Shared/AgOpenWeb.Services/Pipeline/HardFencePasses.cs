@@ -114,19 +114,21 @@ public static class HardFencePasses
 
         // Every Step along the moved reference, a long stretch between two points too: a drawn curve
         // whose stretch crosses a corner of the field between its points was taken for wholly outside.
+        // A closed track's stretch from its last point back to its first too.
         var prev = At(0);
         yield return prev;
         double since = 0; // along the line since the last point looked at
-        for (int i = 1; i < count; i++)
+        int last = closed ? count : count - 1;
+        for (int i = 1; i <= last; i++)
         {
-            var next = At(i);
+            var next = At(i % count);
             double dx = next.E - prev.E, dy = next.N - prev.N;
             double len = Math.Sqrt(dx * dx + dy * dy);
             double s = Step - since;
             for (; s < len; s += Step)
                 yield return (prev.E + dx / len * s, prev.N + dy / len * s);
             since = len - (s - Step);
-            if (i == count - 1) yield return next;
+            if (i == last) yield return next;
             prev = next;
         }
 

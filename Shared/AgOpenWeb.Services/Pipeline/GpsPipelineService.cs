@@ -138,6 +138,12 @@ public sealed class GpsPipelineService : IGpsPipelineService
     // display gate sees the same object), and the obstacles last reported as having no room.
     private readonly Track.GoAroundPasses _goAround;
     private List<Vec3>? _lastSteerBend;
+
+    // The line AutoSteer steered last cycle when it was not the plain pass (bent round Go around
+    // obstacles, moved for a front implement), with the pass it was made for: the guards that walk
+    // the line ahead run before this cycle's guidance, and walk it only for the same pass
+    // (SteeredLineNow). Cycle-owned. Fork only.
+    private (Models.Track.Track? Track, List<Vec3>? TrackPoints, double DistAway, List<Vec3>? Points) _lastSteered;
     private List<Vec3>? _shownBendPoints;
     private Models.Track.Track? _shownBendTrack;
     private string? _blockedNoticeKey;
@@ -1360,7 +1366,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
                     _headlandEntryArmed = false;
                     if (autoSteerEngaged && !_isReverse && fence.IsPointInside(driftedEasting, driftedNorthing)
                         && _youTurnStateMachine.EndOfPassWithoutTurn(in tickCtx, _guidanceWorking, _youTurn,
-                            _goAround.Current is { GoneRound.Count: > 0 } bend ? bend.Points : null))
+                            SteeredLineNow(track, config)))
                     {
                         autoSteerEngaged = false;
                         autoSteerDisengaged = true;
@@ -1387,7 +1393,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             && _lineEntryPath == null && _lineEntryOffer == null
             && boundary?.OuterBoundary is { IsHard: true, IsValid: true } && hasValidHeadlandLine && hasTickableTrack
             && InHeadland(boundary, headlandLine!, driftedEasting, driftedNorthing)
-            && _youTurnStateMachine.LineAheadLeavesField(in tickCtx, _guidanceWorking))
+            && _youTurnStateMachine.LineAheadLeavesField(in tickCtx, _guidanceWorking, SteeredLineNow(track, config)))
         {
             autoSteerEngaged = false;
             autoSteerDisengaged = true;
@@ -1461,7 +1467,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 toolPos.Easting + Math.Cos(toolHeading) * config.Tool.Offset,
                 toolPos.Northing - Math.Sin(toolHeading) * config.Tool.Offset) > OutsideFenceMargin
             && !_youTurnStateMachine.LineComesIntoFieldAhead(in tickCtx, _guidanceWorking, YouTurnPathingService.OutsideFenceReach,
-                boundary, _goAround.Current is { GoneRound.Count: > 0 } fenceBend ? fenceBend.Points : null))
+                boundary, SteeredLineNow(track, config)))
         {
             autoSteerEngaged = false;
             autoSteerDisengaged = true;
@@ -2227,6 +2233,25 @@ public sealed class GpsPipelineService : IGpsPipelineService
         return _turnField;
     }
 
+    /// <summary>
+    /// The line AutoSteer steers on the pass it is on now, when that is not the plain pass (bent
+    /// round Go around obstacles, moved for a front implement): last cycle's, and only when it was
+    /// made for this track, its points and this pass (the nudge and the implement's side shift
+    /// with it). Null otherwise, and the guards walk the pass. A bend kept for another pass let the
+    /// outside-fence guard walk a line the tractor was no longer on. Fork only.
+    /// </summary>
+    private List<Vec3>? SteeredLineNow(Models.Track.Track? track, ConfigurationStore config)
+    {
+        var last = _lastSteered;
+        if (track == null || last.Points == null || !ReferenceEquals(track, last.Track)
+            || !ReferenceEquals(track.Points, last.TrackPoints))
+            return null;
+        double distAway = Models.Track.PassGeometry.Offset(track, _guidanceWorking.HowManyPathsAway,
+            config.ActualToolWidth - config.Tool.Overlap, _guidanceWorking.NudgeOffset,
+            Models.Track.PassGeometry.ToolShift(config.Tool.Offset, _guidanceWorking.IsHeadingSameWay));
+        return Math.Abs(distAway - last.DistAway) < 1e-6 ? last.Points : null;
+    }
+
     // The line a front-mounted implement's pivot steers (FrontToolLine), for the pass, bend and
     // implement it was made for. Cycle-owned. Fork only.
     private (Models.Track.Track? Track, List<Vec3>? TrackPoints, double DistAway, List<Vec3>? Bent, int Count,
@@ -2368,13 +2393,18 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // A front-mounted implement runs outside the pivot's line round a bend: the pivot steers
         // inside it, so the implement runs on the pass (FrontToolLine). The same points, moved.
         // Fork only.
+        bool frontMoved = false;
         if (Models.Tool.RigGeometry.Mount(config.Tool) == Models.Tool.ToolMount.FrontFixed && currentTrack.Points.Count > 2
             && FrontToolSteered(track, distAway, bent, currentTrack) is { } frontLine)
+        {
             currentTrack = new Models.Track.Track
             {
                 Name = currentTrack.Name, Points = frontLine, Type = currentTrack.Type,
                 IsVisible = true, IsActive = true, IsClosed = currentTrack.IsClosed
             };
+            frontMoved = true;
+        }
+        _lastSteered = (track, track.Points, distAway, bent != null || frontMoved ? currentTrack.Points : null);
 
         if (_cycleCounter % 50 == 0 && currentTrack.Points.Count >= 2)
         {

@@ -881,9 +881,10 @@ public sealed class YouTurnStateMachine
     /// way within 90 degrees of the heading), leaves the outer boundary before it reaches the
     /// cultivated area: the tractor, in the headland, faces out of the field, and AutoSteer would
     /// steer it to the fence. Unlike <see cref="EndOfPassWithoutTurn"/> the tractor need not be on
-    /// the line or along it. Fork only.
+    /// the line or along it. <paramref name="steeredLine"/> is the line steered on this pass when it
+    /// is not the plain pass (bent round Go around obstacles), walked instead of it. Fork only.
     /// </summary>
-    public bool LineAheadLeavesField(in TickContext ctx, GuidanceWorkingState guidance)
+    public bool LineAheadLeavesField(in TickContext ctx, GuidanceWorkingState guidance, IReadOnlyList<Vec3>? steeredLine = null)
     {
         var track = ctx.SelectedTrack;
         if (track == null || track.Points.Count < 2) return false;
@@ -894,7 +895,7 @@ public sealed class YouTurnStateMachine
             : Math.Atan2(track.Points[1].Easting - track.Points[0].Easting, track.Points[1].Northing - track.Points[0].Northing);
         bool sameWay = Math.Abs(Math.IEEERemainder(heading - abHeading, 2 * Math.PI)) < Math.PI / 2;
         return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.WorkEndLine, p, sameWay,
-            null, guidance.NudgeOffset, ToolShift(sameWay));
+            steeredLine is { Count: >= 2 } ? steeredLine : null, guidance.NudgeOffset, ToolShift(sameWay));
     }
 
     /// <summary>
