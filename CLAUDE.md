@@ -556,7 +556,7 @@ and `untrack`). The map's area is set by `setMapArea(l, r)`; what that means for
 5. **Bug Report Dump** (main menu) zips settings, state, the field (its background image only with *Include the field's background image* ticked, off by default; `field_background_left_out.txt` says it was left out), the active job's coverage tiles and the last 5 minutes of the GPS log (10 Hz; includes the sentence type, its pre-fusion heading and the receiver's differential age); with NTRIP in use, `ntrip_rtcm.txt` lists the RTCM messages the caster sent by type and `ntrip_session.txt` what the connection did and why it failed (no login in it; `system_info.txt` has an `NTRIP:` line with the same outcome). `system_info.txt` ends with each browser's GPU renderer, texture limit, canvas, frame rate and draw time (`diag.client`, `ClientDiagnostics`), flagged `SOFTWARE RENDERING` when the renderer is the CPU (llvmpipe, SwiftShader): such a device will not draw the map smoothly whatever the app does
 6. **iOS Release builds hang in CI**: Use Debug configuration (Release triggers AOT compilation that hangs on runners). Simulator builds run on the interpreter (`MtouchInterpreter=all` in the csproj), so they skip AOT altogether; device builds keep it
 7. **The line moved to another pass**: a lateral move (the blue arrows under the U-turn buttons, *Pass >* in the line menu) is logged (`[Guidance] Lateral move right: pass 19R -> 18R`, also refused or ignored mid-turn) and told as a toast (`GpsCycleResult.PassNotice`); the AB line's debug heading is logged only when it changes, so a dump's 2000 log lines reach further back. Fork only
-8. **A steering setting changed by itself**: every change of what goes to the steer module (PGN 251/252) and of Max Steer Angle is logged with the value before and after, whatever made it (`[Steer settings] Ackermann 90 -> 0`, `SteerSettingsLog`; a profile load too), and an AutoSteer card edit from a web screen says so just before (`[Config] From a web screen: autosteer.ackermann = 0`). A settings slider moves only by its thumb: a press on its bar changes nothing (`guardSliderTap` in `js/cfg-controls.js`; one tap on the bar had set Ackermann 0 and Max Steer Angle 61 on a tractor), and Ackermann under 50 is asked first (`cfgAskFirst`). Fork only
+8. **A steering setting changed by itself**: every change of what goes to the steer module (PGN 251/252) and of Max Steer Angle is logged with the value before and after, whatever made it (`[Steer settings] Ackermann 90 -> 0`, `SteerSettingsLog`; a profile load too), and an AutoSteer card edit from a web screen says so just before (`[Config] From a web screen: autosteer.ackermann = 0`; a line break in it is written as `\n`, so a screen can't add lines of its own). A settings slider moves only by its thumb, the heading fusion slider too: a press on its bar changes nothing, and a release off the slider is heard (`guardSliderTap` in `js/cfg-controls.js`; one tap on the bar had set Ackermann 0 and Max Steer Angle 61 on a tractor), and Ackermann under 50 is asked first, and any lower value once under 50 (`cfgAskFirst`). Fork only
 
 ## Code Style
 
@@ -752,11 +752,14 @@ Minimum To Move, Max Limit and Proportional Gain, by moving the wheels a few deg
 still or at walking pace (not above 6 km/h to start, 10 km/h stops it; wheels within 8° of straight). In order:
 - **Stop check**: before anything moves by itself the operator stops the module once with the stop the tractor
   has (`StopKindFor`: steer switch or button, a turn sensor or a pressure/current sensor with a trip point, else
-  the page's Stop button, and the page says that is the only stop), and the step sees it stop.
+  the page's Stop button, and the page says that is the only stop), and the step sees it stop. A turn sensor set to
+  trip at 0 counts lets go at once, so the step says that before anything moves.
 - **Minimum To Move**, each side: the module's PWM raised quickly, then slowly, until the wheels move; then that
   PWM less one is held and must leave the wheels still (a steering that answers late reads high on any rise). The
   setting is a little under the easier side.
 - **Max Limit**: the PWM that turns the wheels at the speed chosen (15, 25 or 35°/s, `wizard.set|TargetWheelSpeed`).
+  It is never under 50 (the module's lowest) nor close to Minimum To Move: held there, a quick steering turns faster
+  than chosen, and the result says how fast (`SteerTuneMath.SpeedAtPwm`).
 - **Proportional Gain**: 4° turns up a ladder of gains; the lowest gain that settles as fast as the best one
   without swinging, then checked with an 8° turn.
 

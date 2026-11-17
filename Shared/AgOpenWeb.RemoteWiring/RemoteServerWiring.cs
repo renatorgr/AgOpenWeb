@@ -218,7 +218,7 @@ public static partial class RemoteServerWiring
                                     var ci = arg.IndexOf(':');
                                     if (ci > 0 && arg.StartsWith("autosteer.", StringComparison.Ordinal) && webSettingsLog != null)
                                         Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(webSettingsLog,
-                                            "[Config] From a web screen: {Key} = {Value}", arg[..ci], arg[(ci + 1)..]);
+                                            "[Config] From a web screen: {Key} = {Value}", OneLine(arg[..ci]), OneLine(arg[(ci + 1)..]));
                                     if (ci > 0
                                         && ApplyCheckedConfigSet(
                                             services.GetRequiredService<AgOpenWeb.Models.Configuration.ConfigurationStore>(),
