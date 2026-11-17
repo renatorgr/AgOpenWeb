@@ -123,9 +123,14 @@ function guardSliderTap(s, ro) {
     // The release is heard on the window: a mouse let go off the slider left it held, and the
     // arrow keys did nothing until the next press. After the release's own 'change', so the
     // arrow keys on a focused slider work as before.
+    // Only the pointer that began the press ends it: a second finger lifted from the screen
+    // (a palm, the other hand on another slider) let the guard go while the first still dragged.
     if (press) press.abort();
     const c = press = new AbortController();
-    const end = () => { c.abort(); setTimeout(() => { held = null; }, 0); };
+    const end = up => {
+      if (up.pointerId !== e.pointerId) return;
+      c.abort(); setTimeout(() => { if (press === c) held = null; }, 0);
+    };
     for (const ev of ['pointerup', 'pointercancel'])
       window.addEventListener(ev, end, { capture: true, signal: c.signal });
   });

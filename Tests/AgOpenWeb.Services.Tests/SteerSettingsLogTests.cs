@@ -62,6 +62,19 @@ public class SteerSettingsLogTests
     }
 
     [Test]
+    public void A_min_steer_speed_change_under_a_tenth_is_written()
+    {
+        // The module gets the speed in tenths, cut off: 0.19 is 1 and 0.2 is 2. Written to one
+        // decimal both were "0.2", and the change that reached the module was not in the log.
+        var (store, lines) = Watched();
+        store.AutoSteer.MinSteerSpeed = 0.19;
+        lines.Clear();
+        store.AutoSteer.MinSteerSpeed = 0.2;
+        Assert.That(lines, Has.Count.EqualTo(1));
+        Assert.That(lines[0], Is.EqualTo("MinSteerSpeed 0.19 -> 0.2"));
+    }
+
+    [Test]
     public void A_value_set_to_what_it_was_and_other_settings_write_nothing()
     {
         var (store, lines) = Watched();

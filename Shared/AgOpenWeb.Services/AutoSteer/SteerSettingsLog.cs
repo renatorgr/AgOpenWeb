@@ -34,7 +34,7 @@ public sealed class SteerSettingsLog
         (nameof(AutoSteerConfig.InvertMotor), s => OnOff(s.AutoSteer.InvertMotor)),
         (nameof(AutoSteerConfig.InvertRelays), s => OnOff(s.AutoSteer.InvertRelays)),
         (nameof(AutoSteerConfig.ImuAxisSwap), s => s.AutoSteer.ImuAxisSwap.ToString(Inv)),
-        (nameof(AutoSteerConfig.MinSteerSpeed), s => s.AutoSteer.MinSteerSpeed.ToString("0.#", Inv)),
+        (nameof(AutoSteerConfig.MinSteerSpeed), s => s.AutoSteer.MinSteerSpeed.ToString("0.###", Inv)),
         (nameof(AutoSteerConfig.MotorDriver), s => s.AutoSteer.MotorDriver.ToString(Inv)),
         (nameof(AutoSteerConfig.AdConverter), s => s.AutoSteer.AdConverter.ToString(Inv)),
         (nameof(AutoSteerConfig.ExternalEnable), s => s.AutoSteer.ExternalEnable.ToString(Inv)),

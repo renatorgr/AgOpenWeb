@@ -307,6 +307,26 @@ public class SteerWizardTuneTests
         });
     }
 
+    [Test]
+    public async Task Turn_counts_at_0_do_not_stop_the_test_when_a_pressure_sensor_sets_the_trip_point()
+    {
+        // The module is sent one trip byte: the pressure sensor's when it is on, whatever the turn
+        // counts say. The counts are then not in use, and 0 there lets go of nothing.
+        _store.AutoSteer.ExternalEnable = 0;
+        _store.AutoSteer.TurnSensorEnabled = true;
+        _store.AutoSteer.TurnSensorCounts = 0;
+        _store.AutoSteer.PressureSensorEnabled = true;
+        _store.AutoSteer.PressureTripPoint = 30;
+        _fake.KickoutSensor = true;
+        var step = CreateStep();
+        _fake.Script = f => { if (f.Steering && step.PhaseDescription.Contains("turn it by hand", StringComparison.Ordinal)) f.Hands = 4; };
+
+        await step.RunStopCheckAsync();
+
+        Assert.That(step.PhaseResult, Does.Not.Contain("trip at 0 counts"));
+        Assert.That(step.Stage, Is.EqualTo(TuneStage.StopChecked), step.PhaseResult);
+    }
+
     // ------------------------------------------------------------ nothing kept unless taken
 
     [Test]

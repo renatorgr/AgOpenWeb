@@ -410,7 +410,10 @@ public class TuneSteeringStepViewModel : SwitchGatedWizardStep
         }
         // A turn sensor that trips at 0 counts lets go at once (the module trips at count >= the
         // setting), so the module never holds the wheels: say so, not "the steer switch is off".
-        if (Config.TurnSensorEnabled && Config.TurnSensorCounts <= 0)
+        // Only when the counts are what the module is sent: with a pressure or current sensor on
+        // as well, its trip point goes in that byte (PgnBuilder.SensorTripByte).
+        if (Config.TurnSensorEnabled && !Config.PressureSensorEnabled && !Config.CurrentSensorEnabled
+            && Config.TurnSensorCounts <= 0)
         {
             Stage = TuneStage.Idle;
             PhaseResult = "The turn sensor is set to trip at 0 counts, so the module lets go of the wheels at once. " +
