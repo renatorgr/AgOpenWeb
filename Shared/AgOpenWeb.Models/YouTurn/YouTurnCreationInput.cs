@@ -86,6 +86,14 @@ namespace AgOpenWeb.Models.YouTurn
         public Func<double, List<Vec3>, List<Vec3>>? BendPass { get; set; }
 
         /// <summary>
+        /// The current pass before its Go around bends, extended as <see cref="GuidancePoints"/> is;
+        /// null when nothing bends it. An arc seated on a bend is built from the bend's heading to
+        /// land on the next pass at its own (<c>SagittaTurnGeometry.BuildToLine</c>), and a turn
+        /// started on a bend is judged from the heading it starts at. Fork only.
+        /// </summary>
+        public List<Vec3>? StraightGuidancePoints { get; set; }
+
+        /// <summary>
         /// For curves: Is vehicle heading same way as curve direction?
         /// For AB: Is vehicle heading same way as AB line direction?
         /// </summary>

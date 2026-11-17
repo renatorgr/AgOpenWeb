@@ -72,6 +72,96 @@ namespace AgOpenWeb.Models.YouTurn
         }
 
         /// <summary>
+        /// The sagitta turn from any heading (fork only): a counter-arc, then the main arc, both of
+        /// <paramref name="turningRadius"/>, ending on the line through <paramref name="linePoint"/>
+        /// heading <paramref name="lineHeading"/>, the way the line is driven back. From a start on
+        /// the pass at its own heading it is <see cref="BuildOffsetArc"/>; from a start on a Go
+        /// around bend, off the pass and at an angle to it, it still lands on the next pass at its
+        /// heading, where the offset arc, turning 180° from the bend's heading, ended up to 45° off
+        /// it. A line further to the side than that reaches gets an arc, a straight and a quarter circle
+        /// (<see cref="ArcLineArc"/>). Empty when no such turn lands on the line.
+        /// </summary>
+        /// <param name="start">Arc start, on the line the tractor drives.</param>
+        /// <param name="theta">Start heading in radians (clockwise from north).</param>
+        /// <param name="isTurningRight">True to turn right, false to turn left.</param>
+        /// <param name="turningRadius">Turn radius in metres (must be &gt; 0).</param>
+        /// <param name="linePoint">A point of the line the turn lands on.</param>
+        /// <param name="lineHeading">The heading the line is driven at after the turn, radians.</param>
+        public static List<Vec3> BuildToLine(Vec3 start, double theta, bool isTurningRight,
+            double turningRadius, Vec2 linePoint, double lineHeading)
+        {
+            if (turningRadius <= 0) return new List<Vec3>();
+            double sign = isTurningRight ? 1.0 : -1.0;
+            // The main arc turns the start heading round to the line's, the counter-arc's angle more.
+            double turn = (sign * (lineHeading - theta)) % TwoPi;
+            if (turn < 0) turn += TwoPi;
+            if (turn < Math.PI / 2 || turn > 3 * Math.PI / 2) return new List<Vec3>();
+
+            // Where a turn with a counter-arc of `a` ends, across the line (+ right of it).
+            double sinL = Math.Sin(lineHeading), cosL = Math.Cos(lineHeading);
+            double Across(double a, List<Vec3>? points)
+            {
+                var path = points ?? new List<Vec3>();
+                if (points != null) path.Add(start);
+                var pos = start;
+                double h = theta;
+                if (a > 0) AddArc(ref pos, ref h, path, a * turningRadius, !isTurningRight, turningRadius);
+                AddArc(ref pos, ref h, path, (turn + a) * turningRadius, isTurningRight, turningRadius);
+                return (pos.Easting - linePoint.Easting) * cosL - (pos.Northing - linePoint.Northing) * sinL;
+            }
+
+            double lo = 0, hi = Math.PI / 2;
+            double fLo = Across(lo, null), fHi = Across(hi, null);
+            if (fLo * fHi > 0) return ArcLineArc(start, theta, isTurningRight, turningRadius, turn, linePoint, lineHeading);
+            for (int i = 0; i < 50 && hi - lo > 1e-9; i++)
+            {
+                double mid = (lo + hi) / 2;
+                double f = Across(mid, null);
+                if ((f > 0) == (fLo > 0)) { lo = mid; fLo = f; }
+                else hi = mid;
+            }
+            var result = new List<Vec3>();
+            Across((lo + hi) / 2, result);
+            return result;
+        }
+
+        /// <summary>
+        /// <see cref="BuildToLine"/> onto a line further to the side than its two arcs reach (a start
+        /// on a Go around bend that took the pass away from the next one): an arc square to the line,
+        /// straight on, and a quarter circle onto it, as AgOpenGPS's wide turn. Empty when the line is
+        /// nearer than that.
+        /// </summary>
+        private static List<Vec3> ArcLineArc(Vec3 start, double theta, bool isTurningRight, double turningRadius,
+            double turn, Vec2 linePoint, double lineHeading)
+        {
+            double sinL = Math.Sin(lineHeading), cosL = Math.Cos(lineHeading);
+            double Across(Vec3 p) => (p.Easting - linePoint.Easting) * cosL - (p.Northing - linePoint.Northing) * sinL;
+            var points = new List<Vec3> { start };
+            var pos = start;
+            double h = theta;
+            AddArc(ref pos, ref h, points, (turn - Math.PI / 2) * turningRadius, isTurningRight, turningRadius);
+            // Square to the line now: a quarter circle from here ends one radius nearer it.
+            var probe = new List<Vec3>();
+            var end = pos;
+            double hEnd = h;
+            AddArc(ref end, ref hEnd, probe, Math.PI / 2 * turningRadius, isTurningRight, turningRadius);
+            double rate = Math.Sin(h) * cosL - Math.Cos(h) * sinL; // across per metre straight on
+            if (Math.Abs(rate) < 0.5) return new List<Vec3>();
+            double straight = -Across(end) / rate;
+            if (straight < 0) return new List<Vec3>();
+            int steps = (int)Math.Ceiling(straight / (turningRadius * 0.1));
+            var from = pos;
+            for (int i = 1; i <= steps; i++)
+            {
+                double d = straight * i / steps;
+                pos = new Vec3(from.Easting + Math.Sin(h) * d, from.Northing + Math.Cos(h) * d, h);
+                points.Add(pos);
+            }
+            AddArc(ref pos, ref h, points, Math.PI / 2 * turningRadius, isTurningRight, turningRadius);
+            return points;
+        }
+
+        /// <summary>
         /// The keyhole turn from <paramref name="start"/> onto the pass <paramref name="lateral"/>
         /// metres to the side: it ends there, level with the start, heading back.
         /// </summary>

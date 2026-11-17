@@ -43,6 +43,14 @@ public partial class YouTurnCreationService
         public bool ClearanceBlocked { get; init; }
 
         /// <summary>
+        /// Near a hard boundary, no turn of the right shape was built (the generator found none, or
+        /// the one it built was malformed): <see cref="ClearanceBlocked"/> too, but the operator is
+        /// told no turn fits here (with <see cref="OutsideTurnLineBy"/> when known), not that the
+        /// implement would swing into the boundary, which sent them looking at the fence. Fork only.
+        /// </summary>
+        public bool NoTurnBuilt { get; init; }
+
+        /// <summary>
         /// True when the turn built would hand over past the end of the next pass's line
         /// (<see cref="TurnLanding.PastLineEnd"/>), so it was not taken: <see cref="Path"/> is null.
         /// </summary>
@@ -186,6 +194,28 @@ public partial class YouTurnCreationService
                 if (input.TurnType != YouTurnType.KStyle)
                     TurnPathSmoothing.SmoothYouTurn(path, 6);
 
+                // A turn lands on a straight stretch of the next pass. Where that pass bends round
+                // a Go around obstacle at the landing, the generator joins the bend's slope (a net
+                // turn of 150°, loops of 500°), the tractor comes out of the arc metres off the
+                // bent line, and a trailed implement sweeps through the tree (a 10 m sprayer by
+                // 1.7 m, hay rakes by 0.5 m, on two real fields): the turn is seated further back
+                // until it lands before the bend, else there is no turn. Asked before the turn's
+                // shape is judged: such a turn is also 30° or more off a U-turn, and near a hard
+                // fence that refused it at once, without the try further back (a drill on a
+                // tester's field, the farm job harness).
+                if (LandsOnBend(path, out double offStraight))
+                {
+                    extraSetback += ObstacleSetbackStep;
+                    if (extraSetback <= MaxExtraSetback)
+                    {
+                        _logger.LogDebug("[YouTurn] The turn lands {D:F1} m off the straight next pass, on a bend; seating it further back (setback {S:F1} m)",
+                            offStraight, extraSetback);
+                        continue;
+                    }
+                    _logger.LogWarning("[YouTurn] No turn within {S:F0} m lands on a straight stretch of the next pass; no turn.", MaxExtraSetback);
+                    return new TurnPathResult(null, UsedFallback: false) { AtObstacle = true };
+                }
+
                 // Measure turning from SEGMENT DIRECTIONS (positions), not the stored per-point
                 // headings — smoothing only moves positions (it preserves the stale headings),
                 // and the generator's recomputed headings are exactly what's noisy.
@@ -193,12 +223,29 @@ public partial class YouTurnCreationService
                 //   - Secondary safety: cumulative |Δdir| capped at 400° (an omega turn is 360°) to
                 //     catch loops and spirals the tractor would not follow.
                 var dirs = new List<double>(path.Count);
+                var dirAt = new List<int>(path.Count);
                 for (int i = 1; i < path.Count; i++)
                 {
                     double de = path[i].Easting - path[i - 1].Easting;
                     double dn = path[i].Northing - path[i - 1].Northing;
                     if ((de * de + dn * dn) < 1e-4) continue; // skip near-duplicate points
                     dirs.Add(Math.Atan2(de, dn));
+                    dirAt.Add(i);
+                }
+
+                // A turn that starts on a Go around bend of the pass (the entry leg on the bend, the
+                // arc from its heading: ArcFromBend) turns 180° less that bend's angle to the pass,
+                // and the bend's own turning is the pass's, not the turn's. Fork only.
+                double startDeviation = 0;
+                int arcFrom = 0;
+                if (input.StraightGuidancePoints != null && dirs.Count >= 2)
+                {
+                    startDeviation = DeviationFromStraight(input.StraightGuidancePoints, path[0], dirs[0]);
+                    if (output.ArcStart is { } arcAt)
+                    {
+                        int m = PassEnds.NearestIndex(path, arcAt.Easting, arcAt.Northing);
+                        arcFrom = Math.Max(0, dirAt.FindIndex(i => i >= m));
+                    }
                 }
 
                 double netHeadingChange = 0, totalHeadingChange = 0;
@@ -208,7 +255,7 @@ public partial class YouTurnCreationService
                     while (netHeadingChange > Math.PI) netHeadingChange -= 2 * Math.PI;
                     while (netHeadingChange < -Math.PI) netHeadingChange += 2 * Math.PI;
 
-                    for (int i = 1; i < dirs.Count; i++)
+                    for (int i = Math.Max(1, arcFrom); i < dirs.Count; i++)
                     {
                         double delta = dirs[i] - dirs[i - 1];
                         while (delta > Math.PI) delta -= 2 * Math.PI;
@@ -220,8 +267,18 @@ public partial class YouTurnCreationService
                 // ~π expected for a U-turn; tolerate ±30° slack to account for approach angle.
                 // A K-turn's path is AgOpenGPS's KStyleTurn: an arc of 2.2 rad and a straight tail,
                 // the rest of the turn made backing up, so its net turn is 2.2 rad (126°), not π.
-                double expectedNet = input.TurnType == YouTurnType.KStyle ? 2.2 : Math.PI;
-                bool netIsUTurnLike = Math.Abs(Math.Abs(netHeadingChange) - expectedNet) < Math.PI / 6.0;
+                // From a bend, π less the bend's angle to the pass, the way the arc turns.
+                bool netIsUTurnLike;
+                if (input.TurnType == YouTurnType.KStyle)
+                    netIsUTurnLike = Math.Abs(Math.Abs(netHeadingChange) - 2.2) < Math.PI / 6.0;
+                else
+                {
+                    double expected = (input.ArcTurnLeft ? -Math.PI : Math.PI) - startDeviation;
+                    double off = netHeadingChange - expected;
+                    while (off > Math.PI) off -= 2 * Math.PI;
+                    while (off < -Math.PI) off += 2 * Math.PI;
+                    netIsUTurnLike = Math.Abs(off) < Math.PI / 6.0;
+                }
                 // 400°: an omega turn is 360°; more is a loop the tractor does not follow (a 12.5 m
                 // rake came out of a 500° loop along a wall's turn line 8 m off its line, pointing at
                 // the wall 5 m away; a 4 m rake out of a 518° loop in the headland 1.3 m off, into a tree).
@@ -235,10 +292,21 @@ public partial class YouTurnCreationService
                             obstacle!.InnerIndex + 1, netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI);
                         return new TurnPathResult(null, UsedFallback: false) { AtObstacle = true };
                     }
+                    // On a pass bent round Go around obstacles a turn seated on a bend can loop (a
+                    // counter-arc onto a pass the bend took nearer); seated further back it starts
+                    // on the straight. Fork only.
+                    if (input.StraightGuidancePoints != null && extraSetback + ObstacleSetbackStep <= MaxExtraSetback)
+                    {
+                        extraSetback += ObstacleSetbackStep;
+                        _logger.LogDebug("[YouTurn] Turn malformed (net={Net:F0}° cumulative={Cum:F0}°) on a pass bent round an obstacle; seating it further back (setback {S:F1} m)",
+                            netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI, extraSetback);
+                        continue;
+                    }
                     if (hardOuter)
                     {
-                        _logger.LogWarning("[YouTurn] Turn near hard boundary was malformed; not engaging.");
-                        return new TurnPathResult(null, UsedFallback: false) { ClearanceBlocked = true };
+                        _logger.LogWarning("[YouTurn] Turn near hard boundary was malformed (net={Net:F0}° cumulative={Cum:F0}°); not engaging.",
+                            netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI);
+                        return new TurnPathResult(null, UsedFallback: false) { ClearanceBlocked = true, NoTurnBuilt = true };
                     }
                     _logger.LogWarning("[YouTurn] Service path rejected: net={Net:F0}° cumulative={Cum:F0}° - using simple fallback",
                         netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI);
@@ -309,27 +377,9 @@ public partial class YouTurnCreationService
                 // next tree's turn line 8 m away, and a turn whose exit landed just before another
                 // obstacle ended in the AutoSteer-off alarm with no room. No such turn is made;
                 // the operator is told and takes over before the obstacle.
-                // A turn lands on a straight stretch of the next pass. Where that pass bends round
-                // a Go around obstacle at the landing, the generator joins the bend's slope (a net
-                // turn of 150°, loops of 500°), the tractor comes out of the arc metres off the
-                // bent line, and a trailed implement sweeps through the tree (a 10 m sprayer by
-                // 1.7 m, hay rakes by 0.5 m, on two real fields): the turn is seated further back
-                // until it lands before the bend, else there is no turn.
-                if (LandsOnBend(path, out double offStraight))
-                {
-                    extraSetback += ObstacleSetbackStep;
-                    if (extraSetback <= MaxExtraSetback)
-                    {
-                        _logger.LogDebug("[YouTurn] The turn lands {D:F1} m off the straight next pass, on a bend; seating it further back (setback {S:F1} m)",
-                            offStraight, extraSetback);
-                        continue;
-                    }
-                    _logger.LogWarning("[YouTurn] No turn within {S:F0} m lands on a straight stretch of the next pass; no turn.", MaxExtraSetback);
-                    return new TurnPathResult(null, UsedFallback: false) { AtObstacle = true };
-                }
-
+                int arcIndex = output.ArcStart is { } seated ? PassEnds.NearestIndex(path, seated.Easting, seated.Northing) : 0;
                 if (boundary != null && !ClearsTurnObstacles(path, boundary, config, out int crossed, ExitReach, obstacle?.InnerIndex ?? -1,
-                        obstacles))
+                        obstacles, arcFrom: arcIndex))
                 {
                     // Seated further back the legs may clear the obstacle, or the exit land with
                     // room before it; then there is no turn.
@@ -364,7 +414,10 @@ public partial class YouTurnCreationService
             {
                 _logger.LogWarning("[YouTurn] Turn creation failed near a hard boundary ({Reason}); not engaging.",
                     output.FailureReason ?? "unknown");
-                return new TurnPathResult(null, UsedFallback: false) { ClearanceBlocked = true };
+                return new TurnPathResult(null, UsedFallback: false)
+                {
+                    ClearanceBlocked = true, NoTurnBuilt = true, OutsideTurnLineBy = output.OutsideTurnLineBy,
+                };
             }
 
             _logger.LogWarning("[YouTurn] Service failed: {Reason} - using simple fallback",
@@ -637,6 +690,8 @@ public partial class YouTurnCreationService
             // bent round the Go around obstacles as that line is.
             ReferenceCurvePoints = basePoints,
             BendPass = (distAway, pass) => _goAround.Bent(track, distAway, pass, boundary),
+            StraightGuidancePoints = ReferenceEquals(offsetCurve, pass.Points) ? null
+                : CurveProcessing.ExtendPassForTurn((pass.Points, pass.PercentRemoved, pass.StartKept, pass.EndKept, pass.StartIsEnd, pass.EndIsEnd)),
 
             // Diagnostics; the curve generator anchors on GuidancePoints, not these.
             ABHeading = passEnd?.Heading ?? abHeading,

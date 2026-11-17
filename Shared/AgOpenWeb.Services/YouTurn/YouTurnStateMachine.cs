@@ -804,7 +804,7 @@ public sealed class YouTurnStateMachine
         long stamp = YouTurnCreationService.ObstacleStamp(ctx.Boundary);
         if (stamp == _plannedObstacleStamp) return -1;
         _plannedObstacleStamp = stamp;
-        return _creation.RestOfTurnBlockedBy(turn.TurnPath, ctx.CurrentPosition, ctx.Boundary, turn.TurnAtObstacleIndex, promoted);
+        return _creation.RestOfTurnBlockedBy(turn.TurnPath, ctx.CurrentPosition, ctx.Boundary, turn.TurnAtObstacleIndex, promoted, turn.ArcStart);
     }
 
     /// <summary>
@@ -2207,6 +2207,12 @@ public sealed class YouTurnStateMachine
         // refused it: "a hard boundary" sent the operator looking at the field's edge.
         if (result.Path == null && result.AtObstacle && effects.StatusMessage == null)
             effects.StatusMessage = "No room for a U-turn before the obstacle. Take over manually.";
+        // Near a hard fence no turn of the right shape was built: said as such, not as the implement
+        // swinging into the fence (fork only).
+        if (result.Path == null && result.NoTurnBuilt && effects.StatusMessage == null)
+            effects.StatusMessage = result.OutsideTurnLineBy is double outside
+                ? NoTurnFitsMessage(outside, _configStore.Guidance.UTurnDistanceFromBoundary)
+                : "No U-turn fits inside the boundary at this end - take over manually";
         if (result.ClearanceBlocked && effects.StatusMessage == null)
             effects.StatusMessage = "U-turn blocked: implement would swing into a hard boundary — take over manually.";
         // No real turn fits and the fallback would leave the field (#692): the pass is driven to its
