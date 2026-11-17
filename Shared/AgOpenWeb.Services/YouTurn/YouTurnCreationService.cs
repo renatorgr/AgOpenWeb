@@ -79,6 +79,7 @@ namespace AgOpenWeb.Services.YouTurn
             gapResumeIndex = -1;
             turnLineEndIndex = -1;
             _failReason = null;
+            _failKind = TurnFailure.DoesNotFit;
             _outsideBy = double.MaxValue;
             _neverFitted = false;
 
@@ -145,6 +146,7 @@ namespace AgOpenWeb.Services.YouTurn
             {
                 output.Success = false;
                 output.FailureReason = _failReason ?? "Turn creation failed - path invalid or out of bounds";
+                output.Failure = _failReason != null ? _failKind : TurnFailure.DoesNotFit;
                 if (_neverFitted && _outsideBy < double.MaxValue) output.OutsideTurnLineBy = _outsideBy;
                 output.IsOutOfBounds = true;
             }
@@ -191,7 +193,7 @@ namespace AgOpenWeb.Services.YouTurn
                 case 0: // Find the crossing points
                     if (!FindCurveTurnPoint(input, false))
                     {
-                        FailCreate("no crossing of the turn line ahead");
+                        FailCreate("no crossing of the turn line ahead", TurnFailure.TooLate);
                         return false;
                     }
 
@@ -412,7 +414,7 @@ namespace AgOpenWeb.Services.YouTurn
             // path's pivot-to-turn-line check, NOT pivot-to-path-start).
             if (ytList.Count == 0 || Distance(turnLineCrossing, input.PivotPosition) < 3)
             {
-                FailCreate("the turn line crossing is within 3 m of the tractor (too late)");
+                FailCreate("the turn line crossing is within 3 m of the tractor (too late)", TurnFailure.TooLate);
                 return false;
             }
 
@@ -457,7 +459,7 @@ namespace AgOpenWeb.Services.YouTurn
             // Find the crossing point
             if (!FindCurveTurnPoint(input, false))
             {
-                FailCreate("no crossing of the turn line ahead");
+                FailCreate("no crossing of the turn line ahead", TurnFailure.TooLate);
                 return false;
             }
 
@@ -475,7 +477,7 @@ namespace AgOpenWeb.Services.YouTurn
             isOutOfBounds = true;
             int stopIfWayOut = 0;
             double head = 0;
-            _bendNextPass = null;
+            List<Vec3>? bendNextPass = null; // the next pass, for arcs seated on a Go around bend
 
             // Walk the start index inward until the generated arc sits inside the turn area
             while (isOutOfBounds)
@@ -516,10 +518,11 @@ namespace AgOpenWeb.Services.YouTurn
                 // the pass, and lands on the next pass at its own (fork only).
                 if (OnGoAroundBend(input, curveIndex, count, out var bendSeat))
                 {
-                    var fromBend = ArcFromBend(input, bendSeat, isTurningRight);
+                    bendNextPass ??= BendNextPass(input);
+                    var fromBend = ArcFromBend(input, bendNextPass, bendSeat, isTurningRight);
                     isOutOfBounds = fromBend.Count == 0 || OutsideTurnLineBy(input, fromBend) > 0 || fromBend.Exists(p => Blocked(input, p));
                     if (isOutOfBounds) continue;
-                    ytList = SeatForwardOnBend(input, curveIndex, count, isTurningRight, fromBend, SlideBound(fromBend, inClosestTurnPt));
+                    ytList = SeatForwardOnBend(input, bendNextPass, curveIndex, count, isTurningRight, fromBend, SlideBound(fromBend, inClosestTurnPt));
                     break;
                 }
 
@@ -621,7 +624,7 @@ namespace AgOpenWeb.Services.YouTurn
                         if (input.TrackMode == 32 || input.TrackMode == 64) // waterPivot or bndCurve
                             youTurnPhase = 11; // Ignore
                         else
-                            FailCreate("wide turn: no crossing of the turn line ahead");
+                            FailCreate("wide turn: no crossing of the turn line ahead", TurnFailure.TooLate);
                         return false;
                     }
 
@@ -709,7 +712,7 @@ namespace AgOpenWeb.Services.YouTurn
                         // Set the flag to Critical stop machine
                         if (Distance(ytList[0], input.PivotPosition) < 3)
                         {
-                            FailCreate("wide turn: the entry arc starts within 3 m of the tractor (too late)");
+                            FailCreate("wide turn: the entry arc starts within 3 m of the tractor (too late)", TurnFailure.TooLate);
                             return false;
                         }
                     }
@@ -877,7 +880,7 @@ namespace AgOpenWeb.Services.YouTurn
                     // next reach back towards it, so the path's first point is no measure).
                     if (Distance(startOfTurnPt.ClosePt, input.PivotPosition) < 3)
                     {
-                        FailCreate("wide turn: the turn starts within 3 m of the tractor (too late)");
+                        FailCreate("wide turn: the turn starts within 3 m of the tractor (too late)", TurnFailure.TooLate);
                         return false;
                     }
 
@@ -978,7 +981,7 @@ namespace AgOpenWeb.Services.YouTurn
 
             if (!FindCurveTurnPoint(input, true))
             {
-                FailCreate("K turn: no crossing of the turn line ahead");
+                FailCreate("K turn: no crossing of the turn line ahead", TurnFailure.TooLate);
                 return false;
             }
 
@@ -1772,15 +1775,19 @@ namespace AgOpenWeb.Services.YouTurn
         /// <summary>The turn can't be built; <paramref name="reason"/> says why, for the log and the
         /// caller (<see cref="YouTurnCreationOutput.FailureReason"/>): every failure used to read the
         /// same "path invalid or out of bounds", and the fallback's refusal then blamed the boundary.</summary>
-        private void FailCreate(string reason)
+        private void FailCreate(string reason, TurnFailure kind = TurnFailure.DoesNotFit)
         {
             isOutOfBounds = true;
             youTurnPhase = 11;
             _failReason = reason;
+            _failKind = kind;
             _logger.LogDebug("[YouTurn] Turn not built: {Reason}", reason);
         }
 
         private string? _failReason;
+
+        /// <summary>The kind of the last failure (<see cref="FailCreate"/>), for <see cref="YouTurnCreationOutput.Failure"/>.</summary>
+        private TurnFailure _failKind = TurnFailure.DoesNotFit;
 
         /// <summary>The least, over every arc start tried, of how far the arc fell outside the turn
         /// line; MaxValue until a try fell outside. With <see cref="_neverFitted"/> it is what the

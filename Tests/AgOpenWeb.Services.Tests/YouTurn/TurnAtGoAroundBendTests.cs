@@ -9,6 +9,7 @@ using AgOpenWeb.Models;
 using AgOpenWeb.Models.Base;
 using AgOpenWeb.Models.Configuration;
 using AgOpenWeb.Models.Pipeline;
+using AgOpenWeb.Models.YouTurn;
 using AgOpenWeb.Services.Geometry;
 using AgOpenWeb.Services.YouTurn;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -29,6 +30,7 @@ public class TurnAtGoAroundBendTests
 {
     private static YouTurnCreationService NewCreation(double reach)
     {
+        Verbose = Environment.GetEnvironmentVariable("TURN_VERBOSE") == "1";
         ConfigurationStore.SetInstance(new ConfigurationStore());
         var c = ConfigurationStore.Instance;
         const double width = 8;
@@ -111,8 +113,27 @@ public class TurnAtGoAroundBendTests
         return (b.Easting - nextX, Math.IEEERemainder(heading - Math.PI, 2 * Math.PI) * 180 / Math.PI);
     }
 
-    private static double NearestToTree(IReadOnlyList<Vec3> path, double treeE, double treeN) =>
+    private static double NearestToTree(IEnumerable<Vec3> path, double treeE, double treeN) =>
         path.Min(p => Math.Sqrt((p.Easting - treeE) * (p.Easting - treeE) + (p.Northing - treeN) * (p.Northing - treeN)));
+
+    // The path from the arc's start on (the entry leg before it is the pass, bent round the tree).
+    private static List<Vec3> FromArc(YouTurnCreationService.TurnPathResult r)
+    {
+        var path = r.Path!;
+        if (r.ArcStart is not { } at) return path;
+        int k = 0;
+        double best = double.MaxValue;
+        for (int i = 0; i < path.Count; i++)
+        {
+            double d = GeometryMath.Distance(path[i], at);
+            if (d < best) { best = d; k = i; }
+        }
+        return path.Skip(k).ToList();
+    }
+
+    // How far the tree's 24-sided outline (vertices on the circle) can lie inside its circle, and the
+    // polygon offset's own rounding: the outlines the planner grows are not exact circles.
+    private const double OutlineSlack = 0.1;
 
     // The pass steered is x = 4 (pass 0 of a line at x = 0, an 8 m implement); the turn goes onto the
     // pass beside it (skip 0, 8 m to the side) or two over (skip 1, 16 m).
@@ -125,7 +146,6 @@ public class TurnAtGoAroundBendTests
     [TestCase(0.0, 0.0, true, 0, 18.0, -4.0)]    // a loop from the bend: seated further back
     public void A_turn_near_a_go_around_tree_lands_on_the_next_pass(double slant, double treeE, bool left, int skip, double gap, double nextX)
     {
-        Verbose = Environment.GetEnvironmentVariable("TURN_VERBOSE") == "1";
         double treeN = 98 - gap;
         var r = Turn(NewCreation(4.5), Field(treeE, treeN, slant), skip, left);
 
@@ -133,8 +153,13 @@ public class TurnAtGoAroundBendTests
         var (across, headingOff) = Landing(r.Path!, nextX);
         Assert.That(across, Is.EqualTo(0).Within(0.3), "the turn ends beside the next pass");
         Assert.That(headingOff, Is.EqualTo(0).Within(3), "the turn ends at the next pass's heading");
-        // The tree's room in a turn: half the track plus the U-turn distance (2 m) past its edge.
-        Assert.That(NearestToTree(r.Path!, treeE, treeN), Is.GreaterThan(1.6 + 2.0), "the turn runs into the tree's room");
+        // From the arc on, the tree's room in a turn (GoAroundRoom: half the track plus the larger of
+        // the Go around margin and the U-turn distance) past its edge.
+        var creation = NewCreation(4.5);
+        double room = creation.GoAroundRoom(ConfigurationStore.Instance);
+        Assert.That(NearestToTree(FromArc(r), treeE, treeN), Is.GreaterThan(1.6 + room - OutlineSlack), "the turn runs into the tree's room");
+        // The entry leg is the pass bent round the tree: half the 8 m implement plus the margin.
+        Assert.That(NearestToTree(r.Path!, treeE, treeN), Is.GreaterThan(1.6 + 4.0 + 0.3 - OutlineSlack), "the entry leg runs into the tree's room");
     }
 
     [Test]
@@ -181,6 +206,73 @@ public class TurnAtGoAroundBendTests
 
         Assert.That(r.AtObstacle, Is.True, "the turn is at the obstacle");
         if (r.Path != null)
-            Assert.That(r.Path.Max(p => p.Northing), Is.LessThan(58 - 1.5), "a turn before the obstacle");
+            // Outside the post's turn line: the post grown by the U-turn distance (2 m), and by the
+            // implement's reach (half its 8 m) for a hard one, less the arc's tolerance at the obstacle
+            // turned at (0.3 m).
+            Assert.That(NearestToTree(r.Path, 4, 58), Is.GreaterThan(1.5 + 2.0 + 4.0 - 0.3 - OutlineSlack), "a turn outside the post's turn line");
+    }
+
+    [Test]
+    public void A_turn_obstacle_the_tractor_is_already_in_the_room_of_is_seen()
+    {
+        // The tractor inside the post's turn line, 6 m before it (the turn there missed): the post is
+        // still what the pass runs into, not the fence 40 m on.
+        var creation = NewCreation(0);
+        var field = Field(30, 0, 0);
+        field.InnerBoundaries.Clear();
+        var post = ObstacleTestField.Circle(4, 58, 1.5);
+        post.AtObstacle = ObstacleAction.Turn;
+        post.IsHard = true;
+        field.InnerBoundaries.Add(post);
+
+        var r = Turn(creation, field, skip: 1, left: true, y: 52);
+
+        Assert.That(r.AtObstacle, Is.True, "the post is what the pass runs into");
+    }
+
+    [Test]
+    public void A_go_around_tree_put_on_the_entry_leg_under_a_turn_stops_it()
+    {
+        // A turn seated on the bend round a tree: its entry leg is the bent pass. A second tree put on
+        // that leg while the turn is driven is not gone round: the rest of the turn is blocked by it.
+        // The leg bent round the first tree is not (no alarm for an obstacle changed elsewhere).
+        var creation = NewCreation(4.5);
+        var field = Field(-1.5, 74, 20);
+        var r = Turn(creation, field, skip: 1, left: false);
+        Assert.That(r.Path, Is.Not.Null);
+        Assert.That(r.ArcStart, Is.Not.Null);
+        var path = r.Path!;
+        var tractor = new Position { Easting = path[0].Easting, Northing = path[0].Northing };
+
+        Assert.That(creation.RestOfTurnBlockedBy(path, tractor, field, -1, null, r.ArcStart), Is.EqualTo(-1),
+            "the leg bent round the tree is clear");
+
+        // On the leg, 5 m before the arc's start.
+        var arc = r.ArcStart!.Value;
+        int k = path.FindIndex(p => GeometryMath.Distance(p, arc) < 0.5);
+        var onLeg = path.Take(k + 1).Last(p => GeometryMath.Distance(p, arc) >= 5.0);
+        var second = ObstacleTestField.Circle(onLeg.Easting, onLeg.Northing, 0.5);
+        second.AtObstacle = ObstacleAction.GoRound;
+        field.InnerBoundaries.Add(second);
+
+        Assert.That(creation.RestOfTurnBlockedBy(path, tractor, field, -1, null, r.ArcStart), Is.EqualTo(1),
+            "the new tree on the entry leg");
+    }
+
+    [TestCase(97.5)]
+    [TestCase(97.9)]
+    public void Too_late_for_a_turn_is_not_said_as_no_turn_fits(double y)
+    {
+        // At the turn line of a hard fence (half a metre before it or less): too late to turn there,
+        // and said so, not as a turn that does not fit at this end.
+        var creation = NewCreation(0);
+        var field = Field(30, 0, 0);
+        field.InnerBoundaries.Clear();
+
+        var r = Turn(creation, field, skip: 1, left: true, y: y);
+
+        Assert.That(r.Path, Is.Null);
+        Assert.That(r.Failure, Is.EqualTo(TurnFailure.TooLate));
+        Assert.That(r.NoTurnBuilt, Is.False);
     }
 }

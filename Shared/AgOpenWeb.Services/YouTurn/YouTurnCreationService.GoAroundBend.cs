@@ -34,9 +34,6 @@ public partial class YouTurnCreationService
     /// <summary>The pass's heading at a seat is taken over this either side of it, m.</summary>
     private const double BendSeatChord = 1.0;
 
-    /// <summary>The next pass, for the arcs seated on a bend of this plan (<see cref="ArcFromBend"/>).</summary>
-    private List<Vec3>? _bendNextPass;
-
     /// <summary>
     /// Whether the current pass is bent round a Go around obstacle at point <paramref name="index"/>:
     /// off the pass as it is without its bends (<see cref="YouTurnCreationInput.StraightGuidancePoints"/>),
@@ -62,14 +59,16 @@ public partial class YouTurnCreationService
         return best > BendOffPass || Math.Abs(LineAngle(seat.Heading - heading)) > BendOffHeading;
     }
 
+    /// <summary>The next pass, for the arcs seated on a bend (<see cref="ArcFromBend"/>): built once per
+    /// plan, by the plan itself.</summary>
+    private List<Vec3> BendNextPass(YouTurnCreationInput input) => BuildNewOffsetCurveList(input, NextPassDistAway(input));
+
     /// <summary>
-    /// The arc from <paramref name="seat"/> onto the next pass, at its heading where it lands;
-    /// empty when none lands there.
+    /// The arc from <paramref name="seat"/> onto the next pass (<paramref name="next"/>), at its
+    /// heading where it lands; empty when none lands there.
     /// </summary>
-    private List<Vec3> ArcFromBend(YouTurnCreationInput input, BendSeat seat, bool isTurningRight)
+    private static List<Vec3> ArcFromBend(YouTurnCreationInput input, List<Vec3> next, BendSeat seat, bool isTurningRight)
     {
-        _bendNextPass ??= BuildNewOffsetCurveList(input, NextPassDistAway(input));
-        var next = _bendNextPass;
         if (next.Count < 2) return new List<Vec3>();
         // Aimed at the next pass abreast of the seat, then again where that turn lands (a next pass
         // that curves).
@@ -92,13 +91,13 @@ public partial class YouTurnCreationService
     /// start heading as an arc on a straight pass is (<see cref="MoveTurnInsideTurnLine"/>), it would
     /// leave the bend and land beside the next pass. At most <paramref name="maxSlide"/> on.
     /// </summary>
-    private List<Vec3> SeatForwardOnBend(YouTurnCreationInput input, int index, int back, bool isTurningRight,
+    private List<Vec3> SeatForwardOnBend(YouTurnCreationInput input, List<Vec3> next, int index, int back, bool isTurningRight,
         List<Vec3> arc, double maxSlide)
     {
         var best = arc;
         for (double s = BendSeatStep; s <= maxSlide; s += BendSeatStep)
         {
-            var moved = ArcFromBend(input, SeatAt(input.GuidancePoints, index, -back, s), isTurningRight);
+            var moved = ArcFromBend(input, next, SeatAt(input.GuidancePoints, index, -back, s), isTurningRight);
             if (moved.Count == 0 || moved.Exists(p => Blocked(input, p))) break;
             best = moved;
         }
@@ -127,12 +126,11 @@ public partial class YouTurnCreationService
         {
             int j = i + step;
             if (j < 0 || j >= pass.Count) return new Vec2(pass[i].Easting, pass[i].Northing);
-            double de = pass[j].Easting - pass[i].Easting, dn = pass[j].Northing - pass[i].Northing;
-            double seg = Math.Sqrt(de * de + dn * dn);
+            double seg = GeometryMath.Distance(pass[i], pass[j]);
             if (seg >= along && seg > 1e-9)
             {
                 double f = along / seg;
-                return new Vec2(pass[i].Easting + de * f, pass[i].Northing + dn * f);
+                return new Vec2(pass[i].Easting + (pass[j].Easting - pass[i].Easting) * f, pass[i].Northing + (pass[j].Northing - pass[i].Northing) * f);
             }
             along -= seg;
             i = j;
