@@ -220,6 +220,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private Models.Track.Track? _youTurnTrack; // the track _youTurn was planned on
     private List<Vec3>? _youTurnTrackPoints; // its points then: a moved line is a new set of passes
     private double _youTurnPassSpacing;      // width less overlap then: another spacing is a new set too
+    private double _youTurnToolReach;        // the implement's reach to the side then (YouTurnCreationService.HardReach)
     private readonly GuidanceWorkingState _guidanceWorking = new();
 
     // ── Joining a new line at the start of the pass (fork only) ─────────
@@ -831,15 +832,19 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // landed on the old pass number. AgOpenGPS resets the U-turn on a track change
         // (FormBuildTracks: yt.ResetYouTurn).
         double passSpacing = _configStore.ActualToolWidth - _configStore.Tool.Overlap;
+        double toolReach = YouTurnCreationService.HardReach(_configStore);
         if (!ReferenceEquals(track, _youTurnTrack))
         {
             _youTurnTrack = track;
             _youTurnTrackPoints = track?.Points;
             _youTurnPassSpacing = passSpacing;
+            _youTurnToolReach = toolReach;
             _youTurnStateMachine.ForgetTrack(_youTurn);
         }
-        else if (!ReferenceEquals(track?.Points, _youTurnTrackPoints) || Math.Abs(passSpacing - _youTurnPassSpacing) > 1e-6)
+        else if (track != null
+            && (!ReferenceEquals(track.Points, _youTurnTrackPoints) || Math.Abs(passSpacing - _youTurnPassSpacing) > 1e-6))
         {
+            // (With no track there are no passes to forget: the spacing is first noted with a track.)
             // The same track with its line moved (Reference Line Nudge, a trimmed end), or with
             // its passes laid at another spacing (the implement's width or the overlap changed):
             // pass N is another strip of ground now, so what was found out about each pass (worked,
@@ -848,7 +853,18 @@ public sealed class GpsPipelineService : IGpsPipelineService
             // moved line (Tapada da Casa). Fork only.
             _youTurnTrackPoints = track?.Points;
             _youTurnPassSpacing = passSpacing;
+            _youTurnToolReach = toolReach;
             _youTurnStateMachine.ForgetPassStatus(_youTurn);
+        }
+        else if (track != null && Math.Abs(toolReach - _youTurnToolReach) > 1e-6)
+        {
+            // The passes are where they were (the same spacing), but the implement reaches
+            // further to one side or less far: its offset changed, or its width and the overlap
+            // by the same amount. A turn planned but not yet driven was kept clear of a hard
+            // fence or a hard obstacle by the old reach, so it is planned again; the order and
+            // what was found about each pass still hold. Fork only.
+            _youTurnToolReach = toolReach;
+            if (!_youTurn.IsExecuting) YouTurnStateMachine.DiscardPlannedTurn(_youTurn);
         }
 
         if (resetSnake)

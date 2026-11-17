@@ -214,6 +214,50 @@ public class YouTurnTrackSwitchTests
     }
 
     [Test]
+    public void AnotherImplementOffset_PlansTheTurnAgain_AndKeepsTheOrder()
+    {
+        // The passes stay where they are, but the implement now reaches further to one side: a
+        // turn planned beside a hard fence or a hard obstacle was kept clear of it by the old reach.
+        var turn = PlannedOnTrackA();
+        var order = turn.SnakeSequence;
+        int at = turn.SnakeIndex;
+        ConfigurationStore.Instance.Tool.Offset = 1.5;
+        _gpsService.UpdateGpsData(ValidFix());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null, "the turn planned for the old reach");
+            Assert.That(turn.ReturnPassTargetPath, Is.Null);
+            Assert.That(turn.SnakeSequence, Is.SameAs(order), "the passes did not move: the order holds");
+            Assert.That(turn.SnakeIndex, Is.EqualTo(at));
+        });
+
+        // The same offset again: a turn planned since is kept.
+        var planned = new List<Vec3> { new(3, 40, 0), new(0, 50, 0), new(-3, 40, Math.PI) };
+        turn.TurnPath = planned;
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(turn.TurnPath, Is.SameAs(planned));
+    }
+
+    [Test]
+    public void AnotherImplementOffset_LeavesATurnBeingDrivenAlone()
+    {
+        // A turn being driven is not planned again (as for a changed obstacle). In this fixture
+        // the tractor is past the three-point path, so the turn is driven to its end in the
+        // cycle: onto pass -1. Dropped, it stayed "being driven" with no path, on pass 0.
+        var turn = PlannedOnTrackA();
+        turn.IsTriggered = turn.IsExecuting = true;
+        ConfigurationStore.Instance.Tool.Offset = 1.5;
+        _gpsService.UpdateGpsData(ValidFix());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.IsExecuting, Is.False, "the turn ended by being driven");
+            Assert.That(Last.Guidance!.HowManyPathsAway, Is.EqualTo(-1), "onto the pass it was made for");
+        });
+    }
+
+    [Test]
     public void TheSameTrackAgain_KeepsThePlannedTurn()
     {
         var turn = PlannedOnTrackA();
