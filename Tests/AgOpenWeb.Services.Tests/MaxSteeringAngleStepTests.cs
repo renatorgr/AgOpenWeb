@@ -95,12 +95,11 @@ public class MaxSteeringAngleStepTests
     }
 
     [Test]
-    public async Task NoPlateau_FallsBackToLastSample_WithoutHanging()
+    public async Task NoPlateau_TimesOut_WithoutHanging_AndIsNoLock()
     {
         // If the WAS never settles (e.g. simulator with no clamp, runaway
-        // hydraulics), the detector must time out and return the last
-        // sample rather than hang forever. The wizard caps the poll loop
-        // at PlateauTimeoutMs internally.
+        // hydraulics), the detector must time out rather than hang forever.
+        // The wizard caps the poll loop at PlateauTimeoutMs internally.
         var step = new MaxSteeringAngleStepViewModel(_configService, new AgOpenWeb.Services.Threading.InlineUiDispatcher(), _autoSteer);
         step.DelayFunc = (_, _) => Task.CompletedTask;
 
@@ -120,12 +119,11 @@ public class MaxSteeringAngleStepTests
 
         await step.RunMaxAngleMeasurementAsync();
 
-        // We don't assert exact values — the timeout-fallback path is
-        // operational, not metric. The point: it returned without
-        // hanging, and CalibrationCompleted is true so OnLeaving will
-        // still persist *something*.
-        Assert.That(step.Phase, Is.EqualTo(MaxSteeringAnglePhase.Complete));
-        Assert.That(step.CalibrationCompleted, Is.True);
+        // The point: it returned without hanging. Wheels still turning when the time ran
+        // out read no lock, so nothing is saved (30° each way here, and 27 was saved before).
+        Assert.That(step.Phase, Is.EqualTo(MaxSteeringAnglePhase.WaitingToStart));
+        Assert.That(step.CalibrationCompleted, Is.False);
+        Assert.That(step.PhaseResult, Does.Contain("They were still turning when the 6 s for each side ran out."));
     }
 
     // ── #170: the wheels must actually move ───────────────────────────────
@@ -154,10 +152,18 @@ public class MaxSteeringAngleStepTests
     }
 
     [TestCase(0, 35, -30, null)]
-    [TestCase(0, 12.4, -3.6, "turned right but hardly left")]
+    [TestCase(0, 35, -3, "turned right but hardly left")]
     [TestCase(0, 2, -25, "turned left but hardly right")]
+    [TestCase(0, 30, 28, "turned right but hardly left", Description = "went right and stayed there")]
+    // Too little push either way: the start is somewhere between the two stops, so one reading
+    // lands beside it. Not a fault on one side.
+    [TestCase(1.9, 7.7, 0.7, "moved only 7.0° in all: steered right they stopped at 7.7°, steered left at 0.7° (start 1.9°)",
+        Description = "a tester's load-sensing block, 18 Nov 2026")]
+    [TestCase(0, 12.4, -3.6, "moved only 16.0° in all", Description = "the same block the day before")]
+    [TestCase(7, 7.7, 0.7, "moved only 7.0° in all", Description = "the same stops, started beside the right one")]
+    [TestCase(0, 3, -3, "moved only 6.0° in all")]
     [TestCase(7.2, 7.2, 7.2, "didn't move")]
-    [TestCase(0, 3, -3, "didn't move")]
+    [TestCase(0, 2, -2, "didn't move")]
     [TestCase(0, -30, 30, "opposite way")]
     public void LockMovementError_cases(double start, double right, double left, string? expected)
     {
@@ -197,11 +203,29 @@ public class MaxSteeringAngleStepTests
     }
 
     [Test]
-    public async Task Wheels_that_turn_one_way_only_say_what_to_check()
+    public async Task Wheels_that_turn_a_little_each_way_are_not_called_one_sided()
     {
         // The tester's first run: 12.4° right, 3.6° left (a 3 would have been saved before #170's check).
+        // Too little push both ways, and read as "turned right but hardly left".
         _store.Vehicle.MaxSteerAngle = 33;
         var step = StepWithLocks(right: 12.4, left: 3.6);
+        SetActive(step, true);
+
+        await step.RunMaxAngleMeasurementAsync();
+
+        Assert.That(step.PhaseResult, Does.StartWith("⚠ The wheels moved only 16.0° in all").And.Contain("not changed"));
+        Assert.That(step.PhaseResult, Does.Not.Contain("hardly"));
+        Assert.That(step.PhaseResult, Does.Contain(MaxSteeringAngleStepViewModel.WhatToCheckHeader));
+        SetActive(step, false);
+        Assert.That(_store.Vehicle.MaxSteerAngle, Is.EqualTo(33));
+    }
+
+    [Test]
+    public async Task Wheels_that_turn_one_way_only_say_what_to_check()
+    {
+        // A lock on the right and nothing past the start on the left: one side.
+        _store.Vehicle.MaxSteerAngle = 33;
+        var step = StepWithLocks(right: 32, left: 3.6);
         SetActive(step, true);
 
         await step.RunMaxAngleMeasurementAsync();
@@ -211,6 +235,59 @@ public class MaxSteeringAngleStepTests
         SetActive(step, false);
         Assert.That(_store.Vehicle.MaxSteerAngle, Is.EqualTo(33));
     }
+
+    [Test]
+    public async Task Slow_wheels_cut_off_on_the_way_back_are_told_so()
+    {
+        // The tester's block with its relief valve half a turn up (18 Nov 2026): start 2.3°,
+        // right 33.1°, left -0.1°. At 5°/s the right push ran out of time 30° out and the left
+        // one on the way back, at the start: "hardly left" alone reads as a fault on the left.
+        _store.Vehicle.MaxSteerAngle = 31;
+        var step = StepWithLocks(right: 36, left: 36, perReading: 0.5);
+        SetActive(step, true);
+
+        await step.RunMaxAngleMeasurementAsync();
+
+        Assert.That(step.PhaseResult, Does.StartWith(
+            "⚠ The wheels turned right but hardly left (start 0.0°, right 30.0°, left -0.5°). " +
+            "They were still turning when the 6 s for each side ran out. Max steer angle not changed."));
+        Assert.That(step.PhaseResult, Does.Contain("They keep turning, slowly"));
+        SetActive(step, false);
+        Assert.That(_store.Vehicle.MaxSteerAngle, Is.EqualTo(31));
+    }
+
+    [Test]
+    public async Task A_side_cut_off_by_the_time_is_not_taken_as_a_lock()
+    {
+        // 10°/s: the right lock (36°) is reached, the left push starts from it and its 6 s end
+        // at -25°, the wheels still turning. 25 read as the left lock, and 22 was saved.
+        _store.Vehicle.MaxSteerAngle = 33;
+        var step = StepWithLocks(right: 36, left: 36, perReading: 1);
+        SetActive(step, true);
+
+        await step.RunMaxAngleMeasurementAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(step.CalibrationCompleted, Is.False);
+            Assert.That(step.Phase, Is.EqualTo(MaxSteeringAnglePhase.WaitingToStart));
+            Assert.That(step.PhaseResult, Does.StartWith(
+                "Right max: 36.0\nLeft max: 25.0\n" +
+                "⚠ The wheels did not reach the lock in the test's time. " +
+                "They were still turning left when the 6 s for that side ran out. Max steer angle not changed.\n"));
+            Assert.That(step.PhaseResult, Does.Not.Contain("stopped short"));
+            Assert.That(step.PhaseResult, Does.Contain(MaxSteeringAngleStepViewModel.WhatToCheckHeader));
+        });
+        SetActive(step, false);
+        Assert.That(_store.Vehicle.MaxSteerAngle, Is.EqualTo(33), "a reading cut off on the way must not become the max steer angle");
+    }
+
+    [TestCase(false, false, "")]
+    [TestCase(true, false, " They were still turning right when the 6 s for that side ran out.")]
+    [TestCase(false, true, " They were still turning left when the 6 s for that side ran out.")]
+    [TestCase(true, true, " They were still turning when the 6 s for each side ran out.")]
+    public void StillTurningNote_cases(bool right, bool left, string expected) =>
+        Assert.That(MaxSteeringAngleStepViewModel.StillTurningNote(right, left), Is.EqualTo(expected));
 
     [Test]
     public async Task Locks_at_twenty_degrees_or_more_are_taken()
@@ -240,9 +317,9 @@ public class MaxSteeringAngleStepTests
 
     /// <summary>
     /// Wheels that run to <paramref name="right"/>° when steered right and to −<paramref name="left"/>°
-    /// when steered left, then stay there.
+    /// when steered left, <paramref name="perReading"/>° a reading (ten readings a second), then stay there.
     /// </summary>
-    private MaxSteeringAngleStepViewModel StepWithLocks(double right, double left)
+    private MaxSteeringAngleStepViewModel StepWithLocks(double right, double left, double perReading = 2)
     {
         var step = new MaxSteeringAngleStepViewModel(_configService, new AgOpenWeb.Services.Threading.InlineUiDispatcher(), _autoSteer);
         step.DelayFunc = (_, _) => Task.CompletedTask;
@@ -254,8 +331,8 @@ public class MaxSteeringAngleStepTests
         });
         step.ReadWasAngle = () =>
         {
-            // 2° a reading towards where the wheels stop.
-            angle += System.Math.Clamp(target - angle, -2, 2);
+            // So far a reading towards where the wheels stop.
+            angle += System.Math.Clamp(target - angle, -perReading, perReading);
             return angle;
         };
         return step;

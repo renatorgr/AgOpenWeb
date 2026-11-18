@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -77,6 +78,15 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
     /// line is steered with.
     /// </summary>
     internal const double ShortLockDeg = 20.0;
+
+    /// <summary>
+    /// A push that ran out of time with the wheels this much further on than a second before
+    /// was cut off on the way, not stopped: its last reading is no lock.
+    /// </summary>
+    internal const double StillTurningDeg = 1.0;
+
+    /// <summary>Where a push ended, and whether its time ran out with the wheels still turning.</summary>
+    private readonly record struct Push(double Angle, bool StillTurning);
 
     /// <summary>The line that starts the result's "what to check" part; the page folds it away.</summary>
     internal const string WhatToCheckHeader = "\nWhat to check:\n";
@@ -265,8 +275,7 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
             }
 
             Phase = MaxSteeringAnglePhase.MeasuringRight;
-            double? rightOrNull = await DriveToPlateauAsync(+CommandedFullLockDeg, token);
-            if (rightOrNull is not { } right)
+            if (await DriveToPlateauAsync(+CommandedFullLockDeg, token) is not { } rightPush)
             {
                 wrongWay = true;
                 Phase = MaxSteeringAnglePhase.WaitingToStart;
@@ -282,8 +291,7 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
             await DelayFunc(CenterReturnSettleMs, token);
 
             Phase = MaxSteeringAnglePhase.MeasuringLeft;
-            double? leftOrNull = await DriveToPlateauAsync(-CommandedFullLockDeg, token);
-            if (leftOrNull is not { } left)
+            if (await DriveToPlateauAsync(-CommandedFullLockDeg, token) is not { } leftPush)
             {
                 wrongWay = true;
                 Phase = MaxSteeringAnglePhase.WaitingToStart;
@@ -295,6 +303,10 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
 
             await EndFreeDriveAsync();
 
+            double right = rightPush.Angle, left = leftPush.Angle;
+            // A push cut off by its time with the wheels still on their way read no lock.
+            string cutOff = StillTurningNote(rightPush.StillTurning, leftPush.StillTurning);
+
             if (LockMovementError(startAngle, right, left) is { } error)
             {
                 // Nothing measured — don't complete and don't save (#170). Wheels that turned
@@ -302,21 +314,27 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
                 bool opposite = right - startAngle <= -MinLockMovementDeg && startAngle - left <= -MinLockMovementDeg;
                 Phase = MaxSteeringAnglePhase.WaitingToStart;
                 Progress = 0;
-                PhaseResult = WarningMark + error + " Max steer angle not changed." + (opposite ? "" : WhatToCheckHeader + WeakSteeringChecks);
+                PhaseResult = WarningMark + error + cutOff + " Max steer angle not changed." + (opposite ? "" : WhatToCheckHeader + WeakSteeringChecks);
                 return;
             }
 
-            if (Math.Min(Math.Abs(right), Math.Abs(left)) < ShortLockDeg)
+            if (cutOff.Length > 0 || Math.Min(Math.Abs(right), Math.Abs(left)) < ShortLockDeg)
             {
-                // Short of any lock: say so and what to check, and keep the setting.
+                // Short of any lock, or cut off on the way to one: say so and what to check, and
+                // keep the setting. A steering that needs more than the test's time from one lock
+                // to the other read the far side short (36° right, 25° left at 10°/s), and 90 % of
+                // that was saved.
                 Phase = MaxSteeringAnglePhase.WaitingToStart;
                 Progress = 0;
                 PhaseResult =
                     $"Right max: {Math.Abs(right):F1}\n" +
                     $"Left max: {Math.Abs(left):F1}\n" +
-                    WarningMark + "The wheels stopped short of the lock: most steering turns 30° or more each way. " +
-                    "Max steer angle not changed.\n" +
-                    "If yours really stops there, type it in AutoSteer, Steering Sensor, Max Steer Angle." +
+                    WarningMark + (cutOff.Length > 0
+                        ? "The wheels did not reach the lock in the test's time." + cutOff + " Max steer angle not changed.\n" +
+                          "The angle can be typed in AutoSteer, Steering Sensor, Max Steer Angle."
+                        : "The wheels stopped short of the lock: most steering turns 30° or more each way. " +
+                          "Max steer angle not changed.\n" +
+                          "If yours really stops there, type it in AutoSteer, Steering Sensor, Max Steer Angle.") +
                     WhatToCheckHeader + WeakSteeringChecks;
                 return;
             }
@@ -352,11 +370,11 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
     /// successive samples stays below <see cref="PlateauThresholdDeg"/>
     /// for <see cref="PlateauStableSamples"/> consecutive samples. If
     /// no plateau materialises within <see cref="PlateauTimeoutMs"/>
-    /// the last sample is returned — partial information beats no
-    /// information. Returns null, at once, when the wheels move <see cref="WrongWayLimitDeg"/>
-    /// the other way.
+    /// the last sample is returned, marked as still turning when the wheels moved on
+    /// <see cref="StillTurningDeg"/> or more in the last second. Returns null, at once, when the
+    /// wheels move <see cref="WrongWayLimitDeg"/> the other way.
     /// </summary>
-    private async Task<double?> DriveToPlateauAsync(double commandedAngleDeg, CancellationToken token)
+    private async Task<Push?> DriveToPlateauAsync(double commandedAngleDeg, CancellationToken token)
     {
         double start = CurrentWasAngle;
         AutoSteerService?.SetFreeDriveAngle(commandedAngleDeg);
@@ -364,6 +382,7 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
         double previous = start;
         int stableCount = 0;
         int elapsed = 0;
+        var lastSecond = new Queue<double>();
 
         while (elapsed < PlateauTimeoutMs)
         {
@@ -380,20 +399,41 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
             if (Math.Abs(sample - previous) < PlateauThresholdDeg)
             {
                 if (++stableCount >= PlateauStableSamples)
-                    return sample;
+                    return new Push(sample, StillTurning: false);
             }
             else
             {
                 stableCount = 0;
             }
             previous = sample;
+
+            lastSecond.Enqueue(sample);
+            if (lastSecond.Count > 1000 / PollIntervalMs + 1)
+                lastSecond.Dequeue();
         }
 
-        return previous;
+        bool stillTurning = lastSecond.Count > 0
+            && Math.Sign(commandedAngleDeg) * (previous - lastSecond.Peek()) >= StillTurningDeg;
+        return new Push(previous, stillTurning);
+    }
+
+    /// <summary>
+    /// The sentence (with its leading space) saying which push ran out of time with the wheels
+    /// still turning, or "" when both ended with the wheels stopped.
+    /// </summary>
+    internal static string StillTurningNote(bool right, bool left)
+    {
+        if (!right && !left)
+            return "";
+        int seconds = PlateauTimeoutMs / 1000;
+        return right && left
+            ? $" They were still turning when the {seconds} s for each side ran out."
+            : $" They were still turning {(right ? "right" : "left")} when the {seconds} s for that side ran out.";
     }
 
     /// <summary>
     /// Why the readings don't show the wheels reaching a lock each way, or null when they do.
+    /// The left reading is taken after the right one, so each is judged against the start.
     /// </summary>
     internal static string? LockMovementError(double start, double right, double left)
     {
@@ -402,11 +442,19 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
             return null;
         if (movedRight <= -MinLockMovementDeg && movedLeft <= -MinLockMovementDeg)
             return $"The wheels moved the opposite way (right {right:F1}°, left {left:F1}°) — check the WAS and motor direction.";
-        if (movedRight >= MinLockMovementDeg || movedLeft >= MinLockMovementDeg)
+        // One side only when the other reached a real angle. Wheels with too little push turn a
+        // few degrees either way of where the tyres rest, and the start is anywhere in that
+        // band, so one reading lands beside it: a tester's block read start 1.9°, right 7.7°,
+        // left 0.7° (18 Nov 2026) and "turned right but hardly left" sent the tester looking for a
+        // fault on one side, with the wheels 7° from one stop to the other.
+        if (Math.Max(movedRight, movedLeft) >= ShortLockDeg)
         {
-            string went = movedRight >= MinLockMovementDeg ? "right" : "left", stuck = went == "right" ? "left" : "right";
+            string went = movedRight >= movedLeft ? "right" : "left", stuck = went == "right" ? "left" : "right";
             return $"The wheels turned {went} but hardly {stuck} (start {start:F1}°, right {right:F1}°, left {left:F1}°).";
         }
+        double span = Math.Max(start, Math.Max(right, left)) - Math.Min(start, Math.Min(right, left));
+        if (span >= MinLockMovementDeg)
+            return $"The wheels moved only {span:F1}° in all: steered right they stopped at {right:F1}°, steered left at {left:F1}° (start {start:F1}°).";
         // Arming was checked before the test started, so the switch isn't the cause here.
         return $"The wheels didn't move (start {start:F1}°, right {right:F1}°, left {left:F1}°). " +
                "The module was steering: check the valve or motor, its power, and the WAS.";
