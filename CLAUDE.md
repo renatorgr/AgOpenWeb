@@ -819,7 +819,8 @@ and end with what to check (`WhatToCheckHeader`, `WeakSteeringChecks`: the AutoS
 turn at a time, never the tractor's own nor past the rated pressure; the hoses and LS line; a Keya: the engine
 running, the current trip (standing still the steering wheel is at its heaviest), a slipping mount; Max Limit within
 the coil's rating), which the page folds away (`data-fold="howto"` in `js/wizards.js`, as the
-tune step's measurements). The motor test's stalled reading points there too. A result line that starts with
+tune step's measurements) and sets out as a list (`wzHowTo`: one point a line, "• " a case, "– " a kind of steering,
+"1. " a step, "· " a point; as running text the tester could not find his own steering's part). The motor test's stalled reading points there too. A result line that starts with
 `WizardStepViewModel.WarningMark` ("⚠ ") is shown in an amber box (`wzResult`, `.wz-warn`): in the same font as the
 rest of the result, the tester read past it. Tests: `MaxSteeringAngleStepTests`. Fork only.
 

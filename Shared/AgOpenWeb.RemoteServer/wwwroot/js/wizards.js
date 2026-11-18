@@ -203,6 +203,24 @@ function wzResult(text) {
     flush();
   }
 }
+// "What to check", one point a line, set out as a list: "• " a case, "– " a kind of steering
+// (a valve block, a motor on the steering wheel), "1. " a step, "· " a point. As running text
+// the tester could not find his own steering's part.
+function wzHowTo(text) {
+  for (const el of wzContent.querySelectorAll('[data-live="howto"]')) {
+    if (el._wzText === text) continue;
+    el._wzText = text;
+    el.replaceChildren();
+    for (const line of text.split('\n')) {
+      if (!line) continue;
+      const lvl = line.startsWith('\u2022 ') ? 1 : line.startsWith('\u2013 ') ? 2 : /^(\d+\.|\u00b7) /.test(line) ? 3 : 0;
+      const d = document.createElement('div');
+      d.className = 'wz-hl' + lvl;
+      d.textContent = line;
+      el.append(d);
+    }
+  }
+}
 function renderWizard() {
   const w = wizard;
   if (!w) return;
@@ -245,7 +263,7 @@ function renderWizard() {
   let res = w.testResult || '';
   for (const [mark, key] of [['\nWhat to check:\n', 'howto'], ['\nMeasurements:\n', 'measured']]) {
     const cut = res.indexOf(mark);
-    live(key, cut < 0 ? '' : res.slice(cut + mark.length));
+    (key === 'howto' ? wzHowTo : t => live(key, t))(cut < 0 ? '' : res.slice(cut + mark.length));
     for (const el of wzContent.querySelectorAll('[data-fold="' + key + '"]')) el.style.display = cut < 0 ? 'none' : '';
     if (cut >= 0) res = res.slice(0, cut);
   }

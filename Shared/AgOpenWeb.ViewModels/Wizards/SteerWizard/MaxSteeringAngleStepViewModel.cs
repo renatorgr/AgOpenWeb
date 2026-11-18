@@ -83,27 +83,33 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
 
     /// <summary>
     /// What to check when the wheels don't reach a lock: the steering pushes too weakly (stops) or
-    /// gets too little oil or power (creeps). A hydraulic block's relief valve first, as it is the
-    /// usual cause on a new install and the steps are the operator's own.
+    /// gets too little oil or power (creeps), for each kind of steering. One line per point: the
+    /// page sets "• " (a case), "– " (a kind of steering), "1. " (a step) and "· " (a point) out
+    /// as a list (`wzHowTo`).
     /// </summary>
     internal const string WeakSteeringChecks =
         "Run the test again and watch the wheels.\n" +
         "• They stop before the lock and stay there: the steering pushes too weakly.\n" +
-        "A hydraulic valve block: its relief valve is set too low. With the engine running and the oil " +
-        "warm, loosen the lock nut of the relief valve on the AutoSteer block (never the tractor's own), " +
-        "turn its screw a quarter turn in (clockwise), tighten the nut and run this test. Repeat until the " +
-        "wheels reach both locks, never past the pressure on the block's plate or the steering pressure in " +
-        "the tractor's manual (a gauge on the block's test port shows it). If turning it changes nothing, " +
-        "check the hoses: pressure to P, return to T, a cylinder line to each of A and B, and on a " +
-        "load-sensing block its LS line to the steering's own LS line.\n" +
-        "A motor on the steering wheel (a Keya): the tractor's own steering does the pushing, so run the " +
-        "engine. If the module lets go as the wheels stop (its page shows a current kickout), raise the " +
-        "current trip (AutoSteer, Turn Sensors) a little: standing still, the steering wheel is at its " +
-        "heaviest. If the motor turns but the steering wheel doesn't, its mount or adapter slips; if the " +
-        "module restarts, its power supply drops when the motor pulls.\n" +
-        "• They keep turning, slowly: too little oil or power reaches them. On a valve block, check that " +
-        "the lock valves click when the test starts. Then raise Max Limit (AutoSteer, Gain / PWM) a " +
-        "little: on a valve never past what its coil takes (its data sheet); on a Keya it is the motor's speed.";
+        "– Hydraulic valve block: its relief valve is set too low.\n" +
+        "1. Engine running, oil warm.\n" +
+        "2. Loosen the lock nut of the relief valve on the AutoSteer block, never the tractor's own.\n" +
+        "3. Turn its screw a quarter turn in (clockwise), tighten the nut and run this test.\n" +
+        "4. Repeat until the wheels reach both locks. Never go past the pressure on the block's plate or " +
+        "the steering pressure in the tractor's manual (a gauge on the block's test port shows it).\n" +
+        "5. Nothing changes: check the hoses. Pressure to P, return to T, a cylinder line to each of A and B; " +
+        "on a load-sensing block, its LS line to the steering's own LS line.\n" +
+        "– Motor on the steering wheel (a Keya):\n" +
+        "· Run the engine: the tractor's own steering does the pushing.\n" +
+        "· The module lets go as the wheels stop (its page shows a current kickout): raise the current trip " +
+        "(AutoSteer, Turn Sensors) a little. Standing still, the steering wheel is at its heaviest.\n" +
+        "· The motor turns but the steering wheel doesn't: its mount or adapter slips.\n" +
+        "· The module restarts: its power supply drops when the motor pulls.\n" +
+        "• They keep turning, slowly: too little oil or power reaches them.\n" +
+        "– Hydraulic valve block:\n" +
+        "· Check that the lock valves click when the test starts.\n" +
+        "· Raise Max Limit (AutoSteer, Gain / PWM) a little, never past what the valve coil takes (its data sheet).\n" +
+        "– Motor on the steering wheel (a Keya):\n" +
+        "· Raise Max Limit (AutoSteer, Gain / PWM) a little: for a Keya it is the motor's speed.";
 
     internal const string WrongWayText = WarningMark +
         "The wheels turned the wrong way, so the test stopped and left them where they are. " +

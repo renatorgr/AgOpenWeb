@@ -189,6 +189,8 @@ public class MaxSteeringAngleStepTests
             Assert.That(step.PhaseResult, Does.Contain(MaxSteeringAngleStepViewModel.WhatToCheckHeader + "Run the test again"));
             Assert.That(step.PhaseResult, Does.Contain("relief valve").And.Contain("never the tractor's own"));
             Assert.That(step.PhaseResult, Does.Contain("(a Keya)").And.Contain("current trip"), "a motor on the steering wheel stops short too");
+            Assert.That(step.PhaseResult, Does.Contain("\n– Hydraulic valve block").And.Contain("\n– Motor on the steering wheel").And.Contain("\n1. "),
+                "one point a line, each kind of steering its own, so the page can set it out as a list");
         });
         SetActive(step, false);
         Assert.That(_store.Vehicle.MaxSteerAngle, Is.EqualTo(33), "a short reading must not become the max steer angle");
