@@ -304,6 +304,10 @@ public sealed class JobRun : IAsyncDisposable
     public static bool IsTurnWarning(string text) =>
         text.Contains("U-turn missed", StringComparison.Ordinal) || text.Contains("No U-turn can be made", StringComparison.Ordinal);
     public readonly List<string> Problems = new();
+    /// <summary>The job's evidence (the whole GPS log, every U-turn's path), for the dump a job
+    /// with a finding leaves beside the report; null when none is kept.</summary>
+    public Evidence? Ev;
+    private int _fixesSent;
     public readonly List<string> Notes = new();
     /// <summary>"End of field reached" said by AgOpenWeb, then a U-turn it made after all: when and where.</summary>
     public readonly List<string> EarlyEnds = new();
@@ -345,7 +349,14 @@ public sealed class JobRun : IAsyncDisposable
     // line; not after a lap's corner or a lap change by hand, which keep their own rules): after a U-turn hands
     // back, or AutoSteer is engaged, the implement is still settling onto its pass for a few metres
     // (a trailed or front-mounted one longer, a manual turn landing in the crop at an angle).
-    private readonly Dictionary<int, List<int>> _runStarts = new();
+    // The bins recorded in the first SettlingM metres the tool travelled of a settling stretch, and
+    // those recorded otherwise: a bin is settling only when every visit to it was (a pass driven
+    // again is not excused near an earlier start), and the metres are the tool's own, so a closed
+    // pass's seam and the tail behind a stretch's start need no rule of their own.
+    private readonly Dictionary<int, HashSet<int>> _settlingBins = new(), _firmBins = new();
+    private bool _stretchSettles;
+    private double _stretchM;
+    private (double E, double N) _stretchLast;
     private int _recPass = int.MinValue;
     private bool _settling = true;   // the engage, or a U-turn since the last edges: the next stretch starts settling
     /// <summary>Metres from where a pass's edges begin within which the implement is still settling
@@ -565,6 +576,8 @@ public sealed class JobRun : IAsyncDisposable
 
     public void SendFix()
     {
+        // Before the app's recorder (3000 fixes) has gone round.
+        if (++_fixesSent % 2000 == 0) Ev?.PullGpsLog();
         var (ae, an) = Truth.Antenna;
         var w = Wgs(ae, an);
         var sys = Spec.Sys;
@@ -815,6 +828,13 @@ public sealed class JobRun : IAsyncDisposable
                     turn = new TurnRecord { Index = ++TurnsStarted, PassBefore = lastPassSeen, StartSeconds = Seconds, Left = yt!.IsTurnLeft, HeadingAtStart = Truth.Heading, UAtStart = U((Truth.E, Truth.N)), TangentAtStart = Frame.TangentHeading((Truth.E, Truth.N)), TruthPassBefore = TruthPass() };
                     saidAtTurnStart = Math.Max(0, Said.Count - 6);
                     Turns.Add(turn);
+                    Ev?.Add("turns", new
+                    {
+                        turn = turn.Index, passBefore = turn.PassBefore, seconds = Math.Round(Seconds, 1), left = turn.Left,
+                        tractor = new { e = Math.Round(Truth.E, 3), n = Math.Round(Truth.N, 3), heading = Math.Round(Truth.Heading, 4) },
+                        path = AgOpenWeb.Services.Logging.GpsDataRecorder.Instance.GetLastTurnPath()?
+                            .Select(p => new[] { Math.Round(p.Easting, 3), Math.Round(p.Northing, 3), Math.Round(p.Heading, 4) }).ToArray(),
+                    });
                     InTurn = true;
                 }
                 if (executing && turn != null)
@@ -1194,13 +1214,14 @@ public sealed class JobRun : IAsyncDisposable
         {
             if (!_passEdges.TryGetValue(Pass, out var d)) _passEdges[Pass] = d = new SortedDictionary<int, (double, double)>();
             int bin = (int)Math.Floor(Vv((tc.E, tc.N)));
-            if (_recPass != Pass && _settling)
-            {
-                if (!_runStarts.TryGetValue(Pass, out var starts)) _runStarts[Pass] = starts = new List<int>();
-                starts.Add(bin);
-            }
+            if (_recPass != Pass) { _stretchSettles = _settling; _stretchM = 0; }
+            else _stretchM += Math.Sqrt((tc.E - _stretchLast.E) * (tc.E - _stretchLast.E) + (tc.N - _stretchLast.N) * (tc.N - _stretchLast.N));
+            _stretchLast = (tc.E, tc.N);
             _recPass = Pass;
             _settling = false;
+            var marks = _stretchSettles && _stretchM < SettlingM ? _settlingBins : _firmBins;
+            if (!marks.TryGetValue(Pass, out var set)) marks[Pass] = set = new HashSet<int>();
+            set.Add(bin);
             if (d.TryGetValue(bin, out var old)) d[bin] = (Math.Min(old.L, uL), Math.Max(old.R, uR));
             else d[bin] = (uL, uR);
         }
@@ -1434,10 +1455,12 @@ public sealed class JobRun : IAsyncDisposable
         return a;
     }
 
-    /// <summary>Is this bin of a pass within <see cref="SettlingM"/> of where a stretch of its
-    /// edges began (the implement settling onto the pass after a turn or the engage)?</summary>
+    /// <summary>Was this bin of a pass recorded only within <see cref="SettlingM"/> of where a stretch
+    /// of its edges began, by the tool's travel (the implement settling onto the pass after a turn
+    /// or the engage)?</summary>
     private bool Settling(int pass, int bin) =>
-        _runStarts.TryGetValue(pass, out var starts) && starts.Any(b => Math.Abs(bin - b) < SettlingM);
+        _settlingBins.TryGetValue(pass, out var settling) && settling.Contains(bin)
+        && !(_firmBins.TryGetValue(pass, out var firm) && firm.Contains(bin));
 
     /// <summary>Are two passes, next to each other in the order across the field, neighbours? A pass
     /// with no edges recorded (its only stretch in the cultivated area under a U-turn's start, J6's
