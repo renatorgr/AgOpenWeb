@@ -7,6 +7,7 @@ using System.Windows.Input;
 using AgOpenWeb.ViewModels.Wizards;
 using AgOpenWeb.ViewModels.Wizards.SteerWizard;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
 
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -130,10 +131,22 @@ public partial class MainViewModel
         }
         if (IsSteerWizardOpen)
         {
+            // A tuning run's values, found and not taken yet, go with the wizard: in the log,
+            // so a bug report has them.
+            if (SteerWizardViewModel?.CurrentStep is TuneSteeringStepViewModel { Stage: TuneStage.Result, TuneCompleted: true } tune)
+                _logger.LogWarning(
+                    "[Steer wizard] Closed with the tuning values found and not taken: Minimum To Move {Min}, Max Limit {Max}, Proportional Gain {Kp}",
+                    tune.FoundMinPwm, tune.FoundMaxPwm, tune.FoundKp);
             EndRemoteSteerWizard();
             StatusMessage = "Steer wizard closed: " + offReason;
             off.Add("the steer wizard");
         }
+        // In the log, and so in a bug report: why the screen lost control was written nowhere, and
+        // a wizard that closed by itself or AutoSteer that went off could not be explained (a
+        // tester's steer wizard, closed under his page with a tuning run's values on it).
+        _logger.Log(involuntary ? LogLevel.Warning : LogLevel.Information,
+            "[Control] The screen in control is gone ({Reason}); turned off: {Off}",
+            offReason, off.Count > 0 ? JoinAnd(off) : "nothing");
         // The screen that comes back (or the next one to take control) is told why, once:
         // otherwise AutoSteer and the sections are just off, and the reason only in the log.
         if (involuntary && off.Count > 0)

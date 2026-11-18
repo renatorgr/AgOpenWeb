@@ -132,6 +132,57 @@ public class SteerWizardSafetyTests
     }
 
     [Test]
+    public void Browser_lost_says_in_the_log_why_and_what_it_closed()
+    {
+        // A tester's tractor: the steer wizard closed under his page (the screen had stopped
+        // answering for a moment) and the bug report's log said nothing of it.
+        var log = new ListLogger();
+        var b = new MainViewModelBuilder { ConfigurationService = Config(), Logger = log };
+        var vm = b.Build();
+        vm.StartRemoteSteerWizard();
+
+        vm.OnBrowserControlEnded("browser control ended: presence lost (deadman)", involuntary: true);
+
+        Assert.That(log.Lines, Has.Some.EqualTo(
+            "[Control] The screen in control is gone (browser control ended: presence lost (deadman)); turned off: the steer wizard"));
+    }
+
+    [Test]
+    public void Browser_lost_with_tuning_values_not_taken_puts_them_in_the_log()
+    {
+        // The values of a tuning run were on the screen, not taken yet, when the wizard was
+        // closed: they are gone with it, so the log keeps them.
+        var log = new ListLogger();
+        var b = new MainViewModelBuilder { ConfigurationService = Config(), Logger = log };
+        var vm = b.Build();
+        vm.StartRemoteSteerWizard();
+        var w = vm.SteerWizardViewModel!;
+        var tune = w.Steps.OfType<TuneSteeringStepViewModel>().Single();
+        w.GoToStep(w.Steps.IndexOf(tune));
+        void Set(string property, object value) => typeof(TuneSteeringStepViewModel).GetProperty(property)!.SetValue(tune, value);
+        Set(nameof(TuneSteeringStepViewModel.FoundMinPwm), 42);
+        Set(nameof(TuneSteeringStepViewModel.FoundMaxPwm), 91);
+        Set(nameof(TuneSteeringStepViewModel.FoundKp), 10);
+        Set(nameof(TuneSteeringStepViewModel.TuneCompleted), true);
+        Set(nameof(TuneSteeringStepViewModel.Stage), TuneStage.Result);
+
+        vm.OnBrowserControlEnded("browser control ended: client disconnected", involuntary: true);
+
+        Assert.That(log.Lines, Has.Some.EqualTo(
+            "[Steer wizard] Closed with the tuning values found and not taken: Minimum To Move 42, Max Limit 91, Proportional Gain 10"));
+        Assert.That(vm.IsSteerWizardOpen, Is.False);
+    }
+
+    private sealed class ListLogger : Microsoft.Extensions.Logging.ILogger<MainViewModel>
+    {
+        public List<string> Lines { get; } = new();
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter) => Lines.Add(formatter(state, exception));
+    }
+
+    [Test]
     public void Browser_lost_turns_AutoSteer_off()
     {
         var b = new MainViewModelBuilder();
