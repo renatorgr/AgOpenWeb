@@ -18,6 +18,12 @@ public abstract class WizardStepViewModel : ObservableObject
     /// <summary>
     /// The title displayed at the top of the step.
     /// </summary>
+    /// <summary>
+    /// A result line that starts with this is a warning (a test that did not give what it should):
+    /// the page shows it in a box of its own, not as plain text where it is missed.
+    /// </summary>
+    internal const string WarningMark = "⚠ ";
+
     public abstract string Title { get; }
 
     /// <summary>

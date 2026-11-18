@@ -101,7 +101,7 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
         "click when the test starts, then raise Max Limit (AutoSteer, Gain / PWM) a little, never past " +
         "what the valve coil or the motor takes (its data sheet).";
 
-    internal const string WrongWayText =
+    internal const string WrongWayText = WarningMark +
         "The wheels turned the wrong way, so the test stopped and left them where they are. " +
         "Run the motor test first (Back): it finds the motor direction.";
 
@@ -292,7 +292,7 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
                 bool opposite = right - startAngle <= -MinLockMovementDeg && startAngle - left <= -MinLockMovementDeg;
                 Phase = MaxSteeringAnglePhase.WaitingToStart;
                 Progress = 0;
-                PhaseResult = error + " Max steer angle not changed." + (opposite ? "" : WhatToCheckHeader + WeakSteeringChecks);
+                PhaseResult = WarningMark + error + " Max steer angle not changed." + (opposite ? "" : WhatToCheckHeader + WeakSteeringChecks);
                 return;
             }
 
@@ -304,8 +304,9 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
                 PhaseResult =
                     $"Right max: {Math.Abs(right):F1}\n" +
                     $"Left max: {Math.Abs(left):F1}\n" +
-                    "The wheels stopped short of the lock: most steering turns 30° or more each way. " +
-                    "Max steer angle not changed. If yours really stops there, type it in AutoSteer, Steering Sensor, Max Steer Angle." +
+                    WarningMark + "The wheels stopped short of the lock: most steering turns 30° or more each way. " +
+                    "Max steer angle not changed.\n" +
+                    "If yours really stops there, type it in AutoSteer, Steering Sensor, Max Steer Angle." +
                     WhatToCheckHeader + WeakSteeringChecks;
                 return;
             }

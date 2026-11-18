@@ -485,6 +485,11 @@ input.as-valbox { width: 80px; box-sizing: content-box; }
 .wz-tunemore summary { cursor: pointer; padding: 8px 0; text-align: center; }
 .wz-tunemore .wz-desc { margin: 0; font-size: 12px; }
 .wz-tunemore .wz-howto { font-size: 13px; text-align: left; }
+/* A test that did not give what it should: its warning stands out from the result's text. */
+.wz-warn { margin: 6px 0; padding: 10px 14px; border-left: 5px solid #f59e0b; border-radius: 6px;
+  background: rgba(245,158,11,0.16); color: var(--text); font: 700 15px system-ui, sans-serif; text-align: left; }
+.wz-warn::before { content: '\26A0'; color: #f59e0b; margin-right: 8px; }
+.wz-tunemore[data-fold="howto"] > summary { color: #f59e0b; font: 700 15px system-ui, sans-serif; }
 .wz-circle { min-height: 0; margin: 4px 0 16px; gap: 10px; }
 .wz-btnrow { display: flex; gap: 12px; }
 .wz-validation { color: #f87171; font: 600 14px system-ui, sans-serif; text-align: center; padding: 6px 26px; }

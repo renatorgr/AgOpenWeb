@@ -184,7 +184,8 @@ public class MaxSteeringAngleStepTests
             Assert.That(step.CalibrationCompleted, Is.False);
             Assert.That(step.Phase, Is.EqualTo(MaxSteeringAnglePhase.WaitingToStart));
             Assert.That(step.PhaseResult, Does.StartWith("Right max: 14.0\nLeft max: 12.0\n"));
-            Assert.That(step.PhaseResult, Does.Contain("stopped short of the lock").And.Contain("not changed"));
+            Assert.That(step.PhaseResult, Does.Contain("\n⚠ The wheels stopped short of the lock").And.Contain("not changed"),
+                "the warning is a line of its own that the page shows in a box");
             Assert.That(step.PhaseResult, Does.Contain(MaxSteeringAngleStepViewModel.WhatToCheckHeader + "Run the test again"));
             Assert.That(step.PhaseResult, Does.Contain("relief valve").And.Contain("never the tractor's own"));
         });
@@ -202,7 +203,7 @@ public class MaxSteeringAngleStepTests
 
         await step.RunMaxAngleMeasurementAsync();
 
-        Assert.That(step.PhaseResult, Does.Contain("turned right but hardly left").And.Contain("not changed"));
+        Assert.That(step.PhaseResult, Does.StartWith("⚠ The wheels turned right but hardly left").And.Contain("not changed"));
         Assert.That(step.PhaseResult, Does.Contain(MaxSteeringAngleStepViewModel.WhatToCheckHeader));
         SetActive(step, false);
         Assert.That(_store.Vehicle.MaxSteerAngle, Is.EqualTo(33));

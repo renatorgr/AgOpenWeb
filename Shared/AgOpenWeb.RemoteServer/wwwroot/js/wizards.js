@@ -183,6 +183,26 @@ function buildWizardContent(w) {
     default: return head;
   }
 }
+// A test's result. A line that starts with "⚠ " is a warning (the test did not give what it
+// should): it gets a box of its own, as plain text it was read past.
+function wzResult(text) {
+  for (const el of wzContent.querySelectorAll('[data-live="result"]')) {
+    if (el._wzText === text) continue;
+    el._wzText = text;
+    el.replaceChildren();
+    let plain = [];
+    const flush = () => { if (plain.length) el.append(plain.join('\n')); plain = []; };
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('\u26a0 ')) { plain.push(line); continue; }
+      flush();
+      const box = document.createElement('div');
+      box.className = 'wz-warn';
+      box.textContent = line.slice(2);
+      el.append(box);
+    }
+    flush();
+  }
+}
 function renderWizard() {
   const w = wizard;
   if (!w) return;
@@ -229,7 +249,7 @@ function renderWizard() {
     for (const el of wzContent.querySelectorAll('[data-fold="' + key + '"]')) el.style.display = cut < 0 ? 'none' : '';
     if (cut >= 0) res = res.slice(0, cut);
   }
-  live('result', res);
+  wzResult(res);
   live('fix', w.fixLabel || (w.statusGps || '—')); live('speed', fmtUnit(w.statusSpeed || 0, 'kmh', 1));
   live('rollzero', wzVal('roll.rollZero').toFixed(2)); live('wasoffset', wzVal('autosteer.wasOffset') | 0);
   // Roll gauge (roll-calibration step): rotate the bar by the live roll, like the map.

@@ -818,8 +818,9 @@ the Max Steer Angle every line was steered with. Such a result, and wheels that 
 and end with what to check (`WhatToCheckHeader`, `WeakSteeringChecks`: the AutoSteer block's relief valve a quarter
 turn at a time, never the tractor's own nor past the rated pressure; the hoses and LS line; a motor that slips; Max
 Limit within the coil's or motor's rating), which the page folds away (`data-fold="howto"` in `js/wizards.js`, as the
-tune step's measurements). The motor test's stalled reading points there too. Tests: `MaxSteeringAngleStepTests`.
-Fork only.
+tune step's measurements). The motor test's stalled reading points there too. A result line that starts with
+`WizardStepViewModel.WarningMark` ("⚠ ") is shown in an amber box (`wzResult`, `.wz-warn`): in the same font as the
+rest of the result, the tester read past it. Tests: `MaxSteeringAngleStepTests`. Fork only.
 
 ## Tuning on the line
 The AutoSteer page's *Tune on Line* panel (Full view, beside Smart WAS; `LineTuneViewModel` over

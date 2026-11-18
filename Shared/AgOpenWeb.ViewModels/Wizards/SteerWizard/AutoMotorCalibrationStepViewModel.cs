@@ -388,8 +388,8 @@ public class AutoMotorCalibrationStepViewModel : SwitchGatedWizardStep
                         $"Motor direction: {(DetectedInvertMotor ? "Inverted" : "Normal")}\n" +
                         $"Minimum PWM: {DetectedMinPwm}" +
                         (minPwmStalled
-                            ? $"\nNot saved: half the maximum PWM or more means the wheels stalled. Minimum PWM stays {autoSteerConfig.MinPwm}. Free the wheels and run the test again." +
-                              "\nOn a hydraulic valve block, a relief valve set too low stalls them too: the Maximum Steering Angle step shows what to check."
+                            ? $"\n{WarningMark}Not saved: half the maximum PWM or more means the wheels stalled. Minimum PWM stays {autoSteerConfig.MinPwm}. Free the wheels and run the test again." +
+                              " On a hydraulic valve block, a relief valve set too low stalls them too: the Maximum Steering Angle step shows what to check."
                             : "");
                     TestDone = true; // the ramp ran to its end: the Finish page won't list it
                     Phase = CalibrationPhase.RampResult;
