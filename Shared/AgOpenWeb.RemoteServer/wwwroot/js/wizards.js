@@ -14,8 +14,57 @@ const wzContent = document.getElementById('wz-content');
 // flip, which onUnitsChanged forces by clearing this).
 let _wzKey = '';
 let _wzStage = '', _wzStageAt = 0;   // the stage of a step with stages, and when it changed
-function openSteerWizard() { _wzKey = ''; wizard = null; transport.send('wizard.open'); wzOverlay.classList.add('open'); }
-function wzClose(send) { if (send) transport.send('wizard.cancel'); wzOverlay.classList.remove('open'); wizard = null; _wzKey = ''; }
+function openSteerWizard() { _wzKey = ''; wizard = null; wzGoneReset(); transport.send('wizard.open'); wzOverlay.classList.add('open'); }
+function wzClose(send) { if (send && !_wzGone) transport.send('wizard.cancel'); wzOverlay.classList.remove('open'); wizard = null; _wzKey = ''; wzGoneReset(); }
+// The host closes the wizard when the screen in control goes away (its link quiet for 1.5 s, its
+// socket dropped), as it takes AutoSteer off: nothing may go on with no screen. This page can come
+// back from that with the wizard still on it (the window covered by another, a tablet that slept),
+// and then every button did nothing: the host had no wizard left to take them (a tester's tractor,
+// the values of a tuning run on the screen and no way to take them or to leave the step). While
+// its wizard is open the host sends the Wizard frame with every Tick, so Ticks that arrive with no
+// Wizard frame mean the wizard is gone: the page says so, shows the values found and not taken,
+// and leaves Close as the only button. Counted in Ticks, not in time: a page that was held up gets
+// its frames late, in order.
+const WZ_GONE_TICKS = 20;
+let _wzQuietTicks = 0, _wzGone = false;
+function wzHeard() { _wzQuietTicks = 0; }                    // a Wizard frame (js/core.js)
+function wzHostTick() {                                      // a Tick (js/core.js)
+  if (_wzGone || !wzOverlay.classList.contains('open')) return;
+  if (++_wzQuietTicks >= WZ_GONE_TICKS) wzShowGone();
+}
+function wzGoneReset() {
+  _wzQuietTicks = 0;
+  if (!_wzGone) return;
+  _wzGone = false;
+  wzOverlay.classList.remove('gone');
+  asSetText('wz-cancel', tr('Cancel'));
+}
+function wzShowGone() {
+  const w = wizard; // the last frame: what is on the screen
+  _wzGone = true; _wzKey = '';
+  wzOverlay.classList.add('gone');
+  asSetText('wz-cancel', tr('Close'));
+  asSetText('wz-validation', '');
+  const el = (cls, text) => { const d = document.createElement('div'); d.className = cls; d.textContent = text; return d; };
+  wzContent.replaceChildren();
+  if (!w) {
+    // Never opened: the host took no wizard.open from this screen.
+    wzContent.append(el('wz-h1', tr('The steer wizard did not open')),
+      el('wz-warn', tr('The program did not open the steer wizard for this screen. Only the screen in control can open it (Operator in the status bar).')),
+      el('wz-desc', tr('Close this and open the wizard again.')));
+    return;
+  }
+  wzContent.append(el('wz-h1', tr('The steer wizard was closed')),
+    el('wz-warn', tr('The program closed the steer wizard: this screen stopped answering it for a moment (another window in front of it, the tablet asleep, the link lost).') +
+      (w.testActive ? ' ' + tr('The test that was running was stopped.') : '')));
+  // A tuning run's values, found and not taken: the lines before "Not in use yet".
+  const res = w.stepKind === 'tune' && (w.testStage | 0) === 3 ? (w.testResult || '') : '';
+  const cut = res.indexOf('\nNot in use yet');
+  if (cut > 0)
+    wzContent.append(el('wz-desc wz-gonefound', tr('Found by the last test, and not in use:') + '\n' + res.slice(0, cut) + '\n' +
+      tr('Type them on the AutoSteer page (Gain / PWM), or run the step again.')));
+  wzContent.append(el('wz-desc', tr('What the finished steps set is saved. Close this and open the wizard again to go on.')));
+}
 document.getElementById('wz-cancel').addEventListener('pointerdown', e => { e.stopPropagation(); wzClose(true); });
 document.getElementById('wz-skip').addEventListener('pointerdown', e => { e.stopPropagation(); transport.send('wizard.skip'); });
 document.getElementById('wz-back').addEventListener('pointerdown', e => { e.stopPropagation(); transport.send('wizard.back'); });
@@ -223,7 +272,7 @@ function wzHowTo(text) {
 }
 function renderWizard() {
   const w = wizard;
-  if (!w) return;
+  if (!w || _wzGone) return;
   // Chrome (every frame).
   asSetText('wz-step', tr('Step {n} of {total}', { n: w.stepIndex + 1, total: w.totalSteps }));
   document.getElementById('wz-progressbar').style.width = (w.totalSteps ? (w.stepIndex + 1) / w.totalSteps * 100 : 0) + '%';

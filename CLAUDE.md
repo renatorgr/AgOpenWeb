@@ -826,6 +826,21 @@ tune step's measurements) and sets out as a list (`wzHowTo`: one point a line, "
 `WizardStepViewModel.WarningMark` ("⚠ ") is shown in an amber box (`wzResult`, `.wz-warn`): in the same font as the
 rest of the result, the tester read past it. Tests: `MaxSteeringAngleStepTests`. Fork only.
 
+## Steer wizard: closed by the host
+When the screen in control goes away (its link quiet for the deadman's 1.5 s, its socket dropped) the host closes
+the steer wizard (`MainViewModel.OnBrowserControlEnded`), and a page that comes back from that can still have the
+wizard on it: the window covered by another, a tablet that slept. Its buttons then did nothing, the host having no
+wizard to take them (a tester's tractor, 18 Nov 2026: a tuning run's values on the screen, no way to take them or to
+leave the step). While its wizard is open the host sends the Wizard frame with every Tick, so the page counts Ticks
+with no Wizard frame (`wzHostTick`, `WZ_GONE_TICKS` = 20, in `js/wizards.js`; counted in frames, not time, since a
+page held up gets its frames late and in order) and then shows that the wizard was closed and why, a tuning run's
+values found and not taken (the lines of the last result before "Not in use yet"), and Close as the only button
+(`wzShowGone`, `.wz-overlay.gone`); the same when the host never opened it (a screen without control). The host
+writes why control ended and what it turned off in the log (`[Control] The screen in control is gone (...); turned
+off: ...`), and a tuning run's values lost with the wizard (`[Steer wizard] Closed with the tuning values found and
+not taken: ...`): a bug report had neither. Tests: `SteerWizardSafetyTests` (`Browser_lost_says_in_the_log...`,
+`Browser_lost_with_tuning_values_not_taken...`). Fork only.
+
 ## Tuning on the line
 The AutoSteer page's *Tune on Line* panel (Full view, beside Smart WAS; `LineTuneViewModel` over
 `LineTuneRun` in `ViewModels/LineTune`; fork only) tunes the guidance gains with AutoSteer on a straight
