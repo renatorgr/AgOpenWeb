@@ -811,6 +811,21 @@ steering (`FakeSteering`); the tuning stories of the steer wizard harness (`Tune
 tractor 17 Nov 2026 (a load-sensing valve block, standing still): Minimum To Move and the gain looked right; the Max
 Limit rules above came from it.
 
+## Steer wizard: wheels that stop short of a lock
+The *Maximum Steering Angle* step (`MaxSteeringAngleStepViewModel`) takes no reading under 20° either side as the
+lock (`ShortLockDeg`): most steering turns 30° or more each way, and wheels that stop that short ran out of push or
+turned too slowly for its plateau test (under 2°/s). On a tester's load-sensing block with its relief valve still at
+the lowest (17 Nov 2026) the wheels stopped at 12° right and 3.6° left standing, 36° by hand, and 90 % of 3.6 became
+the Max Steer Angle every line was steered with. Such a result, and wheels that turn one way only, keep the setting
+and end with what to check (`WhatToCheckHeader`, `WeakSteeringChecks`: the AutoSteer block's relief valve a quarter
+turn at a time, never the tractor's own nor past the rated pressure; the hoses and LS line; a Keya: the engine
+running, the current trip (standing still the steering wheel is at its heaviest), a slipping mount; Max Limit within
+the coil's rating), which the page folds away (`data-fold="howto"` in `js/wizards.js`, as the
+tune step's measurements) and sets out as a list (`wzHowTo`: one point a line, "• " a case, "– " a kind of steering,
+"1. " a step, "· " a point; as running text the tester could not find his own steering's part). The motor test's stalled reading points there too. A result line that starts with
+`WizardStepViewModel.WarningMark` ("⚠ ") is shown in an amber box (`wzResult`, `.wz-warn`): in the same font as the
+rest of the result, the tester read past it. Tests: `MaxSteeringAngleStepTests`. Fork only.
+
 ## Tuning on the line
 The AutoSteer page's *Tune on Line* panel (Full view, beside Smart WAS; `LineTuneViewModel` over
 `LineTuneRun` in `ViewModels/LineTune`; fork only) tunes the guidance gains with AutoSteer on a straight

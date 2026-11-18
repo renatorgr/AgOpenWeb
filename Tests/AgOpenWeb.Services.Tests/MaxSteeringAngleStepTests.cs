@@ -91,6 +91,7 @@ public class MaxSteeringAngleStepTests
         Assert.That(step.MaxSteerAngle, Is.EqualTo(27));
         Assert.That(step.CalibrationCompleted, Is.True);
         Assert.That(step.Phase, Is.EqualTo(MaxSteeringAnglePhase.Complete));
+        Assert.That(step.PhaseResult, Does.Not.Contain("What to check"));
     }
 
     [Test]
@@ -153,6 +154,8 @@ public class MaxSteeringAngleStepTests
     }
 
     [TestCase(0, 35, -30, null)]
+    [TestCase(0, 12.4, -3.6, "turned right but hardly left")]
+    [TestCase(0, 2, -25, "turned left but hardly right")]
     [TestCase(7.2, 7.2, 7.2, "didn't move")]
     [TestCase(0, 3, -3, "didn't move")]
     [TestCase(0, -30, 30, "opposite way")]
@@ -161,6 +164,101 @@ public class MaxSteeringAngleStepTests
         var err = MaxSteeringAngleStepViewModel.LockMovementError(start, right, left);
         if (expected == null) Assert.That(err, Is.Null);
         else Assert.That(err, Does.Contain(expected));
+    }
+
+    // ── Wheels that stop short of a lock (a hydraulic block's relief set low) ──
+
+    [Test]
+    public async Task Wheels_that_stop_short_of_a_lock_say_what_to_check_and_nothing_is_saved()
+    {
+        // A load-sensing block with its relief valve still at the lowest: standing, the wheels
+        // stopped at 14° right and 12° left; turned by hand they reach 36°.
+        _store.Vehicle.MaxSteerAngle = 33;
+        var step = StepWithLocks(right: 14, left: 12);
+        SetActive(step, true);
+
+        await step.RunMaxAngleMeasurementAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(step.CalibrationCompleted, Is.False);
+            Assert.That(step.Phase, Is.EqualTo(MaxSteeringAnglePhase.WaitingToStart));
+            Assert.That(step.PhaseResult, Does.StartWith("Right max: 14.0\nLeft max: 12.0\n"));
+            Assert.That(step.PhaseResult, Does.Contain("\n⚠ The wheels stopped short of the lock").And.Contain("not changed"),
+                "the warning is a line of its own that the page shows in a box");
+            Assert.That(step.PhaseResult, Does.Contain(MaxSteeringAngleStepViewModel.WhatToCheckHeader + "Run the test again"));
+            Assert.That(step.PhaseResult, Does.Contain("relief valve").And.Contain("never the tractor's own"));
+            Assert.That(step.PhaseResult, Does.Contain("(a Keya)").And.Contain("current trip"), "a motor on the steering wheel stops short too");
+            Assert.That(step.PhaseResult, Does.Contain("\n– Hydraulic valve block").And.Contain("\n– Motor on the steering wheel").And.Contain("\n1. "),
+                "one point a line, each kind of steering its own, so the page can set it out as a list");
+        });
+        SetActive(step, false);
+        Assert.That(_store.Vehicle.MaxSteerAngle, Is.EqualTo(33), "a short reading must not become the max steer angle");
+    }
+
+    [Test]
+    public async Task Wheels_that_turn_one_way_only_say_what_to_check()
+    {
+        // The tester's first run: 12.4° right, 3.6° left (a 3 would have been saved before #170's check).
+        _store.Vehicle.MaxSteerAngle = 33;
+        var step = StepWithLocks(right: 12.4, left: 3.6);
+        SetActive(step, true);
+
+        await step.RunMaxAngleMeasurementAsync();
+
+        Assert.That(step.PhaseResult, Does.StartWith("⚠ The wheels turned right but hardly left").And.Contain("not changed"));
+        Assert.That(step.PhaseResult, Does.Contain(MaxSteeringAngleStepViewModel.WhatToCheckHeader));
+        SetActive(step, false);
+        Assert.That(_store.Vehicle.MaxSteerAngle, Is.EqualTo(33));
+    }
+
+    [Test]
+    public async Task Locks_at_twenty_degrees_or_more_are_taken()
+    {
+        var step = StepWithLocks(right: 21, left: 20);
+        SetActive(step, true);
+
+        await step.RunMaxAngleMeasurementAsync();
+
+        Assert.That(step.Phase, Is.EqualTo(MaxSteeringAnglePhase.Complete));
+        Assert.That(step.MaxSteerAngle, Is.EqualTo(18));
+        Assert.That(step.PhaseResult, Does.Not.Contain("What to check"));
+        SetActive(step, false);
+        Assert.That(_store.Vehicle.MaxSteerAngle, Is.EqualTo(18));
+    }
+
+    [Test]
+    public async Task Wheels_that_turn_the_wrong_way_get_no_hydraulic_checks()
+    {
+        // The sensor or the motor wiring, not the push: the motor test is what to run.
+        var step = StepWithLocks(right: -30, left: -30);
+
+        await step.RunMaxAngleMeasurementAsync();
+
+        Assert.That(step.PhaseResult, Is.EqualTo(MaxSteeringAngleStepViewModel.WrongWayText));
+    }
+
+    /// <summary>
+    /// Wheels that run to <paramref name="right"/>° when steered right and to −<paramref name="left"/>°
+    /// when steered left, then stay there.
+    /// </summary>
+    private MaxSteeringAngleStepViewModel StepWithLocks(double right, double left)
+    {
+        var step = new MaxSteeringAngleStepViewModel(_configService, new AgOpenWeb.Services.Threading.InlineUiDispatcher(), _autoSteer);
+        step.DelayFunc = (_, _) => Task.CompletedTask;
+        double angle = 0, target = 0;
+        _autoSteer.When(a => a.SetFreeDriveAngle(Arg.Any<double>())).Do(c =>
+        {
+            double cmd = c.Arg<double>();
+            target = cmd > 0 ? right : cmd < 0 ? -left : 0;
+        });
+        step.ReadWasAngle = () =>
+        {
+            // 2° a reading towards where the wheels stop.
+            angle += System.Math.Clamp(target - angle, -2, 2);
+            return angle;
+        };
+        return step;
     }
 
     [Test]

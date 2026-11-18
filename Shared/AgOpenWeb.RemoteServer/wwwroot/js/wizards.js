@@ -127,8 +127,10 @@ function buildWizardContent(w) {
       return head + wzLive(tr('Live Steer Angle'), 'angle') + '<div class="wz-center"><button class="wz-testbtn" data-act="StartTest">Start Motor Test</button>' +
         '<div class="wz-hint" data-live="hint"></div><div class="wz-desc" data-live="phase"></div><div class="wz-desc" data-live="result"></div></div>';
     case 'maxangle':
+      // Wheels that stop short of a lock: the result ends with what to check, folded away.
       return head + wzLive(tr('Live Steer Angle'), 'angle') + '<div class="wz-center"><button class="wz-testbtn" data-act="StartTest">Start Max Angle Test</button>' +
-        '<div class="wz-hint" data-live="hint"></div><div class="wz-desc" data-live="phase"></div><div class="wz-desc" data-live="result"></div></div>';
+        '<div class="wz-hint" data-live="hint"></div><div class="wz-desc" data-live="phase"></div><div class="wz-desc" data-live="result"></div>' +
+        '<details class="wz-tunemore" data-fold="howto"><summary>' + esc(tr('What to check')) + '</summary><div class="wz-desc wz-howto" data-live="howto"></div></details></div>';
     case 'cpd':
       return head + '<div class="wz-testtop"><div class="wz-prereq"><div class="ttl">Prerequisites</div><div class="it">GPS: <b data-live="fix">—</b> (RTK Fixed recommended)</div><div class="it">Speed: <b data-live="speed">—</b> ' + esc(tr('(aim for ~{speed})', { speed: fmtUnit(5, 'kmh', 0) })) + '</div></div>' +
         wzLive(tr('Live Steer Angle'), 'angle') + '</div>' + wzCircleTest() +
@@ -154,7 +156,7 @@ function buildWizardContent(w) {
         '<button class="wz-testbtn alt" data-act="Discard" data-stage="3">Keep the old values</button>' +
         '<button class="wz-testbtn stop" data-act="StopTest" data-stage="1 2">Stop</button>' +
         '</div><div class="wz-hint" data-live="hint"></div><div class="wz-desc wz-phase" data-live="phase"></div><div class="wz-desc wz-tuneresult" data-live="result"></div>' +
-        '<details class="wz-tunemore" data-more><summary>Measurements</summary><div class="wz-desc" data-live="measured"></div></details></div>' +
+        '<details class="wz-tunemore" data-fold="measured"><summary>Measurements</summary><div class="wz-desc" data-live="measured"></div></details></div>' +
         '<div class="wz-rows" data-stage="0 2 3 4">' +
         wzNum(tr('Minimum To Move'), null, 'autosteer.minPwm', '1', '') +
         wzNum(tr('Max Limit'), null, 'autosteer.maxPwm', '1', '') +
@@ -179,6 +181,44 @@ function buildWizardContent(w) {
       // The result line names the tests not run (empty when all were).
       return head + '<div class="wz-desc" data-live="result"></div><div class="wz-center"><div class="wz-okcard"><div class="ok">OK</div><div class="t">Ready to finish</div><div class="s">Click Finish to save the settings and close the wizard</div></div></div>';
     default: return head;
+  }
+}
+// A test's result. A line that starts with "⚠ " is a warning (the test did not give what it
+// should): it gets a box of its own, as plain text it was read past.
+function wzResult(text) {
+  for (const el of wzContent.querySelectorAll('[data-live="result"]')) {
+    if (el._wzText === text) continue;
+    el._wzText = text;
+    el.replaceChildren();
+    let plain = [];
+    const flush = () => { if (plain.length) el.append(plain.join('\n')); plain = []; };
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('\u26a0 ')) { plain.push(line); continue; }
+      flush();
+      const box = document.createElement('div');
+      box.className = 'wz-warn';
+      box.textContent = line.slice(2);
+      el.append(box);
+    }
+    flush();
+  }
+}
+// "What to check", one point a line, set out as a list: "• " a case, "– " a kind of steering
+// (a valve block, a motor on the steering wheel), "1. " a step, "· " a point. As running text
+// the tester could not find his own steering's part.
+function wzHowTo(text) {
+  for (const el of wzContent.querySelectorAll('[data-live="howto"]')) {
+    if (el._wzText === text) continue;
+    el._wzText = text;
+    el.replaceChildren();
+    for (const line of text.split('\n')) {
+      if (!line) continue;
+      const lvl = line.startsWith('\u2022 ') ? 1 : line.startsWith('\u2013 ') ? 2 : /^(\d+\.|\u00b7) /.test(line) ? 3 : 0;
+      const d = document.createElement('div');
+      d.className = 'wz-hl' + lvl;
+      d.textContent = line;
+      el.append(d);
+    }
   }
 }
 function renderWizard() {
@@ -218,10 +258,16 @@ function renderWizard() {
   const live = (k, v) => { for (const el of wzContent.querySelectorAll('[data-live="' + k + '"]')) el.textContent = v; };
   live('angle', (w.liveAngle || 0).toFixed(1) + '°'); live('roll', (w.liveRoll || 0).toFixed(2) + '°');
   live('error', (w.liveError || 0).toFixed(1)); live('phase', w.testPhase || '');
-  // A result may end with its measurements, after a line of their own: the page folds them away.
-  const res = w.testResult || '', more = '\nMeasurements:\n', cut = res.indexOf(more);
-  live('result', cut < 0 ? res : res.slice(0, cut)); live('measured', cut < 0 ? '' : res.slice(cut + more.length));
-  for (const el of wzContent.querySelectorAll('[data-more]')) el.style.display = cut < 0 ? 'none' : '';
+  // A result may end with its measurements, or with what to check, after a line of their own (in
+  // that order when both): the page folds them away.
+  let res = w.testResult || '';
+  for (const [mark, key] of [['\nWhat to check:\n', 'howto'], ['\nMeasurements:\n', 'measured']]) {
+    const cut = res.indexOf(mark);
+    (key === 'howto' ? wzHowTo : t => live(key, t))(cut < 0 ? '' : res.slice(cut + mark.length));
+    for (const el of wzContent.querySelectorAll('[data-fold="' + key + '"]')) el.style.display = cut < 0 ? 'none' : '';
+    if (cut >= 0) res = res.slice(0, cut);
+  }
+  wzResult(res);
   live('fix', w.fixLabel || (w.statusGps || '—')); live('speed', fmtUnit(w.statusSpeed || 0, 'kmh', 1));
   live('rollzero', wzVal('roll.rollZero').toFixed(2)); live('wasoffset', wzVal('autosteer.wasOffset') | 0);
   // Roll gauge (roll-calibration step): rotate the bar by the live roll, like the map.

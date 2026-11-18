@@ -157,7 +157,8 @@ public class AutoMotorCalKpRampTests
 
         Assert.That(step.DetectedMinPwm, Is.EqualTo(170));
         Assert.That(_store.AutoSteer.MinPwm, Is.EqualTo(25), "a stalled reading is not the setting");
-        Assert.That(step.PhaseResult, Does.Contain("Not saved"));
+        Assert.That(step.PhaseResult, Does.Contain("\n⚠ Not saved"));
+        Assert.That(step.PhaseResult, Does.Contain("relief valve set too low"), "a hydraulic block stalled by its relief valve reads the same");
     }
 
     private static void SetActive(AgOpenWeb.ViewModels.Wizards.WizardStepViewModel step, bool active) =>
