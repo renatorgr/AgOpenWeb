@@ -32,16 +32,34 @@ public partial class MainViewModel
         switch (State.UI.ActiveDialog)
         {
             case DialogType.Confirmation:
+                OperatorLog?.DialogAnswer(AnswerText(confirm, checkboxChecked));
                 ConfirmationDialogCheckboxChecked = checkboxChecked;
                 var cmd = confirm ? ConfirmConfirmationDialogCommand : CancelConfirmationDialogCommand;
                 cmd?.Execute(null);
                 return true;
             case DialogType.Error:
+                OperatorLog?.DialogAnswer("OK");
                 DismissErrorDialogCommand?.Execute(null);
                 return true;
             default:
                 return false;
         }
+    }
+
+    /// <summary>Writes each dialog and the answer given to the log as a "[Screen]" line, for a
+    /// bug report (set by the web wiring; fork only). Null: nothing is written.</summary>
+    public AgOpenWeb.Services.Logging.OperatorMessageLog? OperatorLog { get; set; }
+
+    /// <summary>The button pressed on a confirmation dialog, as the operator read it, and the
+    /// box's state when it had one.</summary>
+    private string AnswerText(bool confirm, bool checkboxChecked)
+    {
+        string button = confirm
+            ? (string.IsNullOrEmpty(ConfirmationDialogConfirmLabel) ? "Confirm" : ConfirmationDialogConfirmLabel)
+            : (string.IsNullOrEmpty(ConfirmationDialogCancelLabel) ? "Cancel" : ConfirmationDialogCancelLabel);
+        return string.IsNullOrEmpty(ConfirmationDialogCheckboxLabel)
+            ? button
+            : button + (checkboxChecked ? " (ticked: " : " (not ticked: ") + ConfirmationDialogCheckboxLabel + ")";
     }
 
     /// <summary>Raised with the message whenever <see cref="ReportFailure"/> is called; the

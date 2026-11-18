@@ -53,7 +53,14 @@ public sealed class RemoteServerHost
     /// device plays the .wav. No-op before the server has started or with no clients.
     /// </summary>
     public void PlaySound(AgOpenWeb.Services.Interfaces.SoundEffect effect)
-        => _ = _ws?.BroadcastAsync(WireCodec.EncodeSound((byte)effect));
+    {
+        OperatorLog?.Sound(effect);
+        _ = _ws?.BroadcastAsync(WireCodec.EncodeSound((byte)effect));
+    }
+
+    /// <summary>Writes each toast, alarm sound and module message sent to the screens to the
+    /// log, for a bug report's logs.txt (fork only). Null: nothing is written.</summary>
+    public AgOpenWeb.Services.Logging.OperatorMessageLog? OperatorLog { get; set; }
 
     /// <summary>Send the Config frame again on the next tick even if nothing changed, so a
     /// box holding a refused value shows the one that was kept.</summary>
@@ -62,7 +69,10 @@ public sealed class RemoteServerHost
     /// <summary>Broadcast a one-shot notification (a refusal or failure, #109) to every
     /// connected client.</summary>
     public void ShowToast(string message)
-        => _ = _ws?.BroadcastAsync(WireCodec.EncodeToast(message));
+    {
+        OperatorLog?.Toast(message);
+        _ = _ws?.BroadcastAsync(WireCodec.EncodeToast(message));
+    }
 
     /// <summary>List the Import folder for the pickers, in the background (<c>import.scan</c>);
     /// a new listing goes out in the next FieldOps frame.</summary>
@@ -70,7 +80,10 @@ public sealed class RemoteServerHost
 
     /// <summary>Broadcast a module hardware message (PGN 221, #110).</summary>
     public void ShowHardwareMessage(string text, int seconds, bool warning)
-        => _ = _ws?.BroadcastAsync(WireCodec.EncodeHardwareMessage(text, seconds, warning));
+    {
+        OperatorLog?.ModuleMessage(text, warning);
+        _ = _ws?.BroadcastAsync(WireCodec.EncodeHardwareMessage(text, seconds, warning));
+    }
 
     /// <summary>The VT card's frames for a client that just connected: its link state, the
     /// pictures and the latest screen. Empty when the build has no terminal.</summary>

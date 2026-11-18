@@ -3542,6 +3542,7 @@ public partial class MainViewModel : ObservableObject
         _confirmationDialogCheckboxCallback = null;
         _previousDialogBeforeConfirmation = State.UI.ActiveDialog;
         PromptSeq++;
+        OperatorLog?.Dialog(title, message);
         State.UI.ShowDialog(Models.State.DialogType.Confirmation);
     }
 
@@ -3569,6 +3570,7 @@ public partial class MainViewModel : ObservableObject
         _confirmationDialogCheckboxCallback = null;
         _previousDialogBeforeConfirmation = State.UI.ActiveDialog;
         PromptSeq++;
+        OperatorLog?.Dialog(title, message);
         State.UI.ShowDialog(Models.State.DialogType.Confirmation);
     }
 
@@ -3594,6 +3596,7 @@ public partial class MainViewModel : ObservableObject
         _confirmationDialogCheckboxCallback = onConfirm;
         _previousDialogBeforeConfirmation = State.UI.ActiveDialog;
         PromptSeq++;
+        OperatorLog?.Dialog(title, message);
         State.UI.ShowDialog(Models.State.DialogType.Confirmation);
     }
 
@@ -3622,6 +3625,7 @@ public partial class MainViewModel : ObservableObject
         ErrorDialogTitle = title;
         ErrorDialogMessage = message;
         PromptSeq++;
+        OperatorLog?.Dialog(title, message);
         State.UI.ShowDialog(Models.State.DialogType.Error);
     }
 
