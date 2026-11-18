@@ -484,6 +484,7 @@ input.as-valbox { width: 80px; box-sizing: content-box; }
 .wz-tunemore { max-width: 560px; color: var(--text-2); font: 400 13px system-ui, sans-serif; }
 .wz-tunemore summary { cursor: pointer; padding: 8px 0; text-align: center; }
 .wz-tunemore .wz-desc { margin: 0; font-size: 12px; }
+.wz-tunemore .wz-howto { font-size: 13px; text-align: left; }
 .wz-circle { min-height: 0; margin: 4px 0 16px; gap: 10px; }
 .wz-btnrow { display: flex; gap: 12px; }
 .wz-validation { color: #f87171; font: 600 14px system-ui, sans-serif; text-align: center; padding: 6px 26px; }

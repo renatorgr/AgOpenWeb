@@ -127,8 +127,10 @@ function buildWizardContent(w) {
       return head + wzLive(tr('Live Steer Angle'), 'angle') + '<div class="wz-center"><button class="wz-testbtn" data-act="StartTest">Start Motor Test</button>' +
         '<div class="wz-hint" data-live="hint"></div><div class="wz-desc" data-live="phase"></div><div class="wz-desc" data-live="result"></div></div>';
     case 'maxangle':
+      // Wheels that stop short of a lock: the result ends with what to check, folded away.
       return head + wzLive(tr('Live Steer Angle'), 'angle') + '<div class="wz-center"><button class="wz-testbtn" data-act="StartTest">Start Max Angle Test</button>' +
-        '<div class="wz-hint" data-live="hint"></div><div class="wz-desc" data-live="phase"></div><div class="wz-desc" data-live="result"></div></div>';
+        '<div class="wz-hint" data-live="hint"></div><div class="wz-desc" data-live="phase"></div><div class="wz-desc" data-live="result"></div>' +
+        '<details class="wz-tunemore" data-fold="howto"><summary>' + esc(tr('What to check')) + '</summary><div class="wz-desc wz-howto" data-live="howto"></div></details></div>';
     case 'cpd':
       return head + '<div class="wz-testtop"><div class="wz-prereq"><div class="ttl">Prerequisites</div><div class="it">GPS: <b data-live="fix">—</b> (RTK Fixed recommended)</div><div class="it">Speed: <b data-live="speed">—</b> ' + esc(tr('(aim for ~{speed})', { speed: fmtUnit(5, 'kmh', 0) })) + '</div></div>' +
         wzLive(tr('Live Steer Angle'), 'angle') + '</div>' + wzCircleTest() +
@@ -154,7 +156,7 @@ function buildWizardContent(w) {
         '<button class="wz-testbtn alt" data-act="Discard" data-stage="3">Keep the old values</button>' +
         '<button class="wz-testbtn stop" data-act="StopTest" data-stage="1 2">Stop</button>' +
         '</div><div class="wz-hint" data-live="hint"></div><div class="wz-desc wz-phase" data-live="phase"></div><div class="wz-desc wz-tuneresult" data-live="result"></div>' +
-        '<details class="wz-tunemore" data-more><summary>Measurements</summary><div class="wz-desc" data-live="measured"></div></details></div>' +
+        '<details class="wz-tunemore" data-fold="measured"><summary>Measurements</summary><div class="wz-desc" data-live="measured"></div></details></div>' +
         '<div class="wz-rows" data-stage="0 2 3 4">' +
         wzNum(tr('Minimum To Move'), null, 'autosteer.minPwm', '1', '') +
         wzNum(tr('Max Limit'), null, 'autosteer.maxPwm', '1', '') +
@@ -218,10 +220,16 @@ function renderWizard() {
   const live = (k, v) => { for (const el of wzContent.querySelectorAll('[data-live="' + k + '"]')) el.textContent = v; };
   live('angle', (w.liveAngle || 0).toFixed(1) + '°'); live('roll', (w.liveRoll || 0).toFixed(2) + '°');
   live('error', (w.liveError || 0).toFixed(1)); live('phase', w.testPhase || '');
-  // A result may end with its measurements, after a line of their own: the page folds them away.
-  const res = w.testResult || '', more = '\nMeasurements:\n', cut = res.indexOf(more);
-  live('result', cut < 0 ? res : res.slice(0, cut)); live('measured', cut < 0 ? '' : res.slice(cut + more.length));
-  for (const el of wzContent.querySelectorAll('[data-more]')) el.style.display = cut < 0 ? 'none' : '';
+  // A result may end with its measurements, or with what to check, after a line of their own (in
+  // that order when both): the page folds them away.
+  let res = w.testResult || '';
+  for (const [mark, key] of [['\nWhat to check:\n', 'howto'], ['\nMeasurements:\n', 'measured']]) {
+    const cut = res.indexOf(mark);
+    live(key, cut < 0 ? '' : res.slice(cut + mark.length));
+    for (const el of wzContent.querySelectorAll('[data-fold="' + key + '"]')) el.style.display = cut < 0 ? 'none' : '';
+    if (cut >= 0) res = res.slice(0, cut);
+  }
+  live('result', res);
   live('fix', w.fixLabel || (w.statusGps || '—')); live('speed', fmtUnit(w.statusSpeed || 0, 'kmh', 1));
   live('rollzero', wzVal('roll.rollZero').toFixed(2)); live('wasoffset', wzVal('autosteer.wasOffset') | 0);
   // Roll gauge (roll-calibration step): rotate the bar by the live roll, like the map.

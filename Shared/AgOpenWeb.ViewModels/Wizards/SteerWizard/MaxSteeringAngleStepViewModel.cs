@@ -69,6 +69,38 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
     /// </summary>
     internal const double WrongWayLimitDeg = 3.0;
 
+    /// <summary>
+    /// A lock reading under this on either side is not taken as the lock: most steering turns
+    /// 30° or more each way, and wheels that stop this short ran out of push (a hydraulic block's
+    /// relief valve set low: a tester's tractor read 12° standing, 36° by hand) or turned too
+    /// slowly for the plateau test. Saved, 90 % of it would be the Max Steer Angle that every
+    /// line is steered with.
+    /// </summary>
+    internal const double ShortLockDeg = 20.0;
+
+    /// <summary>The line that starts the result's "what to check" part; the page folds it away.</summary>
+    internal const string WhatToCheckHeader = "\nWhat to check:\n";
+
+    /// <summary>
+    /// What to check when the wheels don't reach a lock: the steering pushes too weakly (stops) or
+    /// gets too little oil or power (creeps). A hydraulic block's relief valve first, as it is the
+    /// usual cause on a new install and the steps are the operator's own.
+    /// </summary>
+    internal const string WeakSteeringChecks =
+        "Run the test again and watch the wheels.\n" +
+        "• They stop before the lock and stay there: the steering pushes too weakly.\n" +
+        "On a hydraulic valve block its relief valve is set too low. With the engine running and the oil " +
+        "warm, loosen the lock nut of the relief valve on the AutoSteer block (never the tractor's own), " +
+        "turn its screw a quarter turn in (clockwise), tighten the nut and run this test. Repeat until the " +
+        "wheels reach both locks, never past the pressure on the block's plate or the steering pressure in " +
+        "the tractor's manual (a gauge on the block's test port shows it). If turning it changes nothing, " +
+        "check the hoses: pressure to P, return to T, a cylinder line to each of A and B, and on a " +
+        "load-sensing block its LS line to the steering's own LS line.\n" +
+        "A motor on the steering wheel: it slips on the wheel, or its power supply drops when it pulls.\n" +
+        "• They keep turning, slowly: too little oil or power reaches them. Check that the lock valves " +
+        "click when the test starts, then raise Max Limit (AutoSteer, Gain / PWM) a little, never past " +
+        "what the valve coil or the motor takes (its data sheet).";
+
     internal const string WrongWayText =
         "The wheels turned the wrong way, so the test stopped and left them where they are. " +
         "Run the motor test first (Back): it finds the motor direction.";
@@ -255,10 +287,26 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
 
             if (LockMovementError(startAngle, right, left) is { } error)
             {
-                // Nothing measured — don't complete and don't save (#170).
+                // Nothing measured — don't complete and don't save (#170). Wheels that turned
+                // the wrong way both times are the sensor or the motor wiring, not the push.
+                bool opposite = right - startAngle <= -MinLockMovementDeg && startAngle - left <= -MinLockMovementDeg;
                 Phase = MaxSteeringAnglePhase.WaitingToStart;
                 Progress = 0;
-                PhaseResult = error + " Max steer angle not changed.";
+                PhaseResult = error + " Max steer angle not changed." + (opposite ? "" : WhatToCheckHeader + WeakSteeringChecks);
+                return;
+            }
+
+            if (Math.Min(Math.Abs(right), Math.Abs(left)) < ShortLockDeg)
+            {
+                // Short of any lock: say so and what to check, and keep the setting.
+                Phase = MaxSteeringAnglePhase.WaitingToStart;
+                Progress = 0;
+                PhaseResult =
+                    $"Right max: {Math.Abs(right):F1}\n" +
+                    $"Left max: {Math.Abs(left):F1}\n" +
+                    "The wheels stopped short of the lock: most steering turns 30° or more each way. " +
+                    "Max steer angle not changed. If yours really stops there, type it in AutoSteer, Steering Sensor, Max Steer Angle." +
+                    WhatToCheckHeader + WeakSteeringChecks;
                 return;
             }
             DetectedMaxAngleRight = Math.Abs(right);
@@ -343,6 +391,11 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
             return null;
         if (movedRight <= -MinLockMovementDeg && movedLeft <= -MinLockMovementDeg)
             return $"The wheels moved the opposite way (right {right:F1}°, left {left:F1}°) — check the WAS and motor direction.";
+        if (movedRight >= MinLockMovementDeg || movedLeft >= MinLockMovementDeg)
+        {
+            string went = movedRight >= MinLockMovementDeg ? "right" : "left", stuck = went == "right" ? "left" : "right";
+            return $"The wheels turned {went} but hardly {stuck} (start {start:F1}°, right {right:F1}°, left {left:F1}°).";
+        }
         // Arming was checked before the test started, so the switch isn't the cause here.
         return $"The wheels didn't move (start {start:F1}°, right {right:F1}°, left {left:F1}°). " +
                "The module was steering: check the valve or motor, its power, and the WAS.";
