@@ -157,6 +157,13 @@ installs at AgOpenGPS's 1.0 s on / 0.5 s off (`ToolConfig.DefaultLookAheadOn/Off
 assumes a sprayer's valves take; saved profiles keep their own.
 The control loop sends the PGNs at 100 Hz, PGN 229 every tick whatever the section count (the
 ISOBUS task controller reads sections from 229 only).
+A section is "all inside" the fence without the edge tests only when its centre is in a 50 m cell
+with no edge in it or in the eight around it and the cell's centre inside (`BoundaryPolygon`'s
+`DeepCells`, worked out with the index). The bounding box moved in 50 m was used before: a notch
+in the fence, or the missing corner of an L-shaped field, is deep inside the box, so with *Off
+outside boundary* off and no headland the sections stayed on outside the field (a tester's field,
+the simulator steered by hand across a 60 m notch: 464 m² sprayed outside). Tests:
+`SectionInFenceNotchTests` (Models), `SectionsOffInFenceNotchTests`. Fork only.
 
 ### The simulator never steers the module
 The steer module stays on the network while the simulator runs. While the simulator is the chosen GPS

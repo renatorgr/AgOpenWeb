@@ -32,6 +32,10 @@ public class BoundaryPolygon
     // moving points in place.
     private const double GRID_CELL_SIZE = 50.0; // meters per cell
 
+    // The deep cells are worked out for a polygon up to this many cells (5 x 5 km); a larger one
+    // (a point typed 50 km away) gets none, and every section there takes the full test.
+    private const int MaxDeepCells = 10_000;
+
     private sealed class Index
     {
         public required List<BoundaryPoint> Source { get; init; }
@@ -44,6 +48,7 @@ public class BoundaryPolygon
         public required Dictionary<(int, int), List<int>> Grid { get; init; } // cell -> segment indices
         public required int GridOffsetE { get; init; } // makes grid indices non-negative
         public required int GridOffsetN { get; init; }
+        public required HashSet<(int, int)> DeepCells { get; init; } // cells wholly inside, no edge in them or around them
         public required long Outline { get; init; } // every corner, to the centimetre (OutlineStamp)
     }
 
@@ -113,11 +118,40 @@ public class BoundaryPolygon
             }
         }
 
+        // The cells deep inside the polygon: no edge in the cell or in the eight around it, and
+        // its centre inside. Nothing of the outline is then within a cell's size of any point of
+        // it, so a section centred there, up to a cell long each side, is all inside: the quick
+        // answer of GetSegmentBoundaryStatus. Not the bounding box moved in: a notch in the
+        // fence, or the missing corner of an L, is deep inside the box and outside the field.
+        var slabs = PolygonSlabIndex.Build(points);
+        var deep = new HashSet<(int, int)>();
+        if (slabs != null)
+        {
+            int cellsE = (int)Math.Floor(maxE / GRID_CELL_SIZE) - offsetE + 1;
+            int cellsN = (int)Math.Floor(maxN / GRID_CELL_SIZE) - offsetN + 1;
+            if ((long)cellsE * cellsN <= MaxDeepCells)
+            {
+                for (int ce = 1; ce < cellsE - 1; ce++)
+                {
+                    for (int cn = 1; cn < cellsN - 1; cn++)
+                    {
+                        bool edgeNear = false;
+                        for (int de = -1; de <= 1 && !edgeNear; de++)
+                            for (int dn = -1; dn <= 1 && !edgeNear; dn++)
+                                edgeNear = grid.ContainsKey((ce + de, cn + dn));
+                        if (!edgeNear && slabs.Contains((ce + offsetE + 0.5) * GRID_CELL_SIZE, (cn + offsetN + 0.5) * GRID_CELL_SIZE))
+                            deep.Add((ce, cn));
+                    }
+                }
+            }
+        }
+
         return new Index
         {
             Source = points,
             Count = points.Count,
-            Slabs = PolygonSlabIndex.Build(points),
+            Slabs = slabs,
+            DeepCells = deep,
             MinEasting = minE, MaxEasting = maxE, MinNorthing = minN, MaxNorthing = maxN,
             Grid = grid, GridOffsetE = offsetE, GridOffsetN = offsetN,
             Outline = outline,
@@ -175,13 +209,6 @@ public class BoundaryPolygon
             }
         }
     }
-
-    /// <summary>
-    /// Check if point is definitely inside the bounding box with margin (potential fast accept)
-    /// </summary>
-    private static bool IsDeepInsideBounds(Index index, double easting, double northing, double margin) =>
-        easting > index.MinEasting + margin && easting < index.MaxEasting - margin &&
-        northing > index.MinNorthing + margin && northing < index.MaxNorthing - margin;
 
     /// <summary>
     /// What the tractor does at this inner boundary when a pass meets it (an outer boundary
@@ -346,11 +373,14 @@ public class BoundaryPolygon
         if (Points.Count < 3)
             return BoundaryResult.FullyInside; // No boundary = always inside
 
-        // FAST PATH: If section center is deep inside bounding box (50m+ from any edge),
-        // skip expensive polygon intersection tests - we're definitely fully inside
-        const double DEEP_INSIDE_MARGIN = 50.0; // meters from bounding box edge
+        // FAST PATH: the section's centre is in a cell deep inside the polygon (no edge within a
+        // cell's size of it), so the whole section is inside: skip the intersection tests. The
+        // bounding box moved in 50 m was used here, and a section in a notch of the fence was
+        // answered "inside": the sections stayed on outside the field.
         var index = Current();
-        if (IsDeepInsideBounds(index, sectionCenter.Easting, sectionCenter.Northing, DEEP_INSIDE_MARGIN + halfWidth))
+        if (halfWidth <= GRID_CELL_SIZE && index.DeepCells.Contains((
+                (int)Math.Floor(sectionCenter.Easting / GRID_CELL_SIZE) - index.GridOffsetE,
+                (int)Math.Floor(sectionCenter.Northing / GRID_CELL_SIZE) - index.GridOffsetN)))
         {
             return BoundaryResult.FullyInside;
         }
