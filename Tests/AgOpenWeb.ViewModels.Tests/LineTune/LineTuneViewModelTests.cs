@@ -104,6 +104,21 @@ public class LineTuneViewModelTests
     }
 
     [Test]
+    public void What_the_run_did_goes_to_the_log()
+    {
+        // Nothing of a run was in a bug report: what it did had to be read from the positions.
+        var log = new List<string>();
+        _vm.Log = log.Add;
+        _vm.StartCommand.Execute(null);
+        Run(900);
+        Assert.That(_vm.Stage, Is.EqualTo(LineTuneStage.Result));
+        Assert.That(log[0], Does.StartWith("Started: Pure Pursuit, Steer Response 4.0"));
+        Assert.That(log.Any(l => l.StartsWith("Ended (Result):")), Is.True);
+        _vm.AcceptCommand.Execute(null);
+        Assert.That(log[^1], Does.StartWith("In use now"));
+    }
+
+    [Test]
     public void Keep_the_old_values_changes_nothing()
     {
         _vm.StartCommand.Execute(null);
