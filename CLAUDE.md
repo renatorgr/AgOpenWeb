@@ -811,6 +811,16 @@ steering (`FakeSteering`); the tuning stories of the steer wizard harness (`Tune
 tractor 17 Nov 2026 (a load-sensing valve block, standing still): Minimum To Move and the gain looked right; the Max
 Limit rules above came from it.
 
+**What the tests found goes to the log** (`SwitchGatedWizardStep.Log` / `LogLines`, wired by
+`MainViewModel.NewSteerWizard`; fork only): the three steps that move the wheels (motor test, maximum steering
+angle, tune steering) write every result or refusal the page shows as `[Steer wizard] <step title>: ...` lines, a
+line of the page a log line, so the tune's `Measurements:` (first movement per side, wheel speed per PWM, each gain
+tried) are in a Bug Report Dump. Tune steering also logs its start (wheel angle, speed, the three values in use,
+the stop the tractor has) and, when a run is stopped, what it had measured by then; the max angle test logs the
+start angle with the two pushes. Before this a dump showed only `[Steer settings]` changes, and reading a tractor
+run (18 Nov 2026) needed a screenshot of each result and the tester's typed readings. A new result text of these
+steps needs nothing more: it is logged when `PhaseResult` changes.
+
 ## Steer wizard: wheels that stop short of a lock
 The *Maximum Steering Angle* step (`MaxSteeringAngleStepViewModel`) takes no reading under 20° either side as the
 lock (`ShortLockDeg`): most steering turns 30° or more each way, and wheels that stop that short ran out of push or

@@ -89,6 +89,23 @@ public class AutoMotorCalKpRampTests
     }
 
     [Test]
+    public async Task MotorCal_Result_GoesToTheLog()
+    {
+        // A bug report holds the log and no screenshot of the result: what the page says must be in it.
+        var log = new System.Collections.Generic.List<string>();
+        var step = CreateStep(kp => kp < 40 ? ModuleAt(angleDeg: 0.0, pwm: (byte)(kp / 2)) : ModuleAt(angleDeg: 2.0, pwm: 25));
+        step.Log = log.Add;
+
+        await step.RunKpRampAsync();
+
+        Assert.That(log, Is.EqualTo(new[]
+        {
+            "Auto Motor Calibration: Motor direction: Normal",
+            "Auto Motor Calibration: Minimum PWM: 25",
+        }));
+    }
+
+    [Test]
     public async Task MotorCal_WrongDirectionFirstTry_FlipsInvertAndSucceeds()
     {
         // First-pass simulator: motor turns the wrong way at Kp>=40.

@@ -25,10 +25,13 @@ public class SteerWizardTuneTests
     private IConfigurationService _configService = null!;
     private IAutoSteerService _autoSteer = null!;
     private FakeSteering _fake = null!;
+    /// <summary>What the step wrote to the log, a line an entry.</summary>
+    private List<string> _log = null!;
 
     [SetUp]
     public void SetUp()
     {
+        _log = new List<string>();
         _store = new ConfigurationStore();
         ConfigurationStore.SetInstance(_store);
         _configService = Substitute.For<IConfigurationService>();
@@ -60,6 +63,7 @@ public class SteerWizardTuneTests
             },
             NowMs = () => _fake.NowMs,
             ReadModuleData = _fake.Read,
+            Log = line => _log.Add(line),
         };
         return step;
     }
@@ -444,6 +448,80 @@ public class SteerWizardTuneTests
         await RunAsync(step);
         Assume.That(step.Stage, Is.EqualTo(TuneStage.Result), step.PhaseResult);
         Assert.That(step.SettingsWrites, Is.LessThanOrEqualTo(40));
+    }
+
+    // ------------------------------------------------------------ what the log gets
+
+    [Test]
+    public async Task A_run_writes_its_start_its_result_and_its_measurements_to_the_log()
+    {
+        // A bug report has the log and no screenshot: the numbers on the page must be in it.
+        var step = CreateStep();
+        await RunAsync(step);
+        Assume.That(step.Stage, Is.EqualTo(TuneStage.Result), step.PhaseResult);
+        step.AcceptCommand.Execute(null);
+
+        string all = string.Join("\n", _log);
+        Assert.That(_log, Has.All.StartsWith("Tune the Wheel Response: "), "each line names the step");
+        Assert.That(_log, Has.None.Contains("\n"), "a line a call");
+        Assert.That(all, Does.Contain("Start: wheels at 0.0°"));
+        Assert.That(all, Does.Contain("In use: Minimum To Move 25, Max Limit 180, Proportional Gain 50."));
+        Assert.That(all, Does.Contain("Wheel speed wanted 25°/s."));
+        Assert.That(all, Does.Contain("The stop works."));
+        Assert.That(all, Does.Contain("the test stays at or under PWM 180."));
+        Assert.That(all, Does.Contain($"Minimum To Move: 25 → {step.FoundMinPwm}  (first movement at PWM {step.MinRightPwm} to the right, {step.MinLeftPwm} to the left)"));
+        Assert.That(all, Does.Contain($"Max Limit: 180 → {step.FoundMaxPwm}"));
+        Assert.That(all, Does.Contain($"Proportional Gain: 50 → {step.FoundKp}"));
+        Assert.That(_log.Count(l => l.Contains("first movement right: PWM") || l.Contains("first movement left: PWM")), Is.EqualTo(2), "each side's first movement");
+        Assert.That(_log.Count(l => l.Contains(" deg/s")), Is.GreaterThanOrEqualTo(2), "the wheel speed at each PWM tried");
+        Assert.That(_log[^1], Does.Contain($"In use now: Minimum To Move {step.FoundMinPwm}, Max Limit {step.FoundMaxPwm}, Proportional Gain {step.FoundKp}."));
+    }
+
+    [Test]
+    public async Task A_run_that_is_stopped_logs_what_it_had_measured()
+    {
+        // Stop shows no measurements on the page. The log says how far the run came.
+        bool pressed = false;
+        int loops = 0;
+        var step = await RunWithAsync((f, s) =>
+        {
+            if (pressed || !s.PhaseDescription.StartsWith("Max Limit", StringComparison.Ordinal) || !f.Steering || ++loops < 40) return;
+            pressed = true;
+            s.StopTestCommand.Execute(null);
+        });
+
+        Assume.That(pressed, Is.True, "the run reached Max Limit");
+        Assert.That(step.PhaseResult, Does.Not.Contain("first movement"), "the page stays as it was");
+        int stopped = _log.FindIndex(l => l.EndsWith("Stopped. Nothing was changed.", StringComparison.Ordinal));
+        Assert.That(stopped, Is.GreaterThanOrEqualTo(0), string.Join("\n", _log));
+        Assert.That(_log[stopped + 1], Does.EndWith("Measured before it stopped:"));
+        Assert.That(_log.Skip(stopped + 2).Count(l => l.Contains("first movement ")), Is.EqualTo(2), "both sides were measured by then");
+    }
+
+    [Test]
+    public async Task A_start_that_is_refused_is_logged_with_its_reason()
+    {
+        _fake.SetWheel(12);
+        var step = CreateStep();
+
+        await step.RunStopCheckAsync();
+
+        Assert.That(_log, Has.Count.EqualTo(1));
+        Assert.That(_log[0], Is.EqualTo("Tune the Wheel Response: " + step.PhaseResult));
+        Assert.That(_log[0], Does.Contain("Straighten the wheels first"));
+    }
+
+    [Test]
+    public void With_no_log_set_the_step_runs_as_before()
+    {
+        var step = new TuneSteeringStepViewModel(_configService, new InlineUiDispatcher(), _autoSteer)
+        {
+            ReadModuleData = _fake.Read,
+        };
+        _fake.SetWheel(12);
+
+        Assert.DoesNotThrowAsync(step.RunStopCheckAsync);
+        Assert.That(step.PhaseResult, Does.Contain("Straighten the wheels first"));
     }
 
     // ------------------------------------------------------------ the stop check
