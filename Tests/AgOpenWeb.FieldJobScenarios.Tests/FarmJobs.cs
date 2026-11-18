@@ -147,7 +147,8 @@ public static class FarmJobs
         // The boom's settings: U-turn, sections (AgOpenWeb's install values unless the profile says otherwise).
         public double Radius = 8, Distance = 2;
         public int Style;
-        public bool OffWhenOut, HeadlandSections = true;
+        // Off outside boundary: on, as a new tool in the app (ToolConfig), unless the boom's profile says otherwise.
+        public bool OffWhenOut = true, HeadlandSections = true;
         public double? LookOn, LookOff;
         public List<string> BoomExtra = new() { "uturn.extension:20" };
         // The Puma's own guidance gains (the vehicle profile's); none without it: AgOpenWeb's.
@@ -257,13 +258,14 @@ public static class FarmJobs
                 Machines.Maxxum, Boom(MaxxumBoomHitch), Radius, Distance, Style, OffWhenOut, HeadlandSections, matchValves, 9, boomExtra);
             // The drill: Keyhole turns, distance from boundary 2.8 m, extension 12.5 m (the suggested-settings page's,
             // as job J14); the radius the tractor allows: 4.3 m on the Maxxum, 5.4 m on the Puma.
+            // The drill has no profile of its own here: Off outside boundary on, as a new tool in the app.
             var drillExtra = new List<string> { "uturn.extension:12.5" };
             yield return new Rig(3, "Puma with the no-till drill",
                 JobRun.F($"The Case Puma with the Gaspardo Diretta Corsa 300 (semi-mounted 3 m, one section, a 5 cm gap between passes), its pivot {PumaLowerLinks + 0.5:0.0#} m behind the rear axle (0.5 m behind the lower links); radius 5.4 m, Keyhole, distance from boundary 2.8 m, 8 km/h."),
-                Puma with { HitchLength = PumaLowerLinks + 0.5 }, Machines.DirettaCorsa300, 5.4, 2.8, 2, false, true, true, 8, PumaGuidance.Concat(drillExtra).ToList());
+                Puma with { HitchLength = PumaLowerLinks + 0.5 }, Machines.DirettaCorsa300, 5.4, 2.8, 2, true, true, true, 8, PumaGuidance.Concat(drillExtra).ToList());
             yield return new Rig(4, "Maxxum with the no-till drill",
                 "The Case IH Maxxum 135 with the drill as in job J14 (pivot 1.54 m behind the rear axle): radius 4.3 m, Keyhole, distance from boundary 2.8 m, 8 km/h.",
-                Machines.Maxxum, Machines.DirettaCorsa300, 4.3, 2.8, 2, false, true, true, 8, drillExtra);
+                Machines.Maxxum, Machines.DirettaCorsa300, 4.3, 2.8, 2, true, true, true, 8, drillExtra);
             foreach (var (digit, width) in new[] { (5, 12.0), (6, 20.0) })
                 yield return new Rig(digit, JobRun.F($"Puma with the fertiliser spreader at {width:0} m"),
                     JobRun.F($"The Case Puma with a mounted twin-disc fertiliser spreader set to {width:0} m in two sections (left and right halves), the discs 1.2 m behind the lower links ({PumaLowerLinks + 1.2:0.0#} m behind the rear axle); the boom's U-turn settings, 10 km/h."),
