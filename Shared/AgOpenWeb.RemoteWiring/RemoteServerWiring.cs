@@ -45,6 +45,14 @@ public static partial class RemoteServerWiring
             BugReportRemote.Stop();
         };
 
+        // What the operator is told (toasts, alarm sounds, module messages, dialogs and their
+        // answers) goes into the log as "[Screen]" lines, so a bug report says what was on the
+        // screen and what sounded (fork only).
+        var operatorLog = new AgOpenWeb.Services.Logging.OperatorMessageLog(
+            services.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()?.CreateLogger("Screen"));
+        server.OperatorLog = operatorLog;
+        vm.OperatorLog = operatorLog;
+
         // Alert sounds play on the CLIENT, not the host (a headless box has no speaker).
         // The gating-aware WebClientAudioService raises an effect; forward it to clients.
         if (services.GetService<IAudioService>() is AgOpenWeb.Services.Audio.WebClientAudioService audio)
