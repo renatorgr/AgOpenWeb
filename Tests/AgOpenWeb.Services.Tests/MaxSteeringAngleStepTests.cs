@@ -154,10 +154,18 @@ public class MaxSteeringAngleStepTests
     }
 
     [TestCase(0, 35, -30, null)]
-    [TestCase(0, 12.4, -3.6, "turned right but hardly left")]
+    [TestCase(0, 35, -3, "turned right but hardly left")]
     [TestCase(0, 2, -25, "turned left but hardly right")]
+    [TestCase(0, 30, 28, "turned right but hardly left", Description = "went right and stayed there")]
+    // Too little push either way: the start is somewhere between the two stops, so one reading
+    // lands beside it. Not a fault on one side.
+    [TestCase(1.9, 7.7, 0.7, "moved only 7.0° in all: steered right they stopped at 7.7°, steered left at 0.7° (start 1.9°)",
+        Description = "a tester's load-sensing block, 18 Nov 2026")]
+    [TestCase(0, 12.4, -3.6, "moved only 16.0° in all", Description = "the same block the day before")]
+    [TestCase(7, 7.7, 0.7, "moved only 7.0° in all", Description = "the same stops, started beside the right one")]
+    [TestCase(0, 3, -3, "moved only 6.0° in all")]
     [TestCase(7.2, 7.2, 7.2, "didn't move")]
-    [TestCase(0, 3, -3, "didn't move")]
+    [TestCase(0, 2, -2, "didn't move")]
     [TestCase(0, -30, 30, "opposite way")]
     public void LockMovementError_cases(double start, double right, double left, string? expected)
     {
@@ -197,11 +205,29 @@ public class MaxSteeringAngleStepTests
     }
 
     [Test]
-    public async Task Wheels_that_turn_one_way_only_say_what_to_check()
+    public async Task Wheels_that_turn_a_little_each_way_are_not_called_one_sided()
     {
         // The tester's first run: 12.4° right, 3.6° left (a 3 would have been saved before #170's check).
+        // Too little push both ways, and read as "turned right but hardly left".
         _store.Vehicle.MaxSteerAngle = 33;
         var step = StepWithLocks(right: 12.4, left: 3.6);
+        SetActive(step, true);
+
+        await step.RunMaxAngleMeasurementAsync();
+
+        Assert.That(step.PhaseResult, Does.StartWith("⚠ The wheels moved only 16.0° in all").And.Contain("not changed"));
+        Assert.That(step.PhaseResult, Does.Not.Contain("hardly"));
+        Assert.That(step.PhaseResult, Does.Contain(MaxSteeringAngleStepViewModel.WhatToCheckHeader));
+        SetActive(step, false);
+        Assert.That(_store.Vehicle.MaxSteerAngle, Is.EqualTo(33));
+    }
+
+    [Test]
+    public async Task Wheels_that_turn_one_way_only_say_what_to_check()
+    {
+        // A lock on the right and nothing past the start on the left: one side.
+        _store.Vehicle.MaxSteerAngle = 33;
+        var step = StepWithLocks(right: 32, left: 3.6);
         SetActive(step, true);
 
         await step.RunMaxAngleMeasurementAsync();

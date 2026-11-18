@@ -824,7 +824,11 @@ the coil's rating), which the page folds away (`data-fold="howto"` in `js/wizard
 tune step's measurements) and sets out as a list (`wzHowTo`: one point a line, "• " a case, "– " a kind of steering,
 "1. " a step, "· " a point; as running text the tester could not find his own steering's part). The motor test's stalled reading points there too. A result line that starts with
 `WizardStepViewModel.WarningMark` ("⚠ ") is shown in an amber box (`wzResult`, `.wz-warn`): in the same font as the
-rest of the result, the tester read past it. Tests: `MaxSteeringAngleStepTests`. Fork only.
+rest of the result, the tester read past it. "Turned right but hardly left" is said only when the side that went
+reached 20° or more from the start (`LockMovementError`): the left reading is taken after the right one and the start
+is anywhere between the two stops, so with too little push one reading lands beside it. The same block read start 1.9°,
+right 7.7°, left 0.7° (18 Nov 2026), and the one-side wording sent the tester looking for a fault on the left; such
+readings now say how far the wheels moved in all and where they stopped each way. Tests: `MaxSteeringAngleStepTests`. Fork only.
 
 ## Steer wizard: closed by the host
 When the screen in control goes away (its link quiet for the deadman's 1.5 s, its socket dropped) the host closes

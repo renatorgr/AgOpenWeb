@@ -394,6 +394,7 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
 
     /// <summary>
     /// Why the readings don't show the wheels reaching a lock each way, or null when they do.
+    /// The left reading is taken after the right one, so each is judged against the start.
     /// </summary>
     internal static string? LockMovementError(double start, double right, double left)
     {
@@ -402,11 +403,19 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
             return null;
         if (movedRight <= -MinLockMovementDeg && movedLeft <= -MinLockMovementDeg)
             return $"The wheels moved the opposite way (right {right:F1}°, left {left:F1}°) — check the WAS and motor direction.";
-        if (movedRight >= MinLockMovementDeg || movedLeft >= MinLockMovementDeg)
+        // One side only when the other reached a real angle. Wheels with too little push turn a
+        // few degrees either way of where the tyres rest, and the start is anywhere in that
+        // band, so one reading lands beside it: a tester's block read start 1.9°, right 7.7°,
+        // left 0.7° (18 Nov 2026) and "turned right but hardly left" sent the tester looking for a
+        // fault on one side, with the wheels 7° from one stop to the other.
+        if (Math.Max(movedRight, movedLeft) >= ShortLockDeg)
         {
-            string went = movedRight >= MinLockMovementDeg ? "right" : "left", stuck = went == "right" ? "left" : "right";
+            string went = movedRight >= movedLeft ? "right" : "left", stuck = went == "right" ? "left" : "right";
             return $"The wheels turned {went} but hardly {stuck} (start {start:F1}°, right {right:F1}°, left {left:F1}°).";
         }
+        double span = Math.Max(start, Math.Max(right, left)) - Math.Min(start, Math.Min(right, left));
+        if (span >= MinLockMovementDeg)
+            return $"The wheels moved only {span:F1}° in all: steered right they stopped at {right:F1}°, steered left at {left:F1}° (start {start:F1}°).";
         // Arming was checked before the test started, so the switch isn't the cause here.
         return $"The wheels didn't move (start {start:F1}°, right {right:F1}°, left {left:F1}°). " +
                "The module was steering: check the valve or motor, its power, and the WAS.";
