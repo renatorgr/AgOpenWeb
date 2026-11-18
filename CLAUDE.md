@@ -849,6 +849,18 @@ off: ...`), and a tuning run's values lost with the wizard (`[Steer wizard] Clos
 not taken: ...`): a bug report had neither. Tests: `SteerWizardSafetyTests` (`Browser_lost_says_in_the_log...`,
 `Browser_lost_with_tuning_values_not_taken...`). Fork only.
 
+## Steer wizard: the motor test's minimum PWM
+The *Auto Motor Calibration* step (`AutoMotorCalibrationStepViewModel`) holds a 5° Free Drive target, raises the
+gain and reads the module's PWM where the wheels come to rest: the minimum that moves them. The module's PWM is the
+gain times the error plus its minimum PWM, so the ramp runs on a minimum PWM of its own (`RampMinPwm`, 5, or the
+operator's if lower; the operator's is put back unless a new one is saved): on the operator's value nothing under it
+can be read, and with 64 set (saved while a block's relief valve was too low) a valve that moves from 48 read 64 on
+every run (a tester's tractor, 18 Nov 2026). A reading of two thirds of Max Limit or more is a stall and is not saved
+(`IsStalledReading`, `StalledShare`). It was half: a proportional valve held to its coil's current works between about
+45 and 90 to 105, so its true minimum (42 to 48 on two tractors) read as stalled. Standing still the tyres hold the
+wheels (57 standing, 48 at walking pace on that tractor), and the refusal says to run the test at walking pace.
+Tests: `AutoMotorCalKpRampTests`. Fork only.
+
 ## Tuning on the line
 The AutoSteer page's *Tune on Line* panel (Full view, beside Smart WAS; `LineTuneViewModel` over
 `LineTuneRun` in `ViewModels/LineTune`; fork only) tunes the guidance gains with AutoSteer on a straight
