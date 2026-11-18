@@ -188,6 +188,7 @@ public class MaxSteeringAngleStepTests
                 "the warning is a line of its own that the page shows in a box");
             Assert.That(step.PhaseResult, Does.Contain(MaxSteeringAngleStepViewModel.WhatToCheckHeader + "Run the test again"));
             Assert.That(step.PhaseResult, Does.Contain("relief valve").And.Contain("never the tractor's own"));
+            Assert.That(step.PhaseResult, Does.Contain("(a Keya)").And.Contain("current trip"), "a motor on the steering wheel stops short too");
         });
         SetActive(step, false);
         Assert.That(_store.Vehicle.MaxSteerAngle, Is.EqualTo(33), "a short reading must not become the max steer angle");

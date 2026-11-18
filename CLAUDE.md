@@ -816,8 +816,9 @@ turned too slowly for its plateau test (under 2°/s). On a tester's load-sensing
 the lowest (17 Nov 2026) the wheels stopped at 12° right and 3.6° left standing, 36° by hand, and 90 % of 3.6 became
 the Max Steer Angle every line was steered with. Such a result, and wheels that turn one way only, keep the setting
 and end with what to check (`WhatToCheckHeader`, `WeakSteeringChecks`: the AutoSteer block's relief valve a quarter
-turn at a time, never the tractor's own nor past the rated pressure; the hoses and LS line; a motor that slips; Max
-Limit within the coil's or motor's rating), which the page folds away (`data-fold="howto"` in `js/wizards.js`, as the
+turn at a time, never the tractor's own nor past the rated pressure; the hoses and LS line; a Keya: the engine
+running, the current trip (standing still the steering wheel is at its heaviest), a slipping mount; Max Limit within
+the coil's rating), which the page folds away (`data-fold="howto"` in `js/wizards.js`, as the
 tune step's measurements). The motor test's stalled reading points there too. A result line that starts with
 `WizardStepViewModel.WarningMark` ("⚠ ") is shown in an amber box (`wzResult`, `.wz-warn`): in the same font as the
 rest of the result, the tester read past it. Tests: `MaxSteeringAngleStepTests`. Fork only.

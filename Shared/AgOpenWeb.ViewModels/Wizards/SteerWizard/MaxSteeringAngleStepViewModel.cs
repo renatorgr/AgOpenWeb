@@ -89,17 +89,21 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
     internal const string WeakSteeringChecks =
         "Run the test again and watch the wheels.\n" +
         "• They stop before the lock and stay there: the steering pushes too weakly.\n" +
-        "On a hydraulic valve block its relief valve is set too low. With the engine running and the oil " +
+        "A hydraulic valve block: its relief valve is set too low. With the engine running and the oil " +
         "warm, loosen the lock nut of the relief valve on the AutoSteer block (never the tractor's own), " +
         "turn its screw a quarter turn in (clockwise), tighten the nut and run this test. Repeat until the " +
         "wheels reach both locks, never past the pressure on the block's plate or the steering pressure in " +
         "the tractor's manual (a gauge on the block's test port shows it). If turning it changes nothing, " +
         "check the hoses: pressure to P, return to T, a cylinder line to each of A and B, and on a " +
         "load-sensing block its LS line to the steering's own LS line.\n" +
-        "A motor on the steering wheel: it slips on the wheel, or its power supply drops when it pulls.\n" +
-        "• They keep turning, slowly: too little oil or power reaches them. Check that the lock valves " +
-        "click when the test starts, then raise Max Limit (AutoSteer, Gain / PWM) a little, never past " +
-        "what the valve coil or the motor takes (its data sheet).";
+        "A motor on the steering wheel (a Keya): the tractor's own steering does the pushing, so run the " +
+        "engine. If the module lets go as the wheels stop (its page shows a current kickout), raise the " +
+        "current trip (AutoSteer, Turn Sensors) a little: standing still, the steering wheel is at its " +
+        "heaviest. If the motor turns but the steering wheel doesn't, its mount or adapter slips; if the " +
+        "module restarts, its power supply drops when the motor pulls.\n" +
+        "• They keep turning, slowly: too little oil or power reaches them. On a valve block, check that " +
+        "the lock valves click when the test starts. Then raise Max Limit (AutoSteer, Gain / PWM) a " +
+        "little: on a valve never past what its coil takes (its data sheet); on a Keya it is the motor's speed.";
 
     internal const string WrongWayText = WarningMark +
         "The wheels turned the wrong way, so the test stopped and left them where they are. " +
