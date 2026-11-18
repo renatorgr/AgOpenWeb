@@ -12,7 +12,9 @@ namespace AgOpenWeb.Models.Tests;
 /// <summary>
 /// The obstacle shapes' sums that run on the host while the operator waits or every cycle: an
 /// obstacle's size in the list (<see cref="BoundaryPolygon.LongestSpan"/>), its outline's
-/// fingerprint (<see cref="BoundaryPolygon.OutlineStamp"/>).
+/// fingerprint (<see cref="BoundaryPolygon.OutlineStamp"/>), a circle's polygon recognised only
+/// while it is that circle's (<see cref="ObstacleCircle.Matches"/>) and the circle round a big
+/// drawn shape (<see cref="ObstacleCircle.Covering"/>).
 /// </summary>
 [TestFixture]
 public class ObstacleShapeReviewTests
@@ -108,5 +110,63 @@ public class ObstacleShapeReviewTests
         a.Points[3] = new BoundaryPoint(50 - 0.31, 60, 0);
         a.UpdateBounds();
         Assert.That(a.OutlineStamp, Is.Not.EqualTo(before));
+    }
+
+    [Test]
+    public void Matches_TheCirclesPolygon_FromAnyCorner_EitherWay()
+    {
+        var c = new ObstacleCircle(10, -20, 6);
+        var pts = c.ToPoints();
+        Assert.That(c.Matches(pts), Is.True);
+        var turned = pts.Skip(5).Concat(pts.Take(5)).ToList();
+        Assert.That(c.Matches(turned), Is.True, "starting at another corner");
+        var reversed = Enumerable.Reverse(pts).ToList();
+        Assert.That(c.Matches(reversed), Is.True, "clockwise, as a file may store it");
+    }
+
+    [Test]
+    public void Matches_NotAPolygonWhoseCornersMovedRoundTheCircle()
+    {
+        var c = new ObstacleCircle(10, -20, 6);
+        double r = c.CornerRadius;
+
+        // Every corner still at the corner distance from the centre: the old test saw a circle.
+        var slid = c.ToPoints();
+        double a = 2 * Math.PI * 3.5 / ObstacleCircle.Segments;
+        slid[3] = new BoundaryPoint(10 + r * Math.Cos(a), -20 + r * Math.Sin(a), 0);
+        Assert.That(c.Matches(slid), Is.False, "a corner moved half a step round");
+
+        var swapped = c.ToPoints();
+        (swapped[3], swapped[4]) = (swapped[4], swapped[3]);
+        Assert.That(c.Matches(swapped), Is.False, "two corners swapped: a crossed outline");
+
+        var spun = c.ToPoints().Select(p =>
+        {
+            double t = Math.Atan2(p.Northing + 20, p.Easting - 10) + 0.1;
+            return new BoundaryPoint(10 + r * Math.Cos(t), -20 + r * Math.Sin(t), 0);
+        }).ToList();
+        Assert.That(c.Matches(spun), Is.False, "every corner turned round the centre");
+    }
+
+    [Test]
+    public void Covering_OfABigShapeInTheOrderDrawn_IsQuick_AndTheSameCircle()
+    {
+        // Round and round, in the order recorded: the incremental search without a shuffle
+        // could do about n³ sums here.
+        var ring = Enumerable.Range(0, 20000).Select(i =>
+        {
+            double t = 2 * Math.PI * i / 20000;
+            return new BoundaryPoint(50 + 30 * Math.Cos(t), 20 + 30 * Math.Sin(t), 0);
+        }).ToList();
+        var clock = Stopwatch.StartNew();
+        var circle = ObstacleCircle.Covering(ring);
+        Assert.That(clock.Elapsed.TotalSeconds, Is.LessThan(2));
+        Assert.That(circle.Diameter, Is.EqualTo(60).Within(0.1));
+        Assert.That(circle.CenterEasting, Is.EqualTo(50).Within(0.01));
+        Assert.That(circle.CenterNorthing, Is.EqualTo(20).Within(0.01));
+
+        var reversed = ObstacleCircle.Covering(Enumerable.Reverse(ring).ToList());
+        Assert.That(reversed.Diameter, Is.EqualTo(circle.Diameter));
+        Assert.That(reversed.CenterEasting, Is.EqualTo(circle.CenterEasting).Within(1e-6));
     }
 }

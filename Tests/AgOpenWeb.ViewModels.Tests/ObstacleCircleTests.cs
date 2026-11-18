@@ -311,4 +311,23 @@ public class ObstacleCircleTests
 
         Assert.That(OnDisk(_dir).InnerBoundaries, Has.Count.EqualTo(3));
     }
+
+    [Test]
+    public async Task ASmallCircle_StaysACircle_WhenTheFieldIsOpenedAndSavedAgain()
+    {
+        // Opening a field thins its boundaries to 10 cm (BoundaryResolution); a 3 m tree's 24
+        // corners lost some, and the field saved on closing had no circle left (official #613,
+        // Sourcery's review).
+        var vm = await Open();
+        vm.RemoteAddObstacleCircle(80, 150, 3);
+        await vm.CloseFieldAsync();
+
+        await vm.OpenFieldAsync(_dir, "F");
+        Assert.That(vm.State.Field.CurrentBoundary!.InnerBoundaries[3].Points, Has.Count.EqualTo(ObstacleCircle.Segments), "not thinned");
+        await vm.CloseFieldAsync();
+
+        var tree = OnDisk(_dir).InnerBoundaries[3];
+        Assert.That(tree.Circle, Is.Not.Null, "still a circle in the file");
+        Assert.That(tree.Circle!.Value.Diameter, Is.EqualTo(3));
+    }
 }
