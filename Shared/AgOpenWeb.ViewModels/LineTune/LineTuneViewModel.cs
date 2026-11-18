@@ -36,6 +36,9 @@ public sealed partial class LineTuneViewModel : ObservableObject, ILineTuneActio
     /// <summary>Injectable clock (seconds) for tests.</summary>
     internal Func<double> NowS { get; set; }
 
+    /// <summary>What each run does, one line each (<see cref="LineTuneRun.Log"/>): the app's log.</summary>
+    public Action<string>? Log { get; set; }
+
     public LineTuneViewModel(IGpsPipelineService pipeline, IPipelineIntents intents, IConfigurationService configService)
     {
         _pipeline = pipeline;
@@ -76,7 +79,10 @@ public sealed partial class LineTuneViewModel : ObservableObject, ILineTuneActio
         var g = Guidance;
         _run = new LineTuneRun(this,
             new GuidanceGainsOverride(g.GoalPointLookAheadHold, g.StanleyDistanceErrorGain, g.StanleyHeadingErrorGain),
-            g.IsStanley, g.GoalPointLookAheadMult, g.GoalPointAcquireFactor, g.MinLookAheadDistance);
+            g.IsStanley, g.GoalPointLookAheadMult, g.GoalPointAcquireFactor, g.MinLookAheadDistance)
+        {
+            Log = Log,
+        };
         _run.Start();
     }
 

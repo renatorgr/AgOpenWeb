@@ -863,7 +863,32 @@ quicker than the operator's own (`RescueFor`). The override is for the line only
 with the operator's gains. State rides the Status frame (`LineTuneDto`, `statusBar.lineTune`), commands
 `linetune.start|stop|accept|discard`, client in `js/config-panels.js`. Tests: `LineTuneRunTests` on a simulated
 tractor with the real `TrackGuidanceService` and a steering with dead time, rate limit and lag (`LineTuneSim`).
-Not tried on a tractor yet.
+
+Rules from the first runs on tractors (17 and 18 Nov 2026, 3.3 to 6 km/h; keep them at any change):
+- **No value starts while the tractor is on its way to the line**, however early Start was pressed: further
+  than `JoinNearM` (0.5 m) the run only waits, with no time limit; near the line it waits for the operator's own
+  values to hold it for `JoinHoldS`. If they never do within `JoinTimeoutS` the value starts all the same (it is a
+  value to measure); if they keep swinging the tractor across the line (`JoinSwingM` out on one side, then the
+  other, `JoinSwingTurns` times running), the calm value steers first. Once across is a tractor joining at an
+  angle (one went 1.95 m past, engaged in a turn): it is left alone, and a change of pass starts the wait anew.
+  A value put in while AutoSteer was still joining the line was blamed for the join.
+- **Every wait is as long in metres at any speed** (`TimeFactor` = `FullSpeedKmh` 8 / the speed, never under 1):
+  the guidance takes about as far, not as long, to come onto a line. The run measures at the speed driven, the
+  panel says to drive at the speed worked at, and the result names the speed it was found at.
+- **The speed is a mean of `SpeedMeanS`** (1 s): a receiver at a steady 6 km/h reads 5.0 to 7.3 from one reading
+  to the next, and one reading out of the band dropped a value.
+- **Where the tractor rests is not where it was**: with slack in the steering it rests 4 to 9 cm from where it was
+  before a move. The quick way to settle is unchanged (back within the band of where it was); when the time is up
+  and the tractor rests steady within `SteadyMaxM` of where it was, the move counts, measured again against where
+  it rests (`MeasureAgainst`). Never take a steady stretch earlier than that for a rest: the turning point of a
+  slow swing looks like one.
+- **No clean value is still an answer**: when none is good, the value that came back both ways and went past the
+  line the least is proposed (`LineTuneLevel.CameBack`), and the result says that a calmer value does not cure it
+  (slack, Minimum To Move). The calm value after a cut has only to calm the tractor, anywhere beside the line.
+- **What the run did goes to the log** (`LineTuneRun.Log`, `[Line tune] ...` lines): one line per value and move,
+  with the numbers, so a bug report tells what happened without reading the positions.
+- `LineTuneSim` with the steering a Steer Wizard measured (24 deg/s, 0.19 s late) matches a tractor at 3 to 4 km/h
+  and is far too pessimistic at 6: do not read field advice from it.
 
 ## CI/CD
 
