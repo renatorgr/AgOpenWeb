@@ -197,10 +197,15 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
     }
 
     private string _phaseResult = "";
+    /// <summary>What the test found, or why it stopped. Each new text also goes to the log.</summary>
     public string PhaseResult
     {
         get => _phaseResult;
-        set => SetProperty(ref _phaseResult, value);
+        set
+        {
+            if (SetProperty(ref _phaseResult, value))
+                LogLines(value);
+        }
     }
 
     private double _detectedMaxAngleRight;
@@ -306,6 +311,9 @@ public class MaxSteeringAngleStepViewModel : SwitchGatedWizardStep
             double right = rightPush.Angle, left = leftPush.Angle;
             // A push cut off by its time with the wheels still on their way read no lock.
             string cutOff = StillTurningNote(rightPush.StillTurning, leftPush.StillTurning);
+            // The page's result leaves the start out when the test passes: the log has all three.
+            LogLines(FormattableString.Invariant(
+                $"Readings: start {startAngle:F1}°, pushed right to {right:F1}°, pushed left to {left:F1}°.{cutOff}"));
 
             if (LockMovementError(startAngle, right, left) is { } error)
             {

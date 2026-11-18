@@ -2,6 +2,7 @@
 // Copyright (C) 2024-2025 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using AgOpenWeb.Services.Interfaces;
@@ -22,6 +23,13 @@ public class SteerWizardViewModel : WizardViewModel
     /// Persistent status bar showing live hardware data across all wizard steps.
     /// </summary>
     public override WizardStatusBarViewModel? StatusBar { get; }
+
+    /// <summary>
+    /// Where the tests that move the wheels (motor test, maximum steering angle, tune the wheel
+    /// response) write their start and result, one call a line. Set by MainViewModel after the
+    /// wizard is made, so the steps read it when they write.
+    /// </summary>
+    public Action<string>? Log { get; set; }
 
     public SteerWizardViewModel(IConfigurationService configService,
         IUiDispatcher dispatcher, IAutoSteerService? autoSteerService = null)
@@ -86,6 +94,8 @@ public class SteerWizardViewModel : WizardViewModel
         var steerGains = new SteeringGainsStepViewModel(configService, autoSteerService);
         steerGains.SetHardwareStep(hardwareStep);
         AddStep(steerGains);
+
+        autoCal.Log = maxSteer.Log = tuneSteering.Log = line => Log?.Invoke(line);
 
         // Step 11: Speed Limits + Sensors
         AddStep(new SpeedAndSensorsStepViewModel(configService));

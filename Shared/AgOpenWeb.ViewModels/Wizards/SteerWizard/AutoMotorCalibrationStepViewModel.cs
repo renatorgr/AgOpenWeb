@@ -123,10 +123,15 @@ public class AutoMotorCalibrationStepViewModel : SwitchGatedWizardStep
     };
 
     private string _phaseResult = "";
+    /// <summary>What the test found, or why it stopped. Each new text also goes to the log.</summary>
     public string PhaseResult
     {
         get => _phaseResult;
-        set => SetProperty(ref _phaseResult, value);
+        set
+        {
+            if (SetProperty(ref _phaseResult, value))
+                LogLines(value);
+        }
     }
 
     private double _progress;

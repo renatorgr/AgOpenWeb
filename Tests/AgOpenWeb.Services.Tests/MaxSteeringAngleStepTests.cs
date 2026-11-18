@@ -305,6 +305,45 @@ public class MaxSteeringAngleStepTests
     }
 
     [Test]
+    public async Task The_log_gets_the_three_readings_and_the_result()
+    {
+        // The page's result names right and left only. A bug report holds the log and no
+        // screenshot, and reading a run needs the start as well.
+        var log = new System.Collections.Generic.List<string>();
+        var step = StepWithLocks(right: 36, left: 34);
+        step.Log = log.Add;
+        SetActive(step, true);
+
+        await step.RunMaxAngleMeasurementAsync();
+
+        Assert.That(log, Is.EqualTo(new[]
+        {
+            "Maximum Steering Angle: Readings: start 0.0°, pushed right to 36.0°, pushed left to -34.0°.",
+            $"Maximum Steering Angle: Right max: {36.0:F1}",
+            $"Maximum Steering Angle: Left max: {34.0:F1}",
+            "Maximum Steering Angle: Max steer angle (raw WAS): 30",
+        }));
+        SetActive(step, false);
+    }
+
+    [Test]
+    public async Task The_log_gets_a_warning_with_its_list_a_line_at_a_time()
+    {
+        var log = new System.Collections.Generic.List<string>();
+        var step = StepWithLocks(right: 12.4, left: 3.6);
+        step.Log = log.Add;
+
+        await step.RunMaxAngleMeasurementAsync();
+
+        Assert.That(log[0], Is.EqualTo("Maximum Steering Angle: Readings: start 0.0°, pushed right to 12.4°, pushed left to -3.6°."));
+        Assert.That(log, Has.Some.Contains("Max steer angle not changed."));
+        Assert.That(log, Has.Some.Contains("What to check"));
+        Assert.That(log, Has.All.StartsWith("Maximum Steering Angle: "));
+        Assert.That(log, Has.None.Contains("\n"));
+        Assert.That(log.Count, Is.GreaterThan(4), "the list's lines are log lines of their own");
+    }
+
+    [Test]
     public async Task Wheels_that_turn_the_wrong_way_get_no_hydraulic_checks()
     {
         // The sensor or the motor wiring, not the push: the motor test is what to run.

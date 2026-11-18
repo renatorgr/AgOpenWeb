@@ -70,6 +70,27 @@ public abstract class SwitchGatedWizardStep : WizardStepViewModel
     /// <summary>Injectable delay function for testing. Production uses Task.Delay.</summary>
     internal Func<int, CancellationToken, Task> DelayFunc { get; set; } = Task.Delay;
 
+    /// <summary>
+    /// Where a test's start and result go besides the page, one call a line. MainViewModel
+    /// writes them to the app log as "[Steer wizard] ..." lines: a bug report then holds the
+    /// numbers the operator saw, and a run can be read without a screenshot of each result.
+    /// </summary>
+    public Action<string>? Log { get; set; }
+
+    /// <summary>
+    /// Sends <paramref name="text"/> to <see cref="Log"/> under the step's title, a line at a
+    /// time (a result is several lines on the page). Empty text, as when a result is cleared,
+    /// writes nothing.
+    /// </summary>
+    protected void LogLines(string text)
+    {
+        var log = Log;
+        if (log == null || string.IsNullOrWhiteSpace(text))
+            return;
+        foreach (string line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            log($"{Title}: {line}");
+    }
+
     /// <summary>True when hardware is connected and sending data.</summary>
     public bool HasHardware => AutoSteerService != null;
 

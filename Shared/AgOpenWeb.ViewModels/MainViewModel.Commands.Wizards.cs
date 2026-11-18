@@ -42,10 +42,21 @@ public partial class MainViewModel
     /// </summary>
     public bool IsSteerWizardOpen => SteerWizardViewModel != null;
 
+    /// <summary>
+    /// A fresh steer wizard whose tests write what they found to the log as "[Steer wizard] ..."
+    /// lines. A bug report otherwise shows only the settings changing: the readings behind
+    /// them (first movement, wheel speed per PWM, the locks reached) were on the page alone.
+    /// </summary>
+    private SteerWizardViewModel NewSteerWizard() =>
+        new(_configurationService, _dispatcher, _autoSteerService)
+        {
+            Log = line => _logger.LogInformation("[Steer wizard] {Line}", line),
+        };
+
     private void ShowSteerWizard()
     {
         // Create a new instance of the wizard
-        SteerWizardViewModel = new SteerWizardViewModel(_configurationService, _dispatcher, _autoSteerService);
+        SteerWizardViewModel = NewSteerWizard();
         DisengageForSteerWizard();
 
         // Handle wizard close
@@ -63,7 +74,7 @@ public partial class MainViewModel
     public void StartRemoteSteerWizard()
     {
         EndRemoteSteerWizard(); // a reopen replaces the wizard; stop its test first
-        SteerWizardViewModel = new SteerWizardViewModel(_configurationService, _dispatcher, _autoSteerService);
+        SteerWizardViewModel = NewSteerWizard();
         DisengageForSteerWizard();
     }
 

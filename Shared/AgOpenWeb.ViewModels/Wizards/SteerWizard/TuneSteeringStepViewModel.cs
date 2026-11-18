@@ -299,11 +299,15 @@ public class TuneSteeringStepViewModel : SwitchGatedWizardStep
     }
 
     private string _phaseResult = "";
-    /// <summary>What the last part found, or why it stopped.</summary>
+    /// <summary>What the last part found, or why it stopped. Each new text also goes to the log.</summary>
     public string PhaseResult
     {
         get => _phaseResult;
-        private set => SetProperty(ref _phaseResult, value);
+        private set
+        {
+            if (SetProperty(ref _phaseResult, value))
+                LogLines(value);
+        }
     }
 
     private double _liveSteerAngle;
@@ -442,6 +446,9 @@ public class TuneSteeringStepViewModel : SwitchGatedWizardStep
         var token = NewTestToken();
         Stage = TuneStage.Running;
         _inStopCheck = true;
+        LogLines(string.Create(Inv,
+            $"Start: wheels at {angle:F1}°, {_speedKmh:F1} km/h. In use: Minimum To Move {Config.MinPwm}, Max Limit {Config.MaxPwm}, " +
+            $"Proportional Gain {Config.ProportionalGain}. Wheel speed wanted {TargetWheelSpeed:F0}°/s. {StopCheckText(_stopKind)}"));
         try
         {
             PhaseDescription = "Stop check: getting the module to hold the wheels…";
@@ -543,6 +550,7 @@ public class TuneSteeringStepViewModel : SwitchGatedWizardStep
         try
         {
             _anchor = CurrentWasAngle;
+            LogLines(string.Create(Inv, $"Measuring: wheels at {_anchor:F1}°, {_speedKmh:F1} km/h, the test stays at or under PWM {PwmCap}."));
             var (right, left, notes) = await MeasureMinToMoveAsync(token);
             int lower = Math.Min(right, left);
             _rightPwm = right;
@@ -594,6 +602,7 @@ public class TuneSteeringStepViewModel : SwitchGatedWizardStep
         catch (OperationCanceledException)
         {
             PhaseResult = "Stopped." + NothingChangedText;
+            LogMeasuredSoFar();
         }
         catch (TuneAbort ex)
         {
@@ -605,6 +614,7 @@ public class TuneSteeringStepViewModel : SwitchGatedWizardStep
         catch (Exception ex)
         {
             PhaseResult = "The test failed and stopped: " + ex.Message + NothingChangedText;
+            LogMeasuredSoFar();
         }
         finally
         {
@@ -617,6 +627,16 @@ public class TuneSteeringStepViewModel : SwitchGatedWizardStep
             PhaseDescription = "";
             Stage = next;
         }
+    }
+
+    /// <summary>
+    /// A run that was stopped shows no measurements on the page; the log still gets what was
+    /// measured up to there, so a bug report shows how far the run came.
+    /// </summary>
+    private void LogMeasuredSoFar()
+    {
+        if (_measured.Count > 0)
+            LogLines("Measured before it stopped:\n" + string.Join("\n", _measured));
     }
 
     private void Accept()
