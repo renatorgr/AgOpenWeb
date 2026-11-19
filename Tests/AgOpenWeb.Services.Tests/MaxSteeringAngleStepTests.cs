@@ -282,6 +282,23 @@ public class MaxSteeringAngleStepTests
         Assert.That(_store.Vehicle.MaxSteerAngle, Is.EqualTo(33), "a reading cut off on the way must not become the max steer angle");
     }
 
+    [Test]
+    public async Task A_lock_reached_just_before_the_time_runs_out_is_taken()
+    {
+        // 6.5°/s: the right lock (36°) is reached 0.4 s before the 6 s run out, too few steady
+        // readings for a plateau, while the approach is still in the last second. The wheels had
+        // stopped: 36 is the lock, not a push cut off on the way.
+        var step = StepWithLocks(right: 36, left: 30, perReading: 0.65, leftPerReading: 6);
+        SetActive(step, true);
+
+        await step.RunMaxAngleMeasurementAsync();
+
+        Assert.That(step.PhaseResult, Does.Not.Contain("still turning"));
+        Assert.That(step.CalibrationCompleted, Is.True);
+        Assert.That(step.DetectedMaxAngleRight, Is.EqualTo(36).Within(0.01));
+        Assert.That(step.MaxSteerAngle, Is.EqualTo(27));
+    }
+
     [TestCase(false, false, "")]
     [TestCase(true, false, " They were still turning right when the 6 s for that side ran out.")]
     [TestCase(false, true, " They were still turning left when the 6 s for that side ran out.")]
@@ -356,9 +373,10 @@ public class MaxSteeringAngleStepTests
 
     /// <summary>
     /// Wheels that run to <paramref name="right"/>° when steered right and to −<paramref name="left"/>°
-    /// when steered left, <paramref name="perReading"/>° a reading (ten readings a second), then stay there.
+    /// when steered left, <paramref name="perReading"/>° a reading (ten readings a second; steered left
+    /// <paramref name="leftPerReading"/> when given), then stay there.
     /// </summary>
-    private MaxSteeringAngleStepViewModel StepWithLocks(double right, double left, double perReading = 2)
+    private MaxSteeringAngleStepViewModel StepWithLocks(double right, double left, double perReading = 2, double? leftPerReading = null)
     {
         var step = new MaxSteeringAngleStepViewModel(_configService, new AgOpenWeb.Services.Threading.InlineUiDispatcher(), _autoSteer);
         step.DelayFunc = (_, _) => Task.CompletedTask;
@@ -371,7 +389,8 @@ public class MaxSteeringAngleStepTests
         step.ReadWasAngle = () =>
         {
             // So far a reading towards where the wheels stop.
-            angle += System.Math.Clamp(target - angle, -perReading, perReading);
+            double speed = target < 0 ? leftPerReading ?? perReading : perReading;
+            angle += System.Math.Clamp(target - angle, -speed, speed);
             return angle;
         };
         return step;
