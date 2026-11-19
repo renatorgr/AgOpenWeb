@@ -336,7 +336,7 @@ public sealed class YouTurnStateMachine
             _failedEndIdle = 0;
             if (ctx.IsSkipWorkedMode)
                 HandleSnakeCreation(in ctx, track, abHeading, currentPosition, headingRadians, guidance, turn, effects);
-            else if (!TriedJustNow(in ctx, track, guidance, turn))
+            else if (!TriedJustNow(in ctx, track, guidance, turn, EndFieldStamp(in ctx)))
             {
                 if (ctx.IsAlternateSkipMode)
                     HandleAlternateCreation(in ctx, track, abHeading, headingRadians, guidance, turn, effects);
@@ -1264,18 +1264,8 @@ public sealed class YouTurnStateMachine
             PlanSnake(in ctx, track, abHeading, guidance, turn, fieldStamp);
         }
 
-        // This end was tried and no turn built: again every 1.5 s, silently (see _failedEnd), on
-        // the side the operator's arrow chose when it was tried.
-        bool? retryArrow = null;
-        if (_failedEnd is { } failedEnd && failedEnd == EndKey(in ctx, track, guidance, turn, fieldStamp))
-        {
-            if (++_failedEndCycles < FailedEndRetryCycles) return;
-            retryArrow = _failedEndArrow;
-            _logger.LogDebug("[YouTurn] Trying the end again (no turn built here {Seconds:F1} s ago)", FailedEndRetryCycles / 10.0);
-        }
-        _failedEnd = null;
-        _failedEndCycles = 0;
-        _failedEndArrow = null;
+        // This end was tried and no turn built: again every 1.5 s, silently (see _failedEnd).
+        if (TriedJustNow(in ctx, track, guidance, turn, fieldStamp)) return;
 
         // Never onto a worked pass: the next pass of the order that is still to do.
         var isWorked = WorkedPasses(in ctx, track, guidance, turn, atEndOf: abHeading);
@@ -1302,14 +1292,12 @@ public sealed class YouTurnStateMachine
         // from that pass.
         int target = nextPath.Value;
         int operatorSide = 0; // the side the operator chose with the U-turn arrow, +1 higher passes
-        // The arrow is the operator's side whichever way the order goes: taken only when it asked
-        // for the other side, an arrow pointing the order's way was forgotten, and with no turn
-        // onto the order's pass the nearest pass was looked for on both sides. Taken once, it was
-        // also gone when the end was tried again 1.5 s later, and the turn then went the other way.
-        turn.NextUTurnDirectionLeftOverride ??= retryArrow;
-        bool? arrow = turn.NextUTurnDirectionLeftOverride;
+        // The arrow is the operator's side whichever way the order goes (TakeDirectionSwap keeps it
+        // in HeldDirectionLeft): taken only when it asked for the other side, an arrow pointing the
+        // order's way was forgotten, and with no turn onto the order's pass the nearest pass was
+        // looked for on both sides.
         bool swappedSide = TakeDirectionSwap(turn, guidance, target);
-        if (!swappedSide && arrow is { } arrowLeft)
+        if (!swappedSide && turn.HeldDirectionLeft is { } arrowLeft)
             operatorSide = (arrowLeft ^ guidance.IsHeadingSameWay) ? 1 : -1; // as plannedLeft in TakeDirectionSwap
         if (swappedSide)
         {
@@ -1317,7 +1305,8 @@ public sealed class YouTurnStateMachine
             operatorSide = positive ? 1 : -1;
             int skip = _pathing.GetNextUnworkedPathSkip(track, guidance.HowManyPathsAway, positive, ctx.UTurnSkipRows + 1, isWorked);
             int swapped = guidance.HowManyPathsAway + (positive ? skip : -skip);
-            if (_pathing.IsPathLandable(track, abHeading, swapped, ctx.Boundary, ctx.HeadlandLine, currentPosition, guidance.IsHeadingSameWay, turn.DistanceToHeadland, guidance.HowManyPathsAway))
+            // Not onto a pass in the headland band with the sections off in it (SnakeLandable).
+            if (SnakeLandable(in ctx, track, abHeading, swapped, guidance, turn))
                 target = swapped;
             else
                 RefuseDirectionSwap(swapped, effects);
@@ -1382,7 +1371,6 @@ public sealed class YouTurnStateMachine
             ReportNoTurn(failed, effects);
             _failedEnd = EndKey(in ctx, track, guidance, turn, fieldStamp);
             _failedEndCycles = 0;
-            _failedEndArrow = arrow;
             return;
         }
         // No turn, and the order's pass was not one to aim at: a nearest pass tried and not built
@@ -1397,7 +1385,6 @@ public sealed class YouTurnStateMachine
         SoundCreationFailed(effects);
         _failedEnd = EndKey(in ctx, track, guidance, turn, fieldStamp);
         _failedEndCycles = 0;
-        _failedEndArrow = arrow;
     }
 
     /// <summary>
@@ -1442,7 +1429,6 @@ public sealed class YouTurnStateMachine
     // looking for a turn, the track changes or U-turn is switched off.
     private EndTried? _failedEnd;
     private int _failedEndCycles;
-    private bool? _failedEndArrow; // the U-turn arrow taken when the end was tried: the side of the retry
     private int _failedEndIdle; // cycles in a row not looking for a turn since one did not build
     private const int FailedEndRetryCycles = 15; // GPS cycles at 10 Hz
 
@@ -1450,18 +1436,25 @@ public sealed class YouTurnStateMachine
         List<int>? Snake, long FieldStamp, int SkipRows, bool? Arrow, int Settings);
 
     /// <summary>
-    /// The normal and alternative modes: this end was tried a moment ago and no turn was made, so it
-    /// is not tried again this cycle (<see cref="_failedEnd"/>, as the snake order's ends). Fork only.
+    /// This end was tried a moment ago and no turn was made, so it is not tried again this cycle
+    /// (<see cref="_failedEnd"/>), in every mode. When it is tried, the side the operator picked
+    /// with the U-turn arrow goes into the try again: the try that made no turn took the arrow
+    /// (<see cref="TakeDirectionSwap"/>), so the retry 1.5 s later turned the other way. Kept in
+    /// <see cref="YouTurnWorkingState.HeldDirectionLeft"/> until a turn starts, as a planned turn
+    /// dropped before then gets it back (<see cref="DiscardPlannedTurn"/>, #577). As official #888.
     /// </summary>
-    private bool TriedJustNow(in TickContext ctx, Models.Track.Track track, GuidanceWorkingState guidance, YouTurnWorkingState turn)
+    private bool TriedJustNow(in TickContext ctx, Models.Track.Track track, GuidanceWorkingState guidance,
+        YouTurnWorkingState turn, long fieldStamp)
     {
-        if (_failedEnd is { } failedEnd && failedEnd == EndKey(in ctx, track, guidance, turn, EndFieldStamp(in ctx)))
+        if (_failedEnd is { } failedEnd && failedEnd == EndKey(in ctx, track, guidance, turn, fieldStamp))
         {
             if (++_failedEndCycles < FailedEndRetryCycles) return true;
             _logger.LogDebug("[YouTurn] Trying the end again (no turn built here {Seconds:F1} s ago)", FailedEndRetryCycles / 10.0);
         }
         _failedEnd = null;
         _failedEndCycles = 0;
+        if (turn.HeldDirectionLeft is { } held)
+            turn.NextUTurnDirectionLeftOverride ??= held;
         return false;
     }
 
