@@ -840,7 +840,9 @@ reached 20° or more from the start (`LockMovementError`): the left reading is t
 is anywhere between the two stops, so with too little push one reading lands beside it. The same block read start 1.9°,
 right 7.7°, left 0.7° (18 Nov 2026), and the one-side wording sent the tester looking for a fault on the left; such
 readings now say how far the wheels moved in all and where they stopped each way. A push whose 6 s ran out with the
-wheels still turning (1° or more further on than a second before, `StillTurningDeg`) read no lock either: the result
+wheels still moving at its last reading and 1° or more further on than a second before (`StillTurningDeg`) read no
+lock either (wheels that stopped just before the time ran out, too few steady readings for a plateau, read their lock:
+the approach alone is still in the last second; official #882, Sourcery): the result
 says which side ran out of time (`StillTurningNote`) and the setting is kept. The left push starts from the right lock,
 so a steering slower than 12°/s over 36° locks read the left side short, and 90 % of that was saved (36° right, 25° left
 at 10°/s: 22). Every amber result of this step leaves Max Steer Angle as it was. Tests: `MaxSteeringAngleStepTests`. Fork only.
@@ -854,7 +856,8 @@ leave the step). While its wizard is open the host sends the Wizard frame with e
 with no Wizard frame (`wzHostTick`, `WZ_GONE_TICKS` = 20, in `js/wizards.js`; counted in frames, not time, since a
 page held up gets its frames late and in order) and then shows that the wizard was closed and why, a tuning run's
 values found and not taken (the lines of the last result before "Not in use yet"), and Close as the only button
-(`wzShowGone`, `.wz-overlay.gone`); the same when the host never opened it (a screen without control). The host
+(`wzShowGone`, `.wz-overlay.gone`; `wzGoneReset` clears that message, or a wizard opened again showed it until its
+first frame); the same when the host never opened it (a screen without control). The host
 writes why control ended and what it turned off in the log (`[Control] The screen in control is gone (...); turned
 off: ...`), and a tuning run's values lost with the wizard (`[Steer wizard] Closed with the tuning values found and
 not taken: ...`): a bug report had neither. Tests: `SteerWizardSafetyTests` (`Browser_lost_says_in_the_log...`,
@@ -870,7 +873,10 @@ every run (a tester's tractor, 18 Nov 2026). A reading of two thirds of Max Limi
 (`IsStalledReading`, `StalledShare`). It was half: a proportional valve held to its coil's current works between about
 45 and 90 to 105, so its true minimum (42 to 48 on two tractors) read as stalled. Standing still the tyres hold the
 wheels (57 standing, 48 at walking pace on that tractor), and the refusal says to run the test at walking pace.
-Tests: `AutoMotorCalKpRampTests`. Fork only.
+Leaving the step mid-ramp puts the operator's gain and minimum PWM back at once (`RestoreOperatorSettings`): Cancel
+or a lost screen leaves the step and saves the profile straight away (`EndRemoteSteerWizard`), and the ramp's
+finally runs only on the host loop's next turn, so the ramp's own values (gain 5 to 200, minimum PWM 5) were saved
+(official #881, Sourcery). Tests: `AutoMotorCalKpRampTests`. Fork only.
 
 ## Tuning on the line
 The AutoSteer page's *Tune on Line* panel (Full view, beside Smart WAS; `LineTuneViewModel` over
