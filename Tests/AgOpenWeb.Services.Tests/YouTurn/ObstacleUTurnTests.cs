@@ -141,6 +141,26 @@ public class ObstacleUTurnTests
     }
 
     [Test]
+    public void InsideOnly_AnObstacleCountsOnlyFromInsideItsTurnLineAndStraightAhead()
+    {
+        // With a turn planned the pipeline asks only this: a turn keeps the tractor outside every
+        // turn line, so inside one and heading at the obstacle, the turn planned is not before it.
+        var field = Field(ObstacleAction.Turn);
+        double inside = ObstacleSouth - Distance / 2; // between the turn line and the obstacle
+        Assert.Multiple(() =>
+        {
+            Assert.That(_creation.TurnObstacleAhead(field, 3, 0, heading: 0, distance: 45, insideOnly: true), Is.EqualTo(-1),
+                "outside its turn line: the turn planned is taken to be before it");
+            Assert.That(_creation.TurnObstacleAhead(field, 3, inside, heading: 0, distance: 10, insideOnly: true), Is.EqualTo(0),
+                "inside it, the obstacle ahead");
+            Assert.That(_creation.TurnObstacleAhead(field, 3, inside, heading: Math.PI, distance: 10, insideOnly: true), Is.EqualTo(-1),
+                "inside it, driving away");
+            Assert.That(_creation.TurnObstacleAhead(field, 10.5, 50, heading: 0, distance: 10, insideOnly: true), Is.EqualTo(-1),
+                "inside it, going by beside the obstacle");
+        });
+    }
+
+    [Test]
     public void TheBoxRoundAnOutline_KeepsTheDistanceAndGoesRoundTheSameWay()
     {
         // A sliver with no area the offset can grow: three points in a line.

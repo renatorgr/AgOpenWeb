@@ -144,4 +144,62 @@ public class HardFenceGuardTests
             Assert.That(HardFenceGuard.Curvature(double.NaN, 2.9, 35), Is.EqualTo(0));
         });
     }
+
+    // A tree 2 m square, 10 m north of the origin.
+    private static BoundaryPolygon Tree(double e0, double n0, double e1, double n1) => new()
+    {
+        Points = new[] { (e0, n0), (e1, n0), (e1, n1), (e0, n1) }
+            .Select(p => new BoundaryPoint(p.Item1, p.Item2, 0)).ToList(),
+        IsHard = true,
+    };
+
+    [Test]
+    public void A_tree_narrower_than_the_implement_between_its_ends_counts()
+    {
+        // The ends go by 3 m either side of it; the middle of the implement is 1 m in after 5 m.
+        var tree = Tree(-1, 10, 1, 12);
+        Assert.That(HardFenceGuard.HeadingIn(tree, new Vec3(0, 6, 0), 0, Reach, 5.0, default, 0), Is.EqualTo(1.0).Within(0.05));
+    }
+
+    [Test]
+    public void Going_by_beside_an_obstacle_or_brushing_it_does_not_count()
+    {
+        var tree = Tree(-1, 10, 1, 12);
+        Assert.Multiple(() =>
+        {
+            Assert.That(HardFenceGuard.HeadingIn(tree, new Vec3(6, 6, 0), 0, Reach, 5.0, default, 0), Is.EqualTo(0), "1 m beside it");
+            // The right end 0.2 m inside its west edge: less than the margin.
+            Assert.That(HardFenceGuard.HeadingIn(tree, new Vec3(-0.8 - Reach, 6, 0), 0, Reach, 5.0, default, 0), Is.EqualTo(0), "brushing it");
+        });
+    }
+
+    [Test]
+    public void Already_in_an_obstacle_and_going_no_further_in_does_not_count()
+    {
+        // The middle of the implement at the tree's centre, driving out of it.
+        var tree = Tree(-1, 10, 1, 12);
+        Assert.That(HardFenceGuard.HeadingIn(tree, new Vec3(0, 11, 0), 0, Reach, 5.0, default, 0), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void Creeping_no_obstacle_is_looked_at()
+    {
+        var tree = Tree(-1, 10, 1, 12);
+        Assert.That(HardFenceGuard.HeadingIn(tree, new Vec3(0, 9.5, 0), 0, Reach, 0.5, default, 0), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void Steering_into_an_obstacle_counts_and_steering_away_does_not()
+    {
+        // A tree half a metre right of the implement's right end and 3 m on: straight ahead the end
+        // goes by it; turning right on a 10 m radius the end is 0.9 m in after 7 m.
+        var tree = Tree(4.5, 3, 6.5, 5);
+        var pivot = new Vec3(0, 0, 0);
+        Assert.Multiple(() =>
+        {
+            Assert.That(HardFenceGuard.HeadingIn(tree, pivot, 0, Reach, 8.0, pivot, 0), Is.EqualTo(0), "straight");
+            Assert.That(HardFenceGuard.HeadingIn(tree, pivot, 0, Reach, 8.0, pivot, 0.1), Is.EqualTo(0.87).Within(0.05), "right");
+            Assert.That(HardFenceGuard.HeadingIn(tree, pivot, 0, Reach, 8.0, pivot, -0.1), Is.EqualTo(0), "left");
+        });
+    }
 }

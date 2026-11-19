@@ -786,14 +786,19 @@ public sealed class YouTurnStateMachine
     /// and none planned. Every way a turn is lost near an obstacle ends here (missed, aborted,
     /// no room, AutoSteer or the track off and on again, U-turn switched off), and the caller
     /// takes AutoSteer off with the alarm, so the tractor is never steered into the obstacle.
+    /// A turn planned is taken to be before the obstacle, unless the tractor is already inside the
+    /// obstacle's turn line and heading at the obstacle itself: a turn keeps the tractor outside
+    /// every turn line, so that turn is somewhere else (the far end of a pass the line was moved to
+    /// beside the obstacle; with it planned, AutoSteer drove a tractor through a hard obstacle. Fork only).
     /// Returns the obstacle's index in the inner boundaries, or -1.
     /// </summary>
     public int ObstacleAheadWithoutTurn(in TickContext ctx, YouTurnWorkingState turn, double lookAhead,
         IReadOnlyList<int>? promoted = null)
     {
-        if (turn.IsExecuting || turn.TurnPath != null) return -1;
+        if (turn.IsExecuting) return -1;
         var p = ctx.CurrentPosition;
-        return _creation.TurnObstacleAhead(ctx.Boundary, p.Easting, p.Northing, p.Heading * Math.PI / 180.0, lookAhead, promoted);
+        return _creation.TurnObstacleAhead(ctx.Boundary, p.Easting, p.Northing, p.Heading * Math.PI / 180.0, lookAhead, promoted,
+            insideOnly: turn.TurnPath != null);
     }
 
     /// <summary>
