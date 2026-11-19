@@ -78,6 +78,28 @@ public class WideTurnFollowsTurnLineTests
         Assert.That(between.All(p => Math.Abs(60 - p.Northing - Setback) < 0.8), "along the turn line");
     }
 
+    // A field that narrows to the north: the east fence comes in 2° off the north-south passes,
+    // so pass 0 leaves the turn line along it. Placed so that a point of the pass (one every
+    // 2 m) is a few centimetres before the turn line.
+    private static readonly List<Vec2> Narrowing = new() { new(-60, -60.85), new(30, -60.85), new(-10, 1099.15), new(-60, 1099.15) };
+
+    [Test]
+    public void EntryArcWhoseFirstPointTouchesTheTurnLineFirst_IsSeatedFurtherBack()
+    {
+        // The turn goes west, away from the fence the pass runs out along, so nothing of the
+        // entry arc is ahead of its first point. Slid forward to the turn line, that point is
+        // the first to touch it and nothing of the arc is kept. The "too late" check then read
+        // the first point of the emptied arc: ArgumentOutOfRangeException in every GPS cycle
+        // (the beta robot on a field with such an end: 102 times, then "AutoSteer off: no
+        // GPS/guidance update for over 1 s").
+        var bench = new Bench(Narrowing);
+        var path = bench.PlanFromPass(0, out bool turnLeft);
+
+        Assert.That(turnLeft, Is.True, "away from the east fence");
+        Assert.That(path[0].Easting, Is.EqualTo(PassX(0)).Within(0.5), "the entry leg is on the current pass");
+        Assert.That(path[^1].Easting, Is.EqualTo(PassX(-1)).Within(0.5), "the exit leg is on the next pass");
+    }
+
     private sealed class Bench
     {
         private readonly YouTurnStateMachine _sm;

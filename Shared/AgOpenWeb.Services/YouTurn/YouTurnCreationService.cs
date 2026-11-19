@@ -647,6 +647,7 @@ namespace AgOpenWeb.Services.YouTurn
                         currentPos.Heading = head;
 
                         // Creates half a circle starting at the crossing point
+                        Vec3 seat = currentPos;
                         ytList.Clear();
                         ytList.Add(currentPos);
 
@@ -694,7 +695,9 @@ namespace AgOpenWeb.Services.YouTurn
                                 youTurnPhase = 1;
                                 return true;
                             }
-                            isOutOfBounds = true; // slid off without touching the turn line: seat it further infield
+                            // Slid off without touching the turn line, or its own first point was the
+                            // first to touch it: seat it further infield. The slide emptied ytList.
+                            isOutOfBounds = true;
                         }
 
                         if (stopIfWayOut == 300 || inClosestTurnPt.CurveIndex < 1 || inClosestTurnPt.CurveIndex > (input.GuidancePoints.Count - 2))
@@ -709,8 +712,10 @@ namespace AgOpenWeb.Services.YouTurn
                         closePt = input.GuidancePoints[inClosestTurnPt.CurveIndex];
                         inClosestTurnPt.ClosePt = closePt;
 
-                        // Set the flag to Critical stop machine
-                        if (Distance(ytList[0], input.PivotPosition) < 3)
+                        // Set the flag to Critical stop machine. The seat, not ytList[0]: a slide
+                        // that kept nothing of the arc left the list empty, and reading it threw in
+                        // every GPS cycle until AutoSteer went off for no guidance update.
+                        if (Distance(seat, input.PivotPosition) < 3)
                         {
                             FailCreate("wide turn: the entry arc starts within 3 m of the tractor (too late)", TurnFailure.TooLate);
                             return false;
