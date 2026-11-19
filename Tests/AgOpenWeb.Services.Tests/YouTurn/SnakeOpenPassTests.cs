@@ -380,6 +380,22 @@ public class SnakeOpenPassTests
     }
 
     [Test]
+    public void An_end_with_no_turn_is_tried_again_at_once_when_the_sections_are_switched_on_in_the_headland()
+    {
+        // Only the passes in the headland band are left: with the sections off in it, no turn here.
+        var (guidance, turn, turnLine, crop) = HeadlandBand();
+        _track.MarkPathWorked(0);
+        _sm.Tick(Ctx(turnLine, PassX(2), -25, 180, crop), guidance, turn);
+        Assert.That(turn.TurnPath, Is.Null, "the scenario: no pass to land on in the crop");
+
+        // The sections switched on in the headland: the band's passes are work again, at once.
+        ConfigurationStore.Instance.Tool.IsHeadlandSectionControl = false;
+        _sm.Tick(Ctx(turnLine, PassX(2), -25.01, 180, crop), guidance, turn);
+        Assert.That(turn.TurnPath, Is.Not.Null, "tried again at once, not 1.5 s later");
+        Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4));
+    }
+
+    [Test]
     public void The_order_is_planned_again_when_the_headland_changes()
     {
         // The square -40..40 (passes -10..9): from pass 6 the order goes east to 8.
@@ -527,9 +543,16 @@ public class SnakeOpenPassTests
         // The other way along the pass: the north end.
         TriedAgain("the other direction", Ctx(cultivated, PassX(1), 18, 0));
 
-        // Closer than 10 m to the end, Tick stops looking for a turn. Looking again after 1.5 s of
-        // that (a pass that crosses a headland strip has another end past it) tries again; a shorter
-        // spell is a heading or a distance flickering at the edge of the gate (FailedEndRetryTests).
+        // Closer than 10 m to the end, Tick stops looking for a turn. A short spell of that is a
+        // heading or a distance flickering at the edge of the gate (FailedEndRetryTests): the end
+        // is kept.
+        for (int i = 0; i < 3; i++)
+            _sm.Tick(Ctx(cultivated, PassX(1), 39, 0), guidance, turn);
+        _sm.Tick(Ctx(cultivated, PassX(1), 18, 0), guidance, turn);
+        Assert.That(_creation.TurnPathBuilds, Is.EqualTo(builds), "a short spell out of the gate keeps the end");
+
+        // Looking again after 1.5 s of that (a pass that crosses a headland strip has another end
+        // past it) tries again.
         for (int i = 0; i < 15; i++)
             _sm.Tick(Ctx(cultivated, PassX(1), 39, 0), guidance, turn);
         TriedAgain("after Tick stopped looking for a turn", Ctx(cultivated, PassX(1), 18, 0));
