@@ -544,7 +544,15 @@ public record WizardDto(
     string RecordHint, bool CanRecord,
     // A step with more than Start: where it is (the wheel tuning's TuneStage picks the page's
     // buttons) and the choice it runs with (the wanted wheel speed).
-    int TestStage = 0, double TestChoice = 0);
+    int TestStage = 0, double TestChoice = 0,
+    // The host closed the wizard (the screen in control went): no live state, only this.
+    bool Closed = false)
+{
+    /// <summary>The wizard the host closed (MainViewModel.SteerWizardClosedByHost).</summary>
+    public static readonly WizardDto ClosedByHost = new(
+        0, 0, "", "", "", false, false, false, false, "",
+        0, 0, "", 0, 0, false, 0, 0, 0, 0, "", "", 0, false, false, "", 0, "", false, Closed: true);
+}
 
 /// <summary>Vehicle tab: type / hitch / dimensions / antenna (ConfigStore.Vehicle).</summary>
 public record VehicleConfigDto(

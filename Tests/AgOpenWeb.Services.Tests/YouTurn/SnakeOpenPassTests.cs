@@ -362,6 +362,44 @@ public class SnakeOpenPassTests
     }
 
     [Test]
+    public void With_every_pass_in_the_crop_worked_the_field_is_done_whatever_is_left_in_the_band()
+    {
+        // The passes in the headland band are worked by the headland's own laps, not by the snake:
+        // left out of the order, they never keep it going.
+        var (guidance, turn, turnLine, crop) = HeadlandBand();
+        _track.MarkPathWorked(0);
+
+        var effects = _sm.Tick(Ctx(turnLine, PassX(2), -25, 180, crop), guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null, $"no turn (onto {turn.ReturnPassTargetPath})");
+            Assert.That(effects.StatusMessage, Is.EqualTo("Field complete — all tracks worked"));
+            Assert.That(effects.TurnCreationFailedSound, Is.True, "said, as the end of the field always is");
+        });
+    }
+
+    [Test]
+    public void The_U_turn_arrow_does_not_swap_onto_a_pass_in_the_headland_band()
+    {
+        // The arrow asks for the east side, where the nearest pass still to do (4) lies in the band:
+        // the swap is refused, as onto a pass outside the field, and the turn goes onto the order's
+        // pass in the crop. The swap checked the turn line alone and turned onto pass 4 (official #887,
+        // Chris's review).
+        var (guidance, turn, turnLine, crop) = HeadlandBand();
+        turn.NextUTurnDirectionLeftOverride = true; // left heading south: east, the higher passes
+
+        var effects = _sm.Tick(Ctx(turnLine, PassX(2), -25, 180, crop), guidance, turn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Not.Null, $"a turn, not \"{effects.StatusMessage}\"");
+            Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(0), "the order's pass in the crop, not pass 4 in the band");
+            Assert.That(effects.StatusMessage, Does.StartWith("U-turn direction not changed"));
+        });
+    }
+
+    [Test]
     public void Without_the_headland_or_with_the_sections_on_in_it_a_pass_in_the_band_is_turned_onto()
     {
         // The sections paint in the band when the headland is off or does not switch them off: a pass
