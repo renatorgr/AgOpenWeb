@@ -224,14 +224,23 @@ public partial class YouTurnCreationService
     /// The first obstacle chosen as U-turn (its index in <see cref="Boundary.InnerBoundaries"/>)
     /// whose turn line is within <paramref name="distance"/> straight ahead of the tractor, or
     /// -1. When the tractor is already inside a turn line, that obstacle counts only if the
-    /// obstacle itself is ahead.
+    /// obstacle itself is ahead. With <paramref name="insideOnly"/>, only that: the tractor inside
+    /// an obstacle's turn line and heading at the obstacle.
     /// </summary>
     public int TurnObstacleAhead(Boundary? boundary, double easting, double northing, double heading, double distance,
-        IReadOnlyList<int>? promoted = null)
+        IReadOnlyList<int>? promoted = null, bool insideOnly = false)
     {
         if (boundary == null || boundary.InnerBoundaries.Count == 0) return -1;
         var obstacles = TurnObstacles(boundary, _configStore.Guidance.UTurnDistanceFromBoundary, promoted, HardReach(_configStore));
         if (obstacles.Count == 0) return -1;
+        if (insideOnly)
+        {
+            // Asked every cycle with a turn planned: nothing to walk with the tractor in no turn area.
+            bool inside = false;
+            foreach (var o in obstacles)
+                if (o.Area.Contains(easting, northing)) { inside = true; break; }
+            if (!inside) return -1;
+        }
         double se = Math.Sin(heading), ce = Math.Cos(heading);
         int steps = Math.Max(1, (int)Math.Ceiling(distance / 0.5));
         for (int k = 0; k <= steps; k++)
@@ -240,7 +249,11 @@ public partial class YouTurnCreationService
             foreach (var o in obstacles)
             {
                 if (!o.Area.Contains(e, n)) continue;
-                if (!o.Area.Contains(easting, northing)) return o.InnerIndex;
+                if (!o.Area.Contains(easting, northing))
+                {
+                    if (insideOnly) continue;
+                    return o.InnerIndex;
+                }
                 if (GeometryMath.IsPointInPolygon(o.Fence, new Vec2(e, n))) return o.InnerIndex;
             }
         }
