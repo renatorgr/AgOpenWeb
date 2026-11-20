@@ -36,6 +36,24 @@ public partial class MainViewModel
     }
 
     /// <summary>
+    /// Switches automatic U-turns on or off and writes why to the log. The switch is not saved
+    /// and was in no log: a bug report from Couto da Ribeira (20 Nov 2026) had a turn planned
+    /// before an obstacle that was never driven, no turn planned at three engages after it, and
+    /// AutoSteer off four times "no U-turn before it" / "end of the pass and no U-turn here",
+    /// with nothing to say that U-turns had been switched off (the U-turn button sits beside
+    /// AutoSteer and acts on touch). Switched off with AutoSteer on, the operator is told at
+    /// once: a touch on it by mistake was seen only at the end of the pass. Fork only.
+    /// </summary>
+    private void SwitchYouTurn(bool on, string why)
+    {
+        if (IsYouTurnEnabled == on) return;
+        IsYouTurnEnabled = on;
+        _logger.LogInformation("[YouTurn] Automatic U-turns {State}: {Why}", on ? "on" : "off", why);
+        if (!on && IsAutoSteerEngaged && !IsActiveTrackClosed)
+            ReportFailure("Automatic U-turns off: AutoSteer will not turn at the end of the pass");
+    }
+
+    /// <summary>
     /// True when the active track is a closed loop (polygon / boundary curve /
     /// water pivot). U-turns make no sense on a closed track — there's no field
     /// end to turn at, you just drive the loop continuously — so they're disabled

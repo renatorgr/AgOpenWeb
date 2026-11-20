@@ -167,6 +167,10 @@ public class EndOfPassWithoutTurnTests
         });
     }
 
+    /// <summary>These fields run with U-turns switched off (no turn here), and the stop says so: "no
+    /// U-turn here" read as no room to turn (Couto da Ribeira, 20 Nov 2026).</summary>
+    private const string UTurnsOff = "end of the pass and automatic U-turns are switched off";
+
     private (double Northing, GpsCycleResult Result)? WentOff() =>
         _cycles.Where(c => c.Result.AutoSteerDisengagedThisCycle).Select(c => ((double, GpsCycleResult)?)c).FirstOrDefault();
 
@@ -178,7 +182,7 @@ public class EndOfPassWithoutTurnTests
 
         var off = WentOff();
         Assert.That(off, Is.Not.Null, "AutoSteer steered on towards the fence");
-        Assert.That(off!.Value.Result.DisengageReason, Does.Contain("end of the pass and no U-turn"));
+        Assert.That(off!.Value.Result.DisengageReason, Does.Contain(UTurnsOff));
         Assert.That(off.Value.Northing, Is.InRange(Headland + 0.9, Headland + 1.6), "a metre past the headland line");
     }
 
@@ -243,7 +247,7 @@ public class EndOfPassWithoutTurnTests
         Assert.That(off, Is.Not.Null, "AutoSteer steered on towards the fence with the turn gone");
         Assert.Multiple(() =>
         {
-            Assert.That(off!.Value.Result.DisengageReason, Does.Contain("end of the pass and no U-turn"));
+            Assert.That(off!.Value.Result.DisengageReason, Does.Contain(UTurnsOff));
             Assert.That(off.Value.Northing, Is.LessThan(35), "within a second of the turn being lost");
         });
     }
@@ -317,7 +321,7 @@ public class EndOfPassWithoutTurnTests
 
         var off = WentOff();
         Assert.That(off, Is.Not.Null, "AutoSteer steered on towards the fence");
-        Assert.That(off!.Value.Result.DisengageReason, Does.Contain("end of the pass and no U-turn"));
+        Assert.That(off!.Value.Result.DisengageReason, Does.Contain(UTurnsOff));
         Assert.That(off.Value.Northing, Is.InRange(30.9, 31.6), "a metre past the headland line");
     }
 
@@ -451,7 +455,7 @@ public class EndOfPassWithoutTurnTests
 
         var offAt = WentOff();
         Assert.That(offAt, Is.Not.Null, "AutoSteer steered on along the bend towards the fence");
-        Assert.That(offAt!.Value.Result.DisengageReason, Does.Contain("end of the pass and no U-turn"));
+        Assert.That(offAt!.Value.Result.DisengageReason, Does.Contain(UTurnsOff));
         Assert.That(offAt.Value.Northing, Is.InRange(line + 0.5, line + 1.6), "a metre past the headland line");
     }
 

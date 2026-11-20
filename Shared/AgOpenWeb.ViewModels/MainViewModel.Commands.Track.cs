@@ -1063,12 +1063,12 @@ public partial class MainViewModel
             // No U-turns on a closed/polygon track — there's no field end to turn at (#421).
             if (IsActiveTrackClosed)
             {
-                IsYouTurnEnabled = false;
+                SwitchYouTurn(false, "closed track");
                 StatusMessage = "U-turns aren't available on a closed (polygon) track";
                 return;
             }
 
-            IsYouTurnEnabled = !IsYouTurnEnabled;
+            SwitchYouTurn(!IsYouTurnEnabled, "U-turn button");
             SyncGuidanceStateToPipeline();
             StatusMessage = IsYouTurnEnabled ? "YouTurn enabled" : "YouTurn disabled";
         });
@@ -1857,7 +1857,7 @@ public partial class MainViewModel
             LogAutoSteerOff("track changed");
             ReportFailure("Guidance stopped: track changed");
         }
-        if (IsYouTurnEnabled) IsYouTurnEnabled = false;
+        SwitchYouTurn(false, "track changed");
 
         SelectedTrack = next;
         SyncGuidanceStateToPipeline();
