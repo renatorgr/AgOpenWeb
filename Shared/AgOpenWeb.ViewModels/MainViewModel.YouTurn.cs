@@ -6,6 +6,7 @@ using System;
 
 using AgOpenWeb.Models.Base;
 using AgOpenWeb.Models.Track;
+using Microsoft.Extensions.Logging;
 
 namespace AgOpenWeb.ViewModels;
 
@@ -32,6 +33,20 @@ public partial class MainViewModel
             if (SetProperty(ref _isYouTurnEnabled, value))
                 State.Operation.IsYouTurnEnabled = value; // mirror for web-UI projection
         }
+    }
+
+    /// <summary>
+    /// Switches automatic U-turns on or off and writes why to the log. The switch is not saved
+    /// and was in no log: a tester's bug report had a turn planned before an obstacle that was
+    /// never driven, no turn planned at three engages after it, and nothing in the log to show
+    /// that U-turns had been switched off (the U-turn button sits beside AutoSteer and acts on
+    /// touch), so it read as a U-turn fault.
+    /// </summary>
+    private void SwitchYouTurn(bool on, string why)
+    {
+        if (IsYouTurnEnabled == on) return;
+        IsYouTurnEnabled = on;
+        _logger.LogInformation("[YouTurn] Automatic U-turns {State}: {Why}", on ? "on" : "off", why);
     }
 
     /// <summary>

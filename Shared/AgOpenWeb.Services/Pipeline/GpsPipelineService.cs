@@ -1046,6 +1046,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
         if (!youTurnEnabled && _youTurnWasEnabled
             && (_youTurn.IsTriggered || _youTurn.IsExecuting || _youTurn.TurnPath != null))
         {
+            _logger.LogInformation("[YouTurn] Automatic U-turns switched off: the turn {What} is dropped",
+                _youTurn.IsExecuting ? "being driven" : "planned");
             YouTurnStateMachine.ClearState(_youTurn);
             isYouTurnTriggered = false;
             isInYouTurn = false;
