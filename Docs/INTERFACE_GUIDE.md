@@ -119,7 +119,9 @@ device is the operator.**
 2. **Manual sections** — toggle manual control of the implement sections.
 3. **Auto sections** — toggle automatic section on/off based on coverage and boundaries.
 4. **U-Turn** — arm automatic U-turns at the headland. Switched off with AutoSteer on, a notice says
-   so, and AutoSteer then stops before an obstacle or the end of the pass saying U-turns are off.
+   so, and AutoSteer then stops before an obstacle, or at the end of the pass, saying U-turns are off.
+   With U-turns off at a hard boundary, AutoSteer follows the line through the headland as far as a
+   turn would have gone (the turn line: the boundary less the U-turn distance) and stops there.
 5. **AutoSteer** — the master engage/disengage for automatic steering.
 
 ### On-map overlay buttons
