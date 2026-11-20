@@ -6,7 +6,7 @@
 .rc-row { display: flex; align-items: center; justify-content: space-between;
   gap: 10px; font-size: 13px; color: var(--text-2); }
 .rc-tgl { min-width: 60px; height: 32px; border: 1px solid var(--border); border-radius: 6px;
-  background: rgba(var(--ov),0.06); color: var(--text-2); cursor: pointer; font-size: 12px; }
+  background: rgba(var(--ov),0.06); color: var(--text-2); cursor: pointer; font-size: 12px; font-weight: 700; }
 .rc-tgl.on { background: rgba(80,160,255,0.28); border-color: #4a90d9; color: var(--text); }
 .rc-zerobtn { height: 32px; width: auto; padding: 0 16px; }
 .rc-ro { font-variant-numeric: tabular-nums; color: var(--text-muted); }
@@ -23,21 +23,20 @@
 .of-fld .of-input { width: 100%; box-sizing: border-box; } /* a number input's own width ran past the panel */
 .of-fld label { font-size: 11px; color: var(--text-muted); text-align: center; }
 .of-input { height: 34px; border: 1px solid var(--border); border-radius: 6px; background: rgba(var(--ov),0.06);
-  color: var(--text); font-size: 15px; font-weight: 700; text-align: center; }
-.of-hint { text-align: center; font-size: 10px; color: var(--text-muted); margin-top: 6px; }
+  color: var(--text); font: 600 14px ui-monospace, monospace; text-align: center; }
+.of-hint { text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 6px; }
 .of-move { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
 .of-mvbtn { height: 44px; width: 100%; }
 .of-mvbtn:disabled { opacity: 0.45; cursor: default; }
 /* Recorded Path panel. */
 .rp-tabs { margin-bottom: 8px; }
 .rp-tab { flex: 1; height: 32px; }
-.rp-tab.active { background: rgba(80,160,255,0.28); border-color: #4a90d9; color: var(--text); }
 .rp-tabbody { display: none; flex-direction: column; gap: 8px; }
 .rp-tabbody.active { display: flex; }
 .rp-iconrow { display: flex; gap: 10px; justify-content: center; }
 .rp-iconbtn { display: flex; flex-direction: column; align-items: center; gap: 3px;
   width: 72px; padding: 8px 4px; border: 1px solid var(--border); border-radius: 8px;
-  background: rgba(var(--ov),0.06); color: var(--text-2); cursor: pointer; font-size: 11px; }
+  background: rgba(var(--ov),0.06); color: var(--text-2); cursor: pointer; font-size: 12px; }
 .rp-iconbtn:hover { background: rgba(var(--ov),0.12); }
 .rp-iconbtn img { width: 36px; height: 36px; }
 .rp-ab { font-size: 22px; font-weight: 700; line-height: 36px; color: var(--text); }
@@ -46,7 +45,7 @@
 @keyframes rpblink { 50% { opacity: 0.3; } }
 .rp-saverow { display: none; align-items: center; gap: 8px; }
 .rp-saverow label { font-size: 12px; color: var(--text-muted); }
-.rp-saverow .of-input { flex: 1; text-align: left; font-weight: 400; font-size: 13px; }
+.rp-saverow .of-input { flex: 1; text-align: left; font: 500 13px system-ui, sans-serif; }
 .rp-info { text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 8px; }
 .rp-frow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .rp-frow .fj-jname { flex: 1; cursor: pointer; }
@@ -63,7 +62,7 @@
 .bm-tbtn:hover { background: rgba(var(--ov),0.12); }
 .bm-tbtn img { width: 32px; height: 32px; flex: none; }
 .bm-tbtn:disabled { opacity: 0.35; cursor: default; }
-.bm-tlbl { font-size: 11px; line-height: 1.15; text-align: center; overflow-wrap: anywhere; }
+.bm-tlbl { font-size: 12px; line-height: 1.15; text-align: center; overflow-wrap: anywhere; }
 .bm-plus { position: absolute; left: calc(50% + 9px); top: 22px; color: #F5F54D; font-weight: 700; font-size: 15px;
   line-height: 1; text-shadow: 0 0 2px #000; }
 .bm-lhdr { display: grid; grid-template-columns: 40px 1fr 0.9fr 0.85fr 0.85fr 0.85fr 0.75fr; align-items: center; background: #1565C0; color: #fff;
@@ -117,10 +116,10 @@
 .bm-circ { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .bm-circlbl { font-size: 13px; color: var(--text-muted); min-width: 84px; }
 .bm-brk { flex-basis: 100%; height: 0; } /* the tools on a row of their own, under the size */
-.bm-circin { width: 64px; height: 40px; box-sizing: border-box; padding: 0 6px; font-size: 15px; text-align: right;
+.bm-circin { width: 64px; height: 40px; box-sizing: border-box; padding: 0 6px; font: 600 14px ui-monospace, monospace; text-align: right;
   border: 1px solid var(--border); border-radius: 6px; background: rgba(var(--ov),0.06); color: inherit; }
 .bm-cbtn { height: 40px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: transparent;
-  color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+  color: inherit; font: 600 13px system-ui, sans-serif; cursor: pointer; }
 .bm-cbtn:hover { background: rgba(var(--ov),0.12); }
 .bm-cbtn.on { background: rgba(77,208,245,0.25); border-color: rgb(77,208,245); }
 .bm-cbtn:disabled { opacity: 0.35; cursor: default; }
@@ -128,7 +127,7 @@
 .bp-offrow { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .bp-offlbl { font-weight: 700; font-size: 14px; }
 .bp-offin { width: 90px; height: 36px; border: 1px solid var(--border); border-radius: 6px; background: #fff;
-  color: #111; font-size: 20px; font-weight: 700; text-align: center; }
+  color: #111; font: 700 20px ui-monospace, monospace; text-align: center; }
 .bp-offunit { font-size: 13px; color: var(--text-muted); }
 .bp-panel { font-family: system-ui, sans-serif; }
 .bp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
