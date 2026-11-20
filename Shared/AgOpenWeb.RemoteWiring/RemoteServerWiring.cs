@@ -1157,11 +1157,13 @@ public static partial class RemoteServerWiring
                     var headingFusion = services.GetRequiredService<AgOpenWeb.Services.Interfaces.IGpsHeadingFusionService>();
                     server.HeadingChartProvider = () => (headingFusion.GpsHeadingDeg, headingFusion.ImuCorrectedDeg);
 
-                    // Field data card (#321): boundary area, actual area and the trip counters.
+                    // Field data card (#321): boundary area, actual area, the trip counters and the
+                    // work rate of the sections that are on (fork).
                     var fieldDataCoverage = services.GetRequiredService<AgOpenWeb.Services.Interfaces.ICoverageMapService>();
                     server.FieldDataProvider = () => vm.IsFieldOpen
                         ? new AgOpenWeb.RemoteServer.FieldDataDto(vm.FieldBoundaryAreaSqM,
-                            fieldDataCoverage.ActualAreaCovered, fieldDataCoverage.TotalWorkedAreaUser, vm.TripDistanceMeters)
+                            fieldDataCoverage.ActualAreaCovered, fieldDataCoverage.TotalWorkedAreaUser, vm.TripDistanceMeters,
+                            vm.WorkRateHaPerHour)
                         : null;
 
                     // ISOBUS task controller (#312): its heartbeat for the status frame.

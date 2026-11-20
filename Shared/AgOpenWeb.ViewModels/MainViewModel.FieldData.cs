@@ -60,6 +60,29 @@ public partial class MainViewModel
         RestartTripDistance();
     }
 
+    /// <summary>Width of the sections that are on now, metres: the part of the implement that is
+    /// working. A section counts while <see cref="AgOpenWeb.Services.Interfaces.SectionControlState.IsOn"/>,
+    /// the state the coverage map paints by, so the Rate and the Trip area count the same sections.</summary>
+    public double WorkingWidthMeters
+    {
+        get
+        {
+            var states = _sectionControlService.SectionStates;
+            int n = Math.Min(_sectionControlService.NumSections, states?.Count ?? 0);
+            double width = 0;
+            for (int i = 0; i < n; i++)
+                if (states![i].IsOn) width += Math.Max(0, states[i].Width);
+            return width;
+        }
+    }
+
+    /// <summary>The card's Rate, ha/hr: the speed times the width of the sections that are on
+    /// (AgOpenGPS's formula, <c>CFieldData.WorkRateHectares</c>: width × km/h × 0.1). With every
+    /// section off (Off, or Auto and off in the headland) nothing is being worked and the rate is
+    /// 0; with half the boom on it is half. AgOpenGPS counts the whole implement whether its
+    /// sections are on or not, so the rate read the same parked in the headland. Fork only.</summary>
+    public double WorkRateHaPerHour => WorkingWidthMeters * Math.Abs(State.Vehicle.Speed) * 3.6 * 0.1;
+
     /// <summary>Boundary area less inner boundaries, m²; 0 with no boundary.</summary>
     public double FieldBoundaryAreaSqM
     {

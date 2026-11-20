@@ -348,8 +348,10 @@ public record LineTuneDto(int Stage, bool Stanley, int Tried, string Description
 
 /// <summary>What the field data card shows beyond the worked area the status frame already
 /// carries: the boundary area less inner boundaries (0 = no boundary), the ground covered
-/// at least once (overlap counted once), and the trip area and distance. m² and m.</summary>
-public record FieldDataDto(double BoundaryAreaSqM, double ActualAreaSqM, double TripAreaSqM, double TripDistanceM);
+/// at least once (overlap counted once), and the trip area and distance. m² and m. The work
+/// rate (ha/hr) counts only the sections that are on (<c>MainViewModel.WorkRateHaPerHour</c>; fork only).</summary>
+public record FieldDataDto(double BoundaryAreaSqM, double ActualAreaSqM, double TripAreaSqM, double TripDistanceM,
+    double WorkRateHaPerHour = 0);
 
 /// <summary>The ISOBUS task controller's heartbeat (PGN 240): whether section control is
 /// enabled on the implement, the implement's section count (0 = no implement), how many
