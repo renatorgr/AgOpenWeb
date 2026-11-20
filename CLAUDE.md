@@ -363,6 +363,12 @@ has one is added after it, an inner boundary (`FormBoundaryPlayer.cs:140`). Ever
 with what the field had (`MainViewModel.SetOuterBoundary`: `[Boundary] Outer boundary replaced by a drive-around
 recording: was 213 points, 11.60 ha; now 39 points, 0.05 ha`), so a bug report says it. The host does not refuse the
 command: the scenario harnesses redraw boundaries with it. Tests: `OuterBoundaryReplacedLogTests`. Fork only.
+The menu's buttons and the recorder's have their words under the icon (*Drive round field*, *Drive round obstacle*,
+...): they were icons whose words were a title, which a tablet never shows. The recorder's title is *Record Field
+Boundary* or *Record Obstacle*, from the host once its recording has started (`MainViewModel.IsRecordingObstacle`,
+the Boundary frame's last byte; before that, the button that opened it), where both said "Stop Record Pause
+Boundary". Tests: `BoundaryRecorderKindTests`, `BoundaryRecorderPageTests` (Docs/WEB_CLIENT.md, "The screen it is
+made for").
 
 ## Technology Stack
 

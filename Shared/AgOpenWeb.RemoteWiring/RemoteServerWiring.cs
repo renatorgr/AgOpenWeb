@@ -1130,7 +1130,8 @@ public static partial class RemoteServerWiring
                             vm.IsDrawRightSide,
                             vm.IsDrawAtPivot,
                             vm.IsBoundarySectionControlOn,
-                            bpts);
+                            bpts,
+                            vm.IsRecordingObstacle);
                     };
 
                     // Web-camera view seed: the last tilt+zoom the client sent
