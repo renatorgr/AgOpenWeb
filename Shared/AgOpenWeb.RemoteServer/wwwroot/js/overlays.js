@@ -298,8 +298,12 @@ function moduleAggColor(s) {
 // Area/rate formatting — matches MainViewModel.FormatArea / WorkRateDisplay.
 function fmtArea(m2) { return fmtUnit(m2 * 0.0001, 'ha'); }
 function fmtRate(haPerHr) { return haPerHr == null ? '—' : fmtUnit(haPerHr, 'ha', 1) + '/hr'; }
-// Work rate from speed (m/s) × tool width; null without a tool width (#398).
+// Work rate from speed (m/s) × tool width; null without a tool width (#398). The whole
+// implement: only Time left uses it (the time to finish working at the full width).
 function workRateHa(speedMs) { const tw = toolWidthM(); return tw > 0 ? speedMs * 3600 * tw / 10000 : null; }
+// The Rate shown: the host's, the speed times the width of the sections that are on, so 0 with
+// every section off (MainViewModel.WorkRateHaPerHour; fork only).
+function workingRateHa() { const fd = statusBar && statusBar.fieldData; return fd ? fd.workRateHaPerHour : null; }
 // Workable area (m²) from the Scene the client already has: headland polygon if
 // present, else the outer boundary (shoelace) — matches WorkableAreaSqM.
 function shoelace(pts) {
@@ -333,8 +337,7 @@ function rotatingLineText() {
     if (!scene || !scene.hasField) return '—';
     const workable = workableAreaSqM(), worked = s.workedAreaSqM || 0;
     const leftPct = workable > 0 ? ((workable - worked) * 100 / workable) : 100;
-    const haPerHr = workRateHa(lastTick ? lastTick.speed : 0);
-    return tr('Done {area}  Left {pct}%  Rate {rate}', { area: fmtArea(worked), pct: leftPct.toFixed(0), rate: fmtRate(haPerHr) });
+    return tr('Done {area}  Left {pct}%  Rate {rate}', { area: fmtArea(worked), pct: leftPct.toFixed(0), rate: fmtRate(workingRateHa()) });
   }
   const name = tick && tick.activeTrackName; // AB-line page
   if (!name) return tr('No AB Line');
@@ -451,13 +454,15 @@ function renderFieldCard() {
   // catches up, so keep Actual within Worked.
   const actual = Math.min(fd.actualAreaSqM, worked);
   const speedKmh = (lastTick ? lastTick.speed : 0) * 3.6;
-  const haPerHr = workRateHa(lastTick ? lastTick.speed : 0);
+  // Time left is the time to finish at the full width (AgOpenGPS), not at the Rate shown,
+  // which is 0 while the sections are off in a turn.
+  const fullHaPerHr = workRateHa(lastTick ? lastTick.speed : 0);
   for (const r of FC.card.querySelectorAll('.fc-bnd')) r.classList.toggle('fc-hide', !(total > 0));
   FC.name.textContent = scene.fieldName + (s.jobName ? '  ·  ' + s.jobName : '');
   FC.worked.textContent = fmtArea(worked);
   FC.overlap.textContent = (worked > 0 ? (1 - actual / worked) * 100 : 0).toFixed(1) + '%';
   FC.actual.textContent = fmtArea(actual);
-  FC.rate.textContent = fmtRate(haPerHr);
+  FC.rate.textContent = fmtRate(fd.workRateHaPerHour);
   FC.tripArea.textContent = fmtArea(fd.tripAreaSqM);
   FC.tripDist.textContent = fmtUnit(fd.tripDistanceM, 'm', 0);
   if (total > 0) {
@@ -466,8 +471,8 @@ function renderFieldCard() {
     FC.remain.textContent = fmtArea(left) + '  (' + (left * 100 / total).toFixed(1) + '%)';
     FC.actRemain.textContent = fmtArea(Math.max(0, total - actual));
     // AgOpenGPS: no estimate below 2 km/h.
-    if (speedKmh > 2 && haPerHr > 0) {
-      const mins = Math.round(left / 10000 / haPerHr * 60);
+    if (speedKmh > 2 && fullHaPerHr > 0) {
+      const mins = Math.round(left / 10000 / fullHaPerHr * 60);
       FC.time.textContent = Math.floor(mins / 60) + ':' + String(mins % 60).padStart(2, '0');
     } else FC.time.textContent = '∞';
   }

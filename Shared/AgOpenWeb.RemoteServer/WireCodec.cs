@@ -854,7 +854,7 @@ public static class WireCodec
             w.Write((uint)(iso.Reported >> 32));
         }
         // Field data card (append-only, #321): [u8 present] then f64 boundary area,
-        // actual area, trip area (m²), trip distance (m).
+        // actual area, trip area (m²), trip distance (m), work rate of the sections on (ha/hr, fork).
         var fd = s.FieldData;
         w.Write((byte)(fd != null ? 1 : 0));
         if (fd != null)
@@ -863,6 +863,7 @@ public static class WireCodec
             w.Write(fd.ActualAreaSqM);
             w.Write(fd.TripAreaSqM);
             w.Write(fd.TripDistanceM);
+            w.Write(fd.WorkRateHaPerHour);
         }
         // Network IO: PGN 100 sent (append-only, #337).
         w.Write((byte)(s.SendCorrectedPosition ? 1 : 0));
