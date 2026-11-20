@@ -430,6 +430,23 @@ public class ObstacleClosedLoopTests
         DriveUntil(() => !_engaged || _n > DitchNorth);
 
         AssertNeverSteeredIntoTheDitch();
-        Assert.That(_kickoutReason, Does.Contain("Inner 1"));
+        Assert.That(_kickoutReason, Does.Contain("Inner 1 ahead and automatic U-turns are switched off"),
+            "says the switch is off: \"no U-turn before it\" was read as no room to turn (Couto da Ribeira)");
+    }
+
+    [Test]
+    public void UTurnSwitchedOffWithTheTurnPlanned_AutoSteerGoesOffBeforeTheDitch_SayingUTurnsAreOff()
+    {
+        // Couto da Ribeira, 20 Nov 2026: the turn before the obstacle was planned, U-turns went off
+        // (the button beside AutoSteer) and the turn was dropped without a word; AutoSteer went off
+        // "no U-turn before it" and the operator read it as no room to turn.
+        Engage();
+        DriveUntil(() => Planned);
+        Assert.That(_last!.YouTurn!.TurnAtObstacle, Is.True, "the scenario: the turn is planned before the ditch");
+        _pipeline.SetYouTurnEnabled(false);
+        DriveUntil(() => !_engaged || _n > DitchNorth);
+
+        AssertNeverSteeredIntoTheDitch();
+        Assert.That(_kickoutReason, Does.Contain("Inner 1 ahead and automatic U-turns are switched off"));
     }
 }

@@ -118,7 +118,8 @@ device is the operator.**
 1. **Contour** — toggle contour (follow-the-coverage) guidance.
 2. **Manual sections** — toggle manual control of the implement sections.
 3. **Auto sections** — toggle automatic section on/off based on coverage and boundaries.
-4. **U-Turn** — arm automatic U-turns at the headland.
+4. **U-Turn** — arm automatic U-turns at the headland. Switched off with AutoSteer on, a notice says
+   so, and AutoSteer then stops before an obstacle or the end of the pass saying U-turns are off.
 5. **AutoSteer** — the master engage/disengage for automatic steering.
 
 ### On-map overlay buttons

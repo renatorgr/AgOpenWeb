@@ -303,7 +303,7 @@ public partial class MainViewModel
             LogAutoSteerOff(logReason);
             ReportFailure(message);
         }
-        if (IsYouTurnEnabled) IsYouTurnEnabled = false;
+        SwitchYouTurn(false, logReason);
         SelectedTrack = null;
     }
 

@@ -59,6 +59,16 @@ public sealed record RuntimeStateCapture(string Json, string? FieldDirectory)
                 state.Guidance.SteerAngle,
                 state.Guidance.HeadingError,
             },
+            // The right-hand buttons as the operator left them: automatic U-turns off was in no
+            // log nor here, and a planned turn lost to it looked like a U-turn bug. Fork only.
+            Operation = new
+            {
+                state.Operation.IsAutoSteerEngaged,
+                state.Operation.IsYouTurnEnabled,
+                state.Operation.IsContourOn,
+                state.Operation.IsSectionAutoMaster,
+                state.Operation.IsSectionManualAll,
+            },
             // The skip settings pick the U-turn's target pass (#418).
             FieldTools = new
             {

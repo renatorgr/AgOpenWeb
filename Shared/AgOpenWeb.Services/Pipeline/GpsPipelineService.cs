@@ -1281,6 +1281,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
         if (!youTurnEnabled && _youTurnWasEnabled
             && (_youTurn.IsTriggered || _youTurn.IsExecuting || _youTurn.TurnPath != null))
         {
+            _logger.LogInformation("[YouTurn] Automatic U-turns switched off: the turn {What} is dropped",
+                _youTurn.IsExecuting ? "being driven" : "planned");
             YouTurnStateMachine.ClearState(_youTurn);
             isYouTurnTriggered = false;
             isInYouTurn = false;
@@ -1355,7 +1357,11 @@ public sealed class GpsPipelineService : IGpsPipelineService
             {
                 autoSteerEngaged = false;
                 autoSteerDisengaged = true;
-                disengageReason = $"AutoSteer off: Inner {inner + 1} ahead and no U-turn before it. Steer by hand.";
+                // With U-turns switched off, say so: "no U-turn before it" read as no room to turn,
+                // and the switch is one touch from AutoSteer (Couto da Ribeira, 20 Nov 2026). Fork only.
+                disengageReason = youTurnEnabled
+                    ? $"AutoSteer off: Inner {inner + 1} ahead and no U-turn before it. Steer by hand."
+                    : $"AutoSteer off: Inner {inner + 1} ahead and automatic U-turns are switched off. Steer by hand.";
                 lock (_stateLock) _autoSteerEngaged = false;
                 _audioService.Play(SoundEffect.UTurnTooClose);
             }
@@ -1426,7 +1432,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
                     {
                         autoSteerEngaged = false;
                         autoSteerDisengaged = true;
-                        disengageReason = "AutoSteer off: end of the pass and no U-turn here. Turn by hand.";
+                        disengageReason = youTurnEnabled
+                            ? "AutoSteer off: end of the pass and no U-turn here. Turn by hand."
+                            : "AutoSteer off: end of the pass and automatic U-turns are switched off. Turn by hand.";
                         lock (_stateLock) _autoSteerEngaged = false;
                         _audioService.Play(SoundEffect.UTurnTooClose);
                     }
