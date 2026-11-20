@@ -170,6 +170,18 @@ sections stayed on outside the field (a tester's field, the simulator steered by
 60 m notch: 464 m² sprayed outside). Tests: `PolygonClearGridTests`, `SectionInFenceNotchTests`
 (Models), `SectionsOffInFenceNotchTests`. Fork only.
 
+### A boundary edit keeps the job's worked area
+`MainViewModel.SetCurrentBoundary` gives the coverage map the outer boundary's box (plus 50 m) at every boundary
+edit (an obstacle's choice, one added or deleted, another outer boundary). `CoverageMapService.SetFieldBounds`
+made a new, empty grid whenever that box was not the grid's, and the grid is not the box once it has grown
+(painting within 50 m of its edge adds 250 m, a job's tiles reaching further do the same on loading): the map
+went blank and the next autosave deleted every tile of the job. A tester's sprayer job lost the day's passes to
+one obstacle deleted (Couto da Ribeira, 20 Nov 2026). With worked area on the grid, `SetFieldBounds` now grows
+the grid to hold the box too and keeps what is painted (`GrowBoundsToHold`, `ResizeKeepingCoverage`, the copy
+painting near the edge uses); an empty grid takes the box as before, and a field closing clears the bounds first
+(`ClearFieldBounds`), so another field starts empty. The last boundary deleted with worked area on the map keeps
+the grid as well. Tests: `CoverageBoundaryEditTests`, `DeleteFieldAndBoundaryTests`.
+
 ### The simulator never steers the module
 The steer module stays on the network while the simulator runs. While the simulator is the chosen GPS
 source (`GpsPipelineService.SetSimulatorEnabled`, from the moment it is chosen) `VehicleState.SimulatorHoldsSteering`
