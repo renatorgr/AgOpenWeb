@@ -18,10 +18,9 @@ namespace AgOpenWeb.Services.Tests.YouTurn;
 /// <summary>
 /// The normal and alternative modes: an end where no turn was made is tried again every 1.5 s,
 /// or at once when something that can change the answer does, as the snake order's ends
-/// (<see cref="SnakeOpenPassTests"/>, official #852). Built again on every GPS cycle, a turn that
-/// could not be made filled the 2000 lines of a bug report's log in 13 s (Renato, 16 Nov: the
-/// tractor parked with AutoSteer on, 95 builds, each moving the turn back 0.5 m at a time up to
-/// 30 m). Fork only.
+/// (<see cref="SnakeOpenPassTests"/>, #852). Built again on every GPS cycle, a turn that
+/// could not be made filled the 2000 lines of a bug report's log in 13 s (the tractor parked
+/// with AutoSteer on, 95 builds, each moving the turn back 0.5 m at a time up to 30 m).
 /// </summary>
 [TestFixture]
 [NonParallelizable] // ConfigurationStore is a singleton.

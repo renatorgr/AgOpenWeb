@@ -222,8 +222,9 @@ public class SteerWizardSafetyTests
     [Test]
     public void Browser_lost_switches_a_section_left_in_Auto_by_its_own_button_off()
     {
-        // Master off, manual off, section 1 put in Auto by its own button: it opens and closes
-        // by itself over the field, so it went on working with nobody at the screen.
+        // Master off, manual off, section 0 put in Auto by its own button: SectionControlService
+        // runs it by that button, so it opened and closed by itself over the field with nobody at
+        // the screen.
         var b = new MainViewModelBuilder();
         var states = new[]
         {
@@ -244,7 +245,7 @@ public class SteerWizardSafetyTests
     [Test]
     public void Browser_lost_switches_a_section_beyond_the_count_off_too()
     {
-        // The implement set to fewer sections with one of the others still On: its state is
+        // The implement set to fewer sections with one of the others still On: its button is
         // kept, and it would be On again when the count goes back up.
         var b = new MainViewModelBuilder();
         var states = new[]

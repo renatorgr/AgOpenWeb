@@ -26,7 +26,7 @@ public class GuidanceConfigTests
     [Test]
     public void The_distance_from_the_boundary_is_never_negative_and_always_a_number()
     {
-        // A negative distance (the settings page took one) put the turn line outside the fence.
+        // A negative distance (the settings box takes one) put the turn line outside the fence.
         var g = new GuidanceConfig { UTurnDistanceFromBoundary = -3 };
         Assert.That(g.UTurnDistanceFromBoundary, Is.EqualTo(0));
 
