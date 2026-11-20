@@ -342,10 +342,10 @@ public sealed class YouTurnStateMachine
                     HandleAlternateCreation(in ctx, track, abHeading, headingRadians, guidance, turn, effects);
                 else
                     HandleNormalCreation(in ctx, track, abHeading, currentPosition, headingRadians, guidance, turn, effects);
-                // No turn here: tried again in 1.5 s, or at once when something that can change the answer
-                // does (see _failedEnd). Rebuilt on every cycle, a turn that can't be made (a parked tractor
-                // with AutoSteer on, a turn that fits nowhere) filled the 2000 lines of a bug report's log in
-                // 13 s (Renato, 16 Nov: 95 builds). Fork only.
+                // No turn here: tried again in 1.5 s, or at once when something that can change the
+                // answer does (see _failedEnd). Built again on every cycle, a turn that can't be made
+                // (a tractor parked with AutoSteer on, a turn that fits nowhere) filled the 2000 lines
+                // of a bug report's log in 13 s (95 builds).
                 if (turn.TurnPath == null)
                 {
                     _failedEnd = EndKey(in ctx, track, guidance, turn, EndFieldStamp(in ctx));
@@ -360,7 +360,7 @@ public sealed class YouTurnStateMachine
             // creation window): an end where none built is tried again next time. A pass that crosses
             // a headland strip has another end past it. A shorter spell keeps it: the heading or the
             // distance to the end flickering at the edge of the gate (a tractor parked with AutoSteer
-            // on, a single antenna's heading) built the turn again every other cycle. Fork only.
+            // on, a single antenna's heading) built the turn again every other cycle.
             _failedEnd = null;
             _failedEndIdle = 0;
         }
@@ -1417,7 +1417,7 @@ public sealed class YouTurnStateMachine
 
     // An end where no turn was made onto the order's pass or the nearest open passes (a hard fence
     // the turns don't clear: each build moves the turn back 0.5 m at a time, up to 30 m), and in the
-    // normal and alternative modes an end where no turn was made (TriedJustNow; fork only). Tick
+    // normal and alternative modes an end where no turn was made (TriedJustNow). Tick
     // looks for a turn on every GPS cycle while the end is ahead, and the passes tried here
     // tripled the builds of each look, so the end is remembered and tried again every 1.5 s
     // (FailedEndRetryCycles: AgOpenGPS waits that long, makeUTurnCounter, before it builds again
@@ -1425,8 +1425,9 @@ public sealed class YouTurnStateMachine
     // that comes to fit as the tractor moves on is planned without a word. Tried at once when
     // something that can change the answer does: the pass, the direction of travel, the nudge,
     // the snake order, the field or headland (SnakeFieldStamp), the skip, the U-turn arrow or a
-    // turn setting (the operator lowering the radius to make it fit). Forgotten when Tick stops
-    // looking for a turn, the track changes or U-turn is switched off.
+    // turn setting (the operator lowering the radius to make it fit). Forgotten when a turn is
+    // planned or driven, when Tick has not looked for a turn for 1.5 s, the track changes or U-turn
+    // is switched off.
     private EndTried? _failedEnd;
     private int _failedEndCycles;
     private int _failedEndIdle; // cycles in a row not looking for a turn since one did not build

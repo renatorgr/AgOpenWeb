@@ -134,7 +134,7 @@ public class GuidanceConfig : ObservableObject
         set => SetProperty(ref _uTurnExtension, value);
     }
 
-    // A distance in from the fence, never out: a negative one (the settings page took it) put the
+    // A distance in from the fence, never out: a negative one (the settings box takes it) put the
     // turn line outside the field, and every turn with it. No number at all is the default.
     public const double DefaultUTurnDistanceFromBoundary = 2.0;
     private double _uTurnDistanceFromBoundary = DefaultUTurnDistanceFromBoundary;

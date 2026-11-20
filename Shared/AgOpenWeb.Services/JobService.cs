@@ -252,7 +252,7 @@ public class JobService : IJobService
     /// keeps for a device (CON, NUL, COM1...) gets a '_' in front. Empty after
     /// that: the default name is used. A job typed "Spraying 15:51" could not be saved on Windows:
     /// the field opened with no job, said only in the log, and the coverage driven was never saved
-    /// (the beta robot, 2026-11-15). On Linux a '/' made a folder inside the jobs folder. Fork only.
+    /// (a test run on Windows, 2026-11-15). On Linux a '/' made a folder inside the jobs folder.
     /// </summary>
     internal static string SafeTaskName(string name)
     {
