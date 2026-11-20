@@ -212,7 +212,7 @@ copy at most, so a module repeating the same bytes (PGN 253 with nothing changed
 link is preferred: with the first one gone the other's datagrams match nothing and are taken at once. Before the
 GPS text reaches the parser, so the copies never reach the line splitter either. The first copy from a module in
 30 s is logged with both links (`[UDP] ... is heard on two network links`). Where the system does not give the link
-everything is taken, as before. Tests: `LinkCopyFilterTests`. Fork only.
+everything is taken, as before. Tests: `LinkCopyFilterTests`. Docs/ARCHITECTURE.md (same text as official draft PR, branch `fix/udp-second-link-copies`).
 
 ### The simulator's 10x is a time-lapse
 The sim bar's 10x (`IsSimulatorSpeed10x`) runs time ten times faster at the speed shown, not the tractor
