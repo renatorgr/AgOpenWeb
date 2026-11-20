@@ -339,6 +339,19 @@ tool widths for the ends and 1 for the sides. Made because one width all round l
 irregular fields, and lines drawn per edge (run straight on past their ends) cut half a field off at a step in its
 boundary. Tests: `HeadlandAlongPassesTests` (Models), `HeadlandAlongPassesVmTests`.
 
+### Replacing a field's outer boundary
+The boundary menu's *Drive around field*, *Draw on map* and *Build from tracks* each give the field its outer
+boundary, and with one there already they took its place without a word (only the KML import asked). On a tester's
+field (Couto da Ribeira, 20 Nov 2026) two obstacles driven round with the field's button, which sits beside the
+obstacle's, each became the outer boundary: a 9 ha field 0.05 ha on the screen, the headland and the turn line
+rebuilt on it. With an outer boundary in the field the page now asks first (`askReplaceOuter` in
+`js/field-builder.js`: "Replace the outer boundary?", before a recording or a drawing starts) and names the
+obstacle buttons; with none it goes on as before. AgOpenGPS never replaces one: a boundary recorded in a field that
+has one is added after it, an inner boundary (`FormBoundaryPlayer.cs:140`). Every new outer boundary is in the log
+with what the field had (`MainViewModel.SetOuterBoundary`: `[Boundary] Outer boundary replaced by a drive-around
+recording: was 213 points, 9.03 ha; now 39 points, 0.05 ha`), so a bug report says it. The host does not refuse the
+command: the scenario harnesses redraw boundaries with it. Tests: `OuterBoundaryReplacedLogTests`. Fork only.
+
 ## Technology Stack
 
 - **.NET 10.0** - Target framework
