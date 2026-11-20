@@ -833,8 +833,8 @@ public partial class MainViewModel
     /// Gives the field this outer boundary and says so in the log, with what it had before. A
     /// drive-around recording, a drawing on the map, the tracks and a KML file each take the
     /// place of the outer boundary the field has (the page asks first): on a tester's field
-    /// two obstacles driven round with the field's button each became the outer boundary, a
-    /// 9 ha field 0.05 ha on the screen, and the log had no line to say so.
+    /// two obstacles driven round with the field's button each became the outer boundary, an
+    /// 11.6 ha field 0.09 ha on the screen, and the log had no line to say so.
     /// </summary>
     private void SetOuterBoundary(Boundary boundary, BoundaryPolygon polygon, string by)
     {

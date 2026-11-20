@@ -12,7 +12,7 @@ namespace AgOpenWeb.ViewModels.Tests;
 /// <summary>
 /// A field's outer boundary replaced is in the log, with what the field had before. On a
 /// tester's field two obstacles driven round with the field's button each became the outer
-/// boundary (a 9 ha field 0.05 ha on the screen), and the bug report's log had no line to say
+/// boundary (an 11.6 ha field 0.09 ha on the screen), and the bug report's log had no line to say
 /// so: it was read from the headland being saved right after each recording.
 /// </summary>
 [TestFixture]
