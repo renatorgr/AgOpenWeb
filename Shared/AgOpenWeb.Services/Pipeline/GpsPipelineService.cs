@@ -1399,7 +1399,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // there ("End of field reached", no turn that fits, U-turn off): AutoSteer off with the
         // alarm as the tractor enters the headland heading out, so the operator has the headland
         // to turn by hand. Left on, it steers on along the line and through the fence (as
-        // AgOpenGPS, which only sends geoStop). Once per entry, a metre in. Fork only.
+        // AgOpenGPS, which only sends geoStop). Once per entry, a metre in; with automatic U-turns
+        // switched off, at the turn line. Fork only.
         if (boundary?.OuterBoundary is { IsHard: true, IsValid: true } fence && hasValidHeadlandLine && hasTickableTrack)
         {
             if (_headlandIndex.Contains(headlandLine!, driftedEasting, driftedNorthing))
@@ -1422,7 +1423,17 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 bool turnHere = _youTurn.TurnPath != null || _youTurn.IsExecuting;
                 if (turnHere) { _headlandEntryTurnSeen = true; _headlandEntryNoTurnCycles = 0; }
                 else _headlandEntryNoTurnCycles++;
-                if (de * de + dn * dn >= HeadlandEntryCheckAfter * HeadlandEntryCheckAfter && !turnHere
+                bool atLook = de * de + dn * dn >= HeadlandEntryCheckAfter * HeadlandEntryCheckAfter;
+                // With automatic U-turns switched off the operator drives the headland on the line,
+                // as far as a turn would have taken the tractor: the end is looked at as the
+                // tractor, or the implement's working centre (a front implement gets there first),
+                // leaves the turn line, the fence moved in by the U-turn distance. A metre into a
+                // 24 m headland, AutoSteer went off with 130 m of the pass still to the fence
+                // (Couto da Ribeira, 20 Nov 2026). The fence guard keeps watching the implement.
+                if (atLook && !youTurnEnabled && turnLine is { Count: >= 3 })
+                    atLook = !_turnLineIndex.Contains(turnLine, driftedEasting, driftedNorthing)
+                        || (_toolPositionService.HasPosition && !_turnLineIndex.Contains(turnLine, toolPos.Easting, toolPos.Northing));
+                if (atLook && !turnHere
                     && (!_headlandEntryTurnSeen || _headlandEntryNoTurnCycles > HeadlandEntryTurnWait))
                 {
                     _headlandEntryArmed = false;

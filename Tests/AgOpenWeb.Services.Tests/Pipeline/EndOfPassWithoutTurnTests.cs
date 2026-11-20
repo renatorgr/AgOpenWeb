@@ -40,6 +40,7 @@ public class EndOfPassWithoutTurnTests
 
     private GpsService _gps = null!;
     private GpsPipelineService _pipeline = null!;
+    private ToolPositionService _toolPosition = null!;
     private LocalPlane _plane = null!;
     private readonly List<(double Northing, GpsCycleResult Result)> _cycles = new();
     private double _northing;
@@ -66,7 +67,7 @@ public class EndOfPassWithoutTurnTests
 
         _gps = new GpsService();
         _gps.Start();
-        var toolPosition = new ToolPositionService(config);
+        var toolPosition = _toolPosition = new ToolPositionService(config);
         var coverage = new CoverageMapService(config);
         var sections = new SectionControlService(toolPosition, coverage, config);
         var autoSteer = new AutoSteerService(new TrackGuidanceService(),
@@ -109,7 +110,12 @@ public class EndOfPassWithoutTurnTests
         new(-half, -half, 0), new(half, -half, 0), new(half, half, 0), new(-half, half, 0),
     };
 
-    /// <summary>A 100 x 100 m field, the headland line at ±40 unless given, AutoSteer on pass 0 of a north AB line, U-turns off.</summary>
+    /// <summary>
+    /// A 100 x 100 m field, the headland line at ±40 unless given, AutoSteer on pass 0 of a north
+    /// AB line. U-turns are on, but no turn is ever built (the offset service is a stub, so the
+    /// U-turn has no turn lines): the end of the pass with no U-turn there ("End of field reached",
+    /// no turn that fits). <see cref="_uTurnsOn"/> false switches them off instead.
+    /// </summary>
     private void Field(bool hard, List<Vec3>? headlandLine = null, double fieldHalf = 50, params BoundaryPolygon[] obstacles)
     {
         var boundary = new Boundary
@@ -129,9 +135,11 @@ public class EndOfPassWithoutTurnTests
         _pipeline.SetActiveTrack(Models.Track.Track.FromABLine("AB", new Vec3(0, -100, 0), new Vec3(0, 100, 0)), 0, 0);
         _pipeline.SetYouTurnConfig(uTurnSkipRows: 0, isSkipWorkedMode: false,
             headlandCalculatedWidth: 10, headlandDistance: 10, isAlternateSkipMode: false);
-        _pipeline.SetYouTurnEnabled(false);
+        _pipeline.SetYouTurnEnabled(_uTurnsOn);
         _pipeline.SetAutoSteerEngaged(true);
     }
+
+    private bool _uTurnsOn = true;
 
     /// <summary>Drive pass 0 from <paramref name="from"/> to <paramref name="to"/> (north or south), 0.2 m a fix.</summary>
     private void Drive(double from, double to)
@@ -140,6 +148,9 @@ public class EndOfPassWithoutTurnTests
         double heading = to > from ? 0 : 180;
         for (_northing = from; step > 0 ? _northing <= to : _northing >= to; _northing += step)
         {
+            // The implement where the control loop would put it (it does not run here).
+            double headingRad = heading * System.Math.PI / 180;
+            _toolPosition.Update(new Vec3(PassEasting, _northing, headingRad), headingRad);
             var ll = _plane.ConvertGeoCoordToWgs84(new GeoCoord(_northing, PassEasting));
             _gps.UpdateGpsData(new GpsData
             {
@@ -167,8 +178,11 @@ public class EndOfPassWithoutTurnTests
         });
     }
 
-    /// <summary>These fields run with U-turns switched off (no turn here), and the stop says so: "no
-    /// U-turn here" read as no room to turn (Couto da Ribeira, 20 Nov 2026).</summary>
+    /// <summary>The stop with U-turns on and no turn here.</summary>
+    private const string NoTurnHere = "end of the pass and no U-turn here";
+
+    /// <summary>With U-turns switched off the stop says so: "no U-turn here" read as no room to
+    /// turn (Couto da Ribeira, 20 Nov 2026).</summary>
     private const string UTurnsOff = "end of the pass and automatic U-turns are switched off";
 
     private (double Northing, GpsCycleResult Result)? WentOff() =>
@@ -182,7 +196,7 @@ public class EndOfPassWithoutTurnTests
 
         var off = WentOff();
         Assert.That(off, Is.Not.Null, "AutoSteer steered on towards the fence");
-        Assert.That(off!.Value.Result.DisengageReason, Does.Contain(UTurnsOff));
+        Assert.That(off!.Value.Result.DisengageReason, Does.Contain(NoTurnHere));
         Assert.That(off.Value.Northing, Is.InRange(Headland + 0.9, Headland + 1.6), "a metre past the headland line");
     }
 
@@ -234,22 +248,85 @@ public class EndOfPassWithoutTurnTests
         // The turn is planned when the tractor comes into the headland, so the end of the pass is
         // not looked at a metre in. Then the turn is lost (here: U-turn switched off) with the
         // tractor in the headland heading for the fence. The one look had been spent on the turn,
-        // and AutoSteer steered on.
+        // and AutoSteer steered on. With U-turns off the look is at the turn line (the fence, 50,
+        // moved in by the U-turn distance, 2 m).
         FieldWithUTurns();
         Drive(10, 33);
         Assert.That(TurnPlanned(), Is.True, "the scenario: a turn is planned");
         Assert.That(WentOff(), Is.Null, "the scenario: nothing to stop for with a turn planned");
 
         _pipeline.SetYouTurnEnabled(false);
-        Drive(33.2, 36);
+        Drive(33.2, 49.6);
 
         var off = WentOff();
         Assert.That(off, Is.Not.Null, "AutoSteer steered on towards the fence with the turn gone");
         Assert.Multiple(() =>
         {
             Assert.That(off!.Value.Result.DisengageReason, Does.Contain(UTurnsOff));
-            Assert.That(off.Value.Northing, Is.LessThan(35), "within a second of the turn being lost");
+            Assert.That(off.Value.Northing, Is.InRange(47.9, 48.4), "at the turn line");
         });
+    }
+
+    // With automatic U-turns switched off the operator drives the headland on the line, as far as
+    // a turn would have taken the tractor: the end is looked at at the turn line, not a metre into
+    // the headland. On Couto da Ribeira (20 Nov 2026, U-turns off on purpose to follow the line to
+    // the end of the field) the pass ran on 130 m through a 24 m headland to the fence, and
+    // AutoSteer went off a metre in.
+
+    [Test]
+    public void With_U_turns_switched_off_AutoSteer_drives_the_headland_to_the_turn_line()
+    {
+        _uTurnsOn = false;
+        Field(hard: true, Square(30));
+        Drive(10, 49.6);
+
+        var off = WentOff();
+        Assert.That(off, Is.Not.Null, "AutoSteer steered on towards the fence");
+        Assert.Multiple(() =>
+        {
+            Assert.That(off!.Value.Result.DisengageReason, Does.Contain(UTurnsOff));
+            Assert.That(off.Value.Northing, Is.InRange(47.9, 48.4), "at the turn line, 18 m on through the headland");
+        });
+    }
+
+    [Test]
+    public void With_U_turns_switched_off_a_front_implement_stops_it_as_the_implement_reaches_the_turn_line()
+    {
+        // The implement's working centre 5 m ahead of the pivot gets to the turn line first (5 m in
+        // here, ±45): at the pivot's turn line it would be at the fence. With the turn line nearer
+        // the fence than the fence guard's 2 s of travel, the guard stops it first, as it should.
+        var config = ConfigurationStore.Instance;
+        config.Guidance.UTurnDistanceFromBoundary = 5.0;
+        config.Tool.IsToolFrontFixed = true;
+        config.Tool.IsToolRearFixed = config.Tool.IsToolTrailing = config.Tool.IsToolTBT = false;
+        config.Vehicle.FrontHitchLength = 5.0;
+        config.Tool.WorkingPointFromHitch = 0;
+        _uTurnsOn = false;
+        Field(hard: true, Square(30));
+        Drive(10, 49.6);
+
+        var off = WentOff();
+        Assert.That(off, Is.Not.Null, "AutoSteer steered on towards the fence");
+        Assert.Multiple(() =>
+        {
+            Assert.That(off!.Value.Result.DisengageReason, Does.Contain(UTurnsOff));
+            Assert.That(off.Value.Northing, Is.InRange(39.9, 40.4), "the implement at the turn line");
+        });
+    }
+
+    [Test]
+    public void With_U_turns_switched_off_a_headland_narrower_than_the_U_turn_distance_still_stops_a_metre_in()
+    {
+        // The turn line 5 m in (±45), the headland line at ±47: the tractor is past the turn line
+        // as it enters the headland, and the look waits the metre in as with U-turns on.
+        ConfigurationStore.Instance.Guidance.UTurnDistanceFromBoundary = 5.0;
+        _uTurnsOn = false;
+        Field(hard: true, Square(47));
+        Drive(40, 49.6);
+
+        var off = WentOff();
+        Assert.That(off, Is.Not.Null, "AutoSteer steered on towards the fence");
+        Assert.That(off!.Value.Northing, Is.InRange(47.9, 48.6), "a metre past the headland line");
     }
 
     [Test]
@@ -321,7 +398,7 @@ public class EndOfPassWithoutTurnTests
 
         var off = WentOff();
         Assert.That(off, Is.Not.Null, "AutoSteer steered on towards the fence");
-        Assert.That(off!.Value.Result.DisengageReason, Does.Contain(UTurnsOff));
+        Assert.That(off!.Value.Result.DisengageReason, Does.Contain(NoTurnHere));
         Assert.That(off.Value.Northing, Is.InRange(30.9, 31.6), "a metre past the headland line");
     }
 
@@ -455,7 +532,7 @@ public class EndOfPassWithoutTurnTests
 
         var offAt = WentOff();
         Assert.That(offAt, Is.Not.Null, "AutoSteer steered on along the bend towards the fence");
-        Assert.That(offAt!.Value.Result.DisengageReason, Does.Contain(UTurnsOff));
+        Assert.That(offAt!.Value.Result.DisengageReason, Does.Contain(NoTurnHere));
         Assert.That(offAt.Value.Northing, Is.InRange(line + 0.5, line + 1.6), "a metre past the headland line");
     }
 
