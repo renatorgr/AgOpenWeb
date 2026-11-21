@@ -48,6 +48,23 @@ namespace AgOpenWeb.Models.YouTurn
         /// </summary>
         public Func<Vec3, bool>? IsPointInHeadlandStrip { get; set; }
 
+        /// <summary>
+        /// True where a pass may run outside the turn line without ending there: inside the field's
+        /// outer boundary and in no U-turn obstacle's turn area (the test the tractor's own pass
+        /// gets in PassEnds.Find). The next pass's end is found with it too. Null when the field
+        /// is not known: every point outside the turn line is then an end.
+        /// </summary>
+        public Func<Vec3, bool>? IsPointDrivenThrough { get; set; }
+
+        /// <summary>
+        /// Rows wider than twice the turn radius get the omega turn (one shape, square to the
+        /// track, landing abreast) and not the wide turn that follows the turn line to the end
+        /// of the next pass. Set for the second try after a wide turn of no U-turn's shape:
+        /// where the next pass runs on far past this one's end, the wide turn runs along the
+        /// turn line all that way.
+        /// </summary>
+        public bool NoWideTurn { get; set; }
+
         // Guidance line data
         /// <summary>
         /// For curves: List of curve points.

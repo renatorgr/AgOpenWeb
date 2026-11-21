@@ -55,6 +55,12 @@ namespace AgOpenWeb.Models.YouTurn
         public bool IsOutSameCurve { get; set; }
 
         /// <summary>
+        /// True when the path is the wide turn (two quarter circles joined by the turn line),
+        /// not one shape square to the track.
+        /// </summary>
+        public bool IsWideTurn { get; set; }
+
+        /// <summary>
         /// True if vehicle continues same direction (straight through headland).
         /// </summary>
         public bool IsGoingStraightThrough { get; set; }
