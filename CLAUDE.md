@@ -149,6 +149,8 @@ The page drops a link that has carried no frame for 2.5 s and reconnects (`trans
 The app's log (a dump's `logs.txt`) says why a screen went: each browser arriving and leaving with the reason
 (closed by the page, cut off, link failed), a deadman with the state of its link, and what the page saw of itself
 (`diag.page`: hidden, frozen, its timers stopped by the system, offline, a link given up), sent on its next link.
+What a page writes there (its note, the reason it gave for closing) goes in on one line (`WebSocketHub.OneLine`): any
+browser may send it, an observer too, and a line break in it wrote lines of its own in the log. Fork only.
 
 ### Section control timing
 `SectionControlService` runs every section by its own button state (Off / Auto / On); the master
