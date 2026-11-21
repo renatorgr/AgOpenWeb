@@ -34,7 +34,11 @@ namespace AgOpenWeb.Services.Tests.Pipeline;
 /// <para>AutoSteer engaged on the pass inside the obstacle's turn line, the obstacle straight ahead.
 /// The planner had a turn at the far end of the pass, and with a turn planned the obstacle ahead
 /// was not looked at: AutoSteer drove the tractor through it.</para>
-/// Both now take AutoSteer off with the alarm before the implement is in the obstacle.
+/// <para>AutoSteer engaged inside the turn line on a pass that goes by beside the obstacle, the
+/// implement reaching into it. No turn is before it there and nothing is ahead of the tractor: the
+/// beta robot (Quinta Torta, simulator) had a 6 m implement driven 50 m with its end 2 m inside a
+/// hard obstacle a metre beside the pass.</para>
+/// All three now take AutoSteer off with the alarm before the implement is in the obstacle.
 /// </summary>
 [TestFixture]
 [NonParallelizable] // ConfigurationStore is a singleton.
@@ -128,8 +132,9 @@ public class HardObstacleGuardPipelineTests
     // distance and half the boom).
     private static readonly (double E, double N)[] Square = { (-22, -60), (-18, -60), (-18, -56), (-22, -56) };
 
-    private void Open(int pass, bool hard = true)
+    private void Open(int pass, bool hard = true, (double E, double N)[]? obstacle = null)
     {
+        _obstacle = obstacle ?? Square;
         var boundary = new Boundary
         {
             OuterBoundary = new BoundaryPolygon
@@ -140,7 +145,7 @@ public class HardObstacleGuardPipelineTests
         };
         boundary.InnerBoundaries.Add(new BoundaryPolygon
         {
-            Points = Square.Select(p => new BoundaryPoint(p.E, p.N, 0)).ToList(),
+            Points = _obstacle.Select(p => new BoundaryPoint(p.E, p.N, 0)).ToList(),
             IsHard = hard,
             AtObstacle = ObstacleAction.Turn,
         });
@@ -183,10 +188,13 @@ public class HardObstacleGuardPipelineTests
         public double? OffAtN;
     }
 
-    // How far inside the square a point is, 0 outside.
-    private static double InSquare(double e, double n)
+    private (double E, double N)[] _obstacle = Square;
+
+    // How far inside the obstacle (a box square to the passes) a point is, 0 outside.
+    private double InSquare(double e, double n)
     {
-        double d = Math.Min(Math.Min(e - -22, -18 - e), Math.Min(n - -60, -56 - n));
+        double e0 = _obstacle.Min(p => p.E), e1 = _obstacle.Max(p => p.E), n0 = _obstacle.Min(p => p.N), n1 = _obstacle.Max(p => p.N);
+        double d = Math.Min(Math.Min(e - e0, e1 - e), Math.Min(n - n0, n1 - n));
         return Math.Max(0, d);
     }
 
@@ -293,5 +301,92 @@ public class HardObstacleGuardPipelineTests
         var d = DriveNorth(-20, -54, 200);
 
         Assert.That(d.OffAtN, Is.Null, d.Last.DisengageReason);
+    }
+
+    // A hard strip 40 m long beside pass 3 (E -8), its east edge `gap` m left of the pass: a wall or a
+    // ditch along the passes. Its turn line is 8 m out (the U-turn distance and half the boom), so
+    // pass 3 runs inside it; the boom reaches 6 m.
+    private static (double E, double N)[] StripBesidePass3(double gap)
+        => new[] { (-8 - gap - 5, -60.0), (-8 - gap, -60.0), (-8 - gap, -20.0), (-8 - gap - 5, -20.0) };
+
+    [Test]
+    public void EngagedInsideTheTurnLineOnAPassBesideTheObstacle_AutoSteerGoesOffBeforeTheBoomIsInIt()
+    {
+        // The pivot 6 m short of the strip and 4 m beside its edge line: inside the turn line, so no
+        // turn is before it, and nothing is straight ahead of the tractor. The boom's end would run
+        // 2 m inside the strip for all its 40 m.
+        Open(pass: 3, obstacle: StripBesidePass3(gap: 4));
+        var d = DriveNorth(-8, -66, 400);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.OffAtN, Is.Not.Null, "AutoSteer went off");
+            Assert.That(d.Last.DisengageReason, Is.EqualTo(GpsPipelineService.HardObstacleReason(0)));
+            Assert.That(d.WorstIn, Is.EqualTo(0), "no point of the boom in the obstacle (2 m in for 40 m before)");
+        });
+        _audio.Received().Play(SoundEffect.UTurnTooClose);
+    }
+
+    [Test]
+    public void EngagedWithTheBoomAlreadyInTheObstacle_AutoSteerGoesOffAtOnce()
+    {
+        // Half way along the strip, the boom's end 2 m in it and going along it, no deeper: nothing
+        // is heading in, and AutoSteer stayed on to the strip's end.
+        Open(pass: 3, obstacle: StripBesidePass3(gap: 4));
+        var d = DriveNorth(-8, -45, 400);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.OffAtN, Is.Not.Null.And.LessThan(-44), "AutoSteer went off within a metre");
+            Assert.That(d.Last.DisengageReason, Is.EqualTo(GpsPipelineService.HardObstacleInReason(0)));
+        });
+        _audio.Received().Play(SoundEffect.UTurnTooClose);
+    }
+
+    [Test]
+    public void EngagedInsideTheTurnLineOnAPassThatClearsTheObstacle_AutoSteerStaysOn()
+    {
+        // The strip's edge 7 m from the pass, the boom's end a metre clear of it; engaged 2 m short
+        // of the strip, 7.3 m from its corner: inside the turn line (8 m).
+        Open(pass: 3, obstacle: StripBesidePass3(gap: 7));
+        var d = DriveNorth(-8, -62, 400);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.OffAtN, Is.Null, d.Last.DisengageReason);
+            Assert.That(d.WorstIn, Is.EqualTo(0));
+            Assert.That(d.N, Is.GreaterThan(-20), "driven past the strip");
+        });
+    }
+
+    [Test]
+    public void ASoftObstacleBesideThePass_IsLeftAlone()
+    {
+        // Not hard: the implement may pass over it, as before.
+        Open(pass: 3, hard: false, obstacle: StripBesidePass3(gap: 4));
+        var d = DriveNorth(-8, -66, 400);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.OffAtN, Is.Null, d.Last.DisengageReason);
+            Assert.That(d.WorstIn, Is.GreaterThan(1.5), "the boom was over it with AutoSteer on");
+        });
+    }
+
+    [Test]
+    public void OnTheObstaclesOwnPass_TheTurnBeforeItIsNotStoppedByTheGuard()
+    {
+        // From far off on the obstacle's pass: the U-turn before it is planned and driven, and the
+        // guard's look-ahead stops where that turn starts.
+        Open(pass: 2);
+        var d = DriveNorth(-20, StartN, 400);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_results.Any(r => r.YouTurn is { IsExecuting: true }), Is.True, "the turn before the obstacle was driven");
+            Assert.That(_results.Select(r => r.DisengageReason), Has.None.EqualTo(GpsPipelineService.HardObstacleReason(0))
+                .And.None.EqualTo(GpsPipelineService.HardObstacleInReason(0)));
+            Assert.That(d.WorstIn, Is.EqualTo(0));
+        });
     }
 }

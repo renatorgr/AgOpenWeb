@@ -1537,13 +1537,25 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // takes AutoSteer off with the alarm. The line moved a pass over beside a hard obstacle took
         // the end of a 12 m boom, 4.5 m ahead of the pivot, 1.2 m into it: the tractor crossed 50°
         // off the passes and went by the obstacle itself (the beta robot, simulator). Fork only.
+        // On the line too for a hard obstacle the pass turns at (chosen as U-turn, or with no room
+        // to go round on this pass): it is the turn before it that keeps the implement out, and
+        // AutoSteer engaged inside the obstacle's turn line, on a pass that goes by beside it, has
+        // no turn there and nothing ahead of the tractor (5b'). A 6 m implement was driven 50 m
+        // with its end 2 m inside a hard obstacle a metre beside the pass (the beta robot on Quinta
+        // Torta, simulator). There an implement already in the obstacle counts too, and a turn
+        // planned ahead keeps the implement out from where it starts, as at the fence. Fork only.
         if (autoSteerEngaged && !_isReverse && !_youTurn.IsExecuting
             && _lastLineSteerAngle is double steerNow
-            && Math.Abs(_lastLineXte) > GoAroundOffLine
             && boundary is { InnerBoundaries.Count: > 0 }
             && _toolPositionService.HasPosition)
         {
+            bool offLine = Math.Abs(_lastLineXte) > GoAroundOffLine;
+            var noRoom = _goAround.CurrentBlocked;
             double lookAhead = HardFenceGuard.LookAheadSeconds * Math.Abs(pos.Speed);
+            double lookOnLine = lookAhead;
+            if (_youTurn.TurnPath is { Count: > 0 } turnAhead)
+                lookOnLine = Math.Min(lookOnLine, Math.Max(0, HardFenceGuard.AheadOf(turnAhead[0],
+                    driftedEasting, driftedNorthing, headingRad)));
             double reach = toolWidth / 2 + Math.Abs(config.Tool.Offset);
             double curvature = HardFenceGuard.Curvature(steerNow, config.Vehicle.Wheelbase, config.Vehicle.MaxSteerAngle);
             var pivotNow = new Vec3(driftedEasting, driftedNorthing, headingRad);
@@ -1551,10 +1563,14 @@ public sealed class GpsPipelineService : IGpsPipelineService
             {
                 var inner = boundary.InnerBoundaries[i];
                 if (!inner.IsHard || inner.IsDriveThrough || !inner.IsValid) continue;
-                if (HardFenceGuard.HeadingIn(inner, toolPos, toolHeading, reach, lookAhead, pivotNow, curvature) <= 0) continue;
+                bool turnedAt = inner.AtObstacle == ObstacleAction.Turn || noRoom.Contains(i);
+                if (!offLine && !turnedAt) continue;
+                bool inIt = turnedAt && HardFenceGuard.In(inner, toolPos, toolHeading, reach) > HardFenceGuard.ObstacleMargin;
+                if (!inIt && HardFenceGuard.HeadingIn(inner, toolPos, toolHeading, reach, offLine ? lookAhead : lookOnLine,
+                        pivotNow, curvature) <= 0) continue;
                 autoSteerEngaged = false;
                 autoSteerDisengaged = true;
-                disengageReason = HardObstacleReason(i);
+                disengageReason = inIt ? HardObstacleInReason(i) : HardObstacleReason(i);
                 lock (_stateLock) _autoSteerEngaged = false;
                 _audioService.Play(SoundEffect.UTurnTooClose);
                 break;
@@ -2407,6 +2423,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// hard obstacle <paramref name="inner"/> (0-based): <see cref="HardFenceGuard.HeadingIn"/>.</summary>
     public static string HardObstacleReason(int inner) =>
         $"AutoSteer off: the implement is heading into Inner {inner + 1}. Steer by hand.";
+
+    /// <summary>What AutoSteer says when it goes off with the implement in a hard obstacle the pass turns at.</summary>
+    public static string HardObstacleInReason(int inner) =>
+        $"AutoSteer off: the implement is in Inner {inner + 1}. Steer by hand.";
 
     private (double steerAngle, double xte, double goalE, double goalN, string? statusMessage, bool hasLine, bool atEnd, bool unfitAhead)?
         CalculateTrackGuidance(

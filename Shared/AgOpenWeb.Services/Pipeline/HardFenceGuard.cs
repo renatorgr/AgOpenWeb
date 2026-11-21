@@ -24,6 +24,11 @@ namespace AgOpenWeb.Services.Pipeline;
 /// out of a hard obstacle (its turn line, or the bend round it), off it nothing did. The line moved a
 /// pass over beside a hard obstacle took the end of a 12 m boom, 4.5 m ahead of the pivot, 1.2 m into
 /// it, the tractor crossing 50° off the passes (the beta robot, simulator).</para>
+/// <para>On the line too for a hard obstacle the pass turns at, with <see cref="In"/> for an implement
+/// already in it: the turn before the obstacle keeps the implement out, and AutoSteer engaged inside
+/// its turn line, on a pass that goes by beside it, had no turn there and nothing ahead of the tractor.
+/// A 6 m implement was driven 50 m with its end 2 m inside a hard obstacle a metre beside the pass
+/// (the beta robot on Quinta Torta, simulator).</para>
 /// </summary>
 public static class HardFenceGuard
 {
@@ -130,6 +135,25 @@ public static class HardFenceGuard
                 double ahead = InsideBy(obstacle, e, n);
                 if (ahead > ObstacleMargin && ahead > now + Rising) worst = Math.Max(worst, ahead);
             }
+        }
+        return worst;
+    }
+
+    /// <summary>
+    /// How far inside <paramref name="obstacle"/> the deepest point of the implement is now, 0 with none
+    /// in it. The implement as in <see cref="HeadingIn"/>: the line <paramref name="reach"/> either side
+    /// of <paramref name="toolCentre"/>, across <paramref name="toolHeading"/>, a point every metre.
+    /// </summary>
+    public static double In(BoundaryPolygon obstacle, Vec3 toolCentre, double toolHeading, double reach)
+    {
+        if (obstacle.Points.Count < 3) return 0;
+        double rightE = Math.Cos(toolHeading), rightN = -Math.Sin(toolHeading);
+        int parts = Math.Max(1, (int)Math.Ceiling(2 * reach / ObstacleStep));
+        double worst = 0;
+        for (int i = 0; i <= parts; i++)
+        {
+            double across = -reach + 2 * reach * i / parts;
+            worst = Math.Max(worst, InsideBy(obstacle, toolCentre.Easting + across * rightE, toolCentre.Northing + across * rightN));
         }
         return worst;
     }
