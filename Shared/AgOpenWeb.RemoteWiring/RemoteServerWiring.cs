@@ -102,7 +102,6 @@ public static partial class RemoteServerWiring
                             // commands: its controls are gone, and an old page can't reach it.
                             if (!AgOpenWeb.Models.FeatureSwitches.Allows(cmd, arg, AgOpenWeb.Models.FeatureSwitches.Enabled)) return;
                             var inv = System.Globalization.CultureInfo.InvariantCulture;
-                            var num = System.Globalization.NumberStyles.Float;
                             // Starting a line or path turns contour off first, like AgOpenGPS's
                             // track / AB+ / draw / record / path Go buttons (#110).
                             if (vm.IsContourModeOn && cmd is "track.activate" or "track.aPlus" or "track.latLonHeading" or "track.latLonAB" or "track.latLonPivot" or "track.drawStraight"
@@ -130,14 +129,14 @@ public static partial class RemoteServerWiring
                                     return;
                                 }
                                 case "sim.setSteer":
-                                    if (double.TryParse(arg, num, inv, out var deg))
+                                    if (FiniteNumber(arg, out var deg))
                                         vm.SimulatorSteerAngle = deg;
                                     return;
                                 case "sim.setCoords":
                                     var parts = arg.Split(',');
                                     if (parts.Length == 2
-                                        && double.TryParse(parts[0], num, inv, out var lat)
-                                        && double.TryParse(parts[1], num, inv, out var lon))
+                                        && FiniteNumber(parts[0], out var lat)
+                                        && FiniteNumber(parts[1], out var lon))
                                         vm.SetSimulatorCoordinates(lat, lon);
                                     return;
                                 case "section.toggleZone": // Tier-2 (gated); arg = zone 1..8 (#111)
@@ -239,7 +238,7 @@ public static partial class RemoteServerWiring
                                     }
                                     return;
                                 case "display.capResolution": // web auto-quality: arg = min multiplier
-                                    if (double.TryParse(arg, num, inv, out var capMult)) // (2.5 = Medium)
+                                    if (FiniteNumber(arg, out var capMult)) // (2.5 = Medium)
                                         vm.CapDisplayResolution(capMult); // only coarsens; idempotent
                                     return;
                                 case "display.maxTexture": // arg = the web view's largest texture side (px)
@@ -251,8 +250,8 @@ public static partial class RemoteServerWiring
                                 {                 // arg = "pitch|zoom[|mode]" (pitch radians, zoom px/m, client mode). Tier-1.
                                     var vparts = arg.Split('|');
                                     if (vparts.Length is 2 or 3
-                                        && double.TryParse(vparts[0], num, inv, out var vpitch)
-                                        && double.TryParse(vparts[1], num, inv, out var vzoom))
+                                        && FiniteNumber(vparts[0], out var vpitch)
+                                        && FiniteNumber(vparts[1], out var vzoom))
                                     {
                                         var ps = services.GetRequiredService<IPersistentStateService>();
                                         ps.State.WebCameraPitch = vpitch;
@@ -349,9 +348,9 @@ public static partial class RemoteServerWiring
                                 case "boundary.circle.add": // arg = "e,n,d": a round obstacle centred at
                                 {                           // (e, n) field metres, d metres across
                                     var bca = arg.Split(',');
-                                    if (bca.Length == 3 && double.TryParse(bca[0], num, inv, out var bce)
-                                        && double.TryParse(bca[1], num, inv, out var bcn)
-                                        && double.TryParse(bca[2], num, inv, out var bcd))
+                                    if (bca.Length == 3 && FiniteNumber(bca[0], out var bce)
+                                        && FiniteNumber(bca[1], out var bcn)
+                                        && FiniteNumber(bca[2], out var bcd))
                                         vm.RemoteAddObstacleCircle(bce, bcn, bcd);
                                     return;
                                 }
@@ -362,8 +361,8 @@ public static partial class RemoteServerWiring
                                     {
                                         var en = pair.Split(',');
                                         if (en.Length == 2
-                                            && double.TryParse(en[0], num, inv, out var pe)
-                                            && double.TryParse(en[1], num, inv, out var pn))
+                                            && FiniteNumber(en[0], out var pe)
+                                            && FiniteNumber(en[1], out var pn))
                                             bop.Add((pe, pn));
                                     }
                                     vm.RemoteAddObstacleFromMapPoints(bop);
@@ -373,12 +372,12 @@ public static partial class RemoteServerWiring
                                 {                                // circle d metres across
                                     var bcc = arg.IndexOf(':');
                                     if (bcc > 0 && int.TryParse(arg[..bcc], out var bcr)
-                                        && double.TryParse(arg[(bcc + 1)..], num, inv, out var bcdd))
+                                        && FiniteNumber(arg[(bcc + 1)..], out var bcdd))
                                         vm.RemoteSetObstacleCircleDiameter(bcr, bcdd);
                                     return;
                                 }
                                 case "boundary.circle.diameterAll": // arg = d: every circle up to a
-                                    if (double.TryParse(arg, num, inv, out var bcda))    // tree's size
+                                    if (FiniteNumber(arg, out var bcda))    // tree's size
                                         vm.RemoteSetObstacleCirclesDiameter(bcda);      // gets it
                                     return;
                                 case "boundary.circle.move": // arg = "row:e,n": that obstacle becomes a
@@ -386,8 +385,8 @@ public static partial class RemoteServerWiring
                                     var bcc = arg.IndexOf(':');
                                     var bcm = bcc > 0 ? arg[(bcc + 1)..].Split(',') : System.Array.Empty<string>();
                                     if (bcm.Length == 2 && int.TryParse(arg[..bcc], out var bcr)
-                                        && double.TryParse(bcm[0], num, inv, out var bme)
-                                        && double.TryParse(bcm[1], num, inv, out var bmn))
+                                        && FiniteNumber(bcm[0], out var bme)
+                                        && FiniteNumber(bcm[1], out var bmn))
                                         vm.RemoteMoveObstacleCircle(bcr, bme, bmn);
                                     return;
                                 }
@@ -398,7 +397,7 @@ public static partial class RemoteServerWiring
                                     vm.RemoteMakeObstaclesRound();
                                     return;
                                 case "boundary.setOffset": // arg = recording offset cm (Tier-1)
-                                    if (double.TryParse(arg, num, inv, out var boff)) vm.BoundaryOffset = boff;
+                                    if (FiniteNumber(arg, out var boff)) vm.BoundaryOffset = boff;
                                     return;
                                 case "boundary.toggleSectionControl": // ToggleButton has no command (Tier-1)
                                     vm.IsBoundarySectionControlOn = !vm.IsBoundarySectionControlOn;
@@ -412,7 +411,7 @@ public static partial class RemoteServerWiring
                                 }
                                 case "track.aPlus": // Quick AB. arg = heading in degrees, or empty for
                                     // the vehicle's heading (#335). Ungated, like the other creators.
-                                    vm.CreateAPlusLine(double.TryParse(arg, num, inv, out var apd) ? apd : null);
+                                    vm.CreateAPlusLine(FiniteNumber(arg, out var apd) ? apd : null);
                                     return;
                                 case "track.refSide": // Quick AB. arg = left|right: the side of a driven
                                     // line its first pass lies on; sent before A+ / Drive AB / Curve (#345)
@@ -425,7 +424,7 @@ public static partial class RemoteServerWiring
                                     var llParts = arg.Split(',');
                                     var ll = new double[llParts.Length];
                                     for (int i = 0; i < llParts.Length; i++)
-                                        if (!double.TryParse(llParts[i], num, inv, out ll[i])) return;
+                                        if (!FiniteNumber(llParts[i], out ll[i])) return;
                                     if (cmd == "track.latLonHeading" && ll.Length == 3)
                                         vm.CreateLatLonHeadingLine(ll[0], ll[1], ll[2]);
                                     else if (cmd == "track.latLonAB" && ll.Length == 4)
@@ -463,24 +462,24 @@ public static partial class RemoteServerWiring
                                 {                              // "<line|curve>,offset,e1,n1,e2,n2"
                                     var hp = arg.Split(',');   // (m). Host snaps to boundary +
                                     if (hp.Length >= 6         // builds the segment + headland.
-                                        && double.TryParse(hp[1], num, inv, out var hoff)
-                                        && double.TryParse(hp[2], num, inv, out var he1)
-                                        && double.TryParse(hp[3], num, inv, out var hn1)
-                                        && double.TryParse(hp[4], num, inv, out var he2)
-                                        && double.TryParse(hp[5], num, inv, out var hn2))
+                                        && FiniteNumber(hp[1], out var hoff)
+                                        && FiniteNumber(hp[2], out var he1)
+                                        && FiniteNumber(hp[3], out var hn1)
+                                        && FiniteNumber(hp[4], out var he2)
+                                        && FiniteNumber(hp[5], out var hn2))
                                         vm.RemoteCreateHeadlandFromMapPoints(
                                             hp[0] == "curve", hoff, he1, hn1, he2, hn2);
                                     return;
                                 }
                                 case "headland.wholeBoundary": // arg = offset (m). Whole boundary
-                                    if (double.TryParse(arg, num, inv, out var hwb)) // offset inward.
+                                    if (FiniteNumber(arg, out var hwb)) // offset inward.
                                         vm.RemoteCreateHeadlandWholeBoundary(hwb);
                                     return;
                                 case "headland.alongPasses": // arg = "ends,sides" (m): wide where the
                                 {                            // active line's passes end (fork only).
                                     var ap = arg.Split(',');
-                                    if (ap.Length == 2 && double.TryParse(ap[0], num, inv, out var hape)
-                                        && double.TryParse(ap[1], num, inv, out var haps))
+                                    if (ap.Length == 2 && FiniteNumber(ap[0], out var hape)
+                                        && FiniteNumber(ap[1], out var haps))
                                         vm.RemoteCreateHeadlandAlongPasses(hape, haps);
                                     return;
                                 }
@@ -488,7 +487,7 @@ public static partial class RemoteServerWiring
                                 {
                                     var ss = arg.Split(',');
                                     if (ss.Length == 2 && int.TryParse(ss[0], out var hssi)
-                                        && double.TryParse(ss[1], num, inv, out var hsss))
+                                        && FiniteNumber(ss[1], out var hsss))
                                         vm.RemoteSetHeadlandSidesAt(hssi, hsss);
                                     return;
                                 }
@@ -496,7 +495,7 @@ public static partial class RemoteServerWiring
                                 {
                                     var so = arg.Split(',');
                                     if (so.Length == 2 && int.TryParse(so[0], out var hsi)
-                                        && double.TryParse(so[1], num, inv, out var hso))
+                                        && FiniteNumber(so[1], out var hso))
                                         vm.RemoteSetHeadlandOffsetAt(hsi, hso);
                                     return;
                                 }
@@ -523,8 +522,8 @@ public static partial class RemoteServerWiring
                                         {
                                             var en = teParts[k].Split(',');
                                             if (en.Length == 2
-                                                && double.TryParse(en[0], num, inv, out var pe)
-                                                && double.TryParse(en[1], num, inv, out var pn))
+                                                && FiniteNumber(en[0], out var pe)
+                                                && FiniteNumber(en[1], out var pn))
                                                 ep.Add((pe, pn));
                                         }
                                         if (ep.Count >= 2) vm.RemoteSaveTrackEdit(tei, ep);
@@ -535,10 +534,10 @@ public static partial class RemoteServerWiring
                                 {
                                     var hp = arg.Split(',');
                                     if (hp.Length >= 5 && int.TryParse(hp[0], out var hei)
-                                        && double.TryParse(hp[1], num, inv, out var he1)
-                                        && double.TryParse(hp[2], num, inv, out var hn1)
-                                        && double.TryParse(hp[3], num, inv, out var he2)
-                                        && double.TryParse(hp[4], num, inv, out var hn2))
+                                        && FiniteNumber(hp[1], out var he1)
+                                        && FiniteNumber(hp[2], out var hn1)
+                                        && FiniteNumber(hp[3], out var he2)
+                                        && FiniteNumber(hp[4], out var hn2))
                                         vm.RemoteSaveHeadlandEdit(hei, he1, hn1, he2, hn2);
                                     return;
                                 }
@@ -585,8 +584,8 @@ public static partial class RemoteServerWiring
                                     {
                                         var en = pair.Split(',');
                                         if (en.Length == 2
-                                            && double.TryParse(en[0], num, inv, out var pe)
-                                            && double.TryParse(en[1], num, inv, out var pn))
+                                            && FiniteNumber(en[0], out var pe)
+                                            && FiniteNumber(en[1], out var pn))
                                             bmp.Add((pe, pn));
                                     }
                                     vm.RemoteCreateBoundaryFromMapPoints(bmp);
@@ -602,8 +601,8 @@ public static partial class RemoteServerWiring
                                 {                       // arg = "e,n" (m, from s2w). Routes to the
                                     var tp = arg.Split(','); // native SetABPointCommand (DrawAB =
                                     if (tp.Length >= 2  // tap A then B; DrawCurve = tap N points).
-                                        && double.TryParse(tp[0], num, inv, out var te)
-                                        && double.TryParse(tp[1], num, inv, out var tn))
+                                        && FiniteNumber(tp[0], out var te)
+                                        && FiniteNumber(tp[1], out var tn))
                                     {
                                         var pos = new AgOpenWeb.Models.Position { Easting = te, Northing = tn };
                                         if (vm.SetABPointCommand?.CanExecute(pos) == true)
@@ -615,14 +614,14 @@ public static partial class RemoteServerWiring
                                 {                              // arg = "aE,aN,bE,bN[,viaE,viaN]" (m, from s2w):
                                     var bc = arg.Split(',');   // via = a point on the way round picked (#450)
                                     if (bc.Length >= 4
-                                        && double.TryParse(bc[0], num, inv, out var caE)
-                                        && double.TryParse(bc[1], num, inv, out var caN)
-                                        && double.TryParse(bc[2], num, inv, out var cbE)
-                                        && double.TryParse(bc[3], num, inv, out var cbN))
+                                        && FiniteNumber(bc[0], out var caE)
+                                        && FiniteNumber(bc[1], out var caN)
+                                        && FiniteNumber(bc[2], out var cbE)
+                                        && FiniteNumber(bc[3], out var cbN))
                                     {
                                         Models.Base.Vec2? via = bc.Length >= 6
-                                            && double.TryParse(bc[4], num, inv, out var cvE)
-                                            && double.TryParse(bc[5], num, inv, out var cvN)
+                                            && FiniteNumber(bc[4], out var cvE)
+                                            && FiniteNumber(bc[5], out var cvN)
                                             ? new Models.Base.Vec2(cvE, cvN) : null;
                                         vm.RemoteCreateBoundaryCurveSegment(caE, caN, cbE, cbN, via);
                                     }
@@ -632,8 +631,8 @@ public static partial class RemoteServerWiring
                                 {                     // (m, field-local, from s2w). Tier-1 marker.
                                     var fp = arg.Split(',');
                                     if (fp.Length >= 2
-                                        && double.TryParse(fp[0], num, inv, out var fe)
-                                        && double.TryParse(fp[1], num, inv, out var fn))
+                                        && FiniteNumber(fp[0], out var fe)
+                                        && FiniteNumber(fp[1], out var fn))
                                         vm.PlaceFlagAtWorldPosition(fe, fn);
                                     return;
                                 }
@@ -673,8 +672,8 @@ public static partial class RemoteServerWiring
                                 {
                                     var op = arg.Split(',');
                                     if (op.Length == 2
-                                        && double.TryParse(op[0], num, inv, out var oe)
-                                        && double.TryParse(op[1], num, inv, out var on))
+                                        && FiniteNumber(op[0], out var oe)
+                                        && FiniteNumber(op[1], out var on))
                                         vm.OffsetFixSet(oe, on);
                                     return;
                                 }
@@ -682,8 +681,8 @@ public static partial class RemoteServerWiring
                                 {
                                     var mv = arg.Split(',');
                                     if (mv.Length == 3
-                                        && double.TryParse(mv[0], num, inv, out var me)
-                                        && double.TryParse(mv[1], num, inv, out var mn))
+                                        && FiniteNumber(mv[0], out var me)
+                                        && FiniteNumber(mv[1], out var mn))
                                         _ = vm.RemoteMoveFieldAsync(me, mn, mv[2] == "1");
                                     return;
                                 }
