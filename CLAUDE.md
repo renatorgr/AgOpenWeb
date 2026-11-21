@@ -358,11 +358,15 @@ field (Couto da Ribeira, 20 Nov 2026) two obstacles driven round with the field'
 obstacle's, each became the outer boundary: an 11.6 ha field 0.09 ha on the screen, the headland and the turn line
 rebuilt on it. With an outer boundary in the field the page now asks first (`askReplaceOuter` in
 `js/field-builder.js`: "Replace the outer boundary?", before a recording or a drawing starts) and names the
-obstacle buttons; with none it goes on as before. AgOpenGPS never replaces one: a boundary recorded in a field that
-has one is added after it, an inner boundary (`FormBoundaryPlayer.cs:140`). Every new outer boundary is in the log
+obstacle buttons; with none it goes on as before. AgOpenGPS asks before its one deliberate replacement, Build from
+tracks ("A boundary already exists. Do you want to remove it?", `FormBoundary.cs:438-443`), then clears every
+boundary, the inner ones too (`FormBuildBoundaryFromTracks.cs:711`), and its boundary tool clears them all without
+asking (`FormBndTool.cs:585`); its drive around, draw on map and KML add to the list, the first entry the outer
+boundary and any later one an inner (`FormBoundaryPlayer.cs:140`, `FormMap.cs:193`, `FormBoundary.cs:372`). Asking
+before a drive around or a drawing, and keeping the obstacles, are ours. Every new outer boundary is in the log
 with what the field had (`MainViewModel.SetOuterBoundary`: `[Boundary] Outer boundary replaced by a drive-around
 recording: was 213 points, 11.60 ha; now 39 points, 0.05 ha`), so a bug report says it. The host does not refuse the
-command: the scenario harnesses redraw boundaries with it. Tests: `OuterBoundaryReplacedLogTests`. Fork only.
+command: the scenario harnesses redraw boundaries with it. Tests: `OuterBoundaryReplacedLogTests`. Official since #903.
 The menu's buttons and the recorder's have their words under the icon (*Drive round field*, *Drive round obstacle*,
 ...): they were icons whose words were a title, which a tablet never shows. The recorder's title is *Record Field
 Boundary* or *Record Obstacle*, from the host once its recording has started (`MainViewModel.IsRecordingObstacle`,
