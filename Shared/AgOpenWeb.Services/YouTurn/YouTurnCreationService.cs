@@ -64,6 +64,7 @@ namespace AgOpenWeb.Services.YouTurn
         private int turnLineEndIndex = -1; // the pass's first point outside the turn area at the end turned at
         private bool isOutOfBounds = false;
         private bool isOutSameCurve = false;
+        private bool isWideTurn = false;
         private Vec3? arcStart;
         private int youTurnPhase = 0;
 
@@ -100,6 +101,7 @@ namespace AgOpenWeb.Services.YouTurn
             youTurnPhase = 0;
             isOutOfBounds = false;
             isOutSameCurve = false;
+            isWideTurn = false;
             arcStart = null;
 
             // Lateral span of the arc = from the line steered now to the next one. Steering
@@ -133,6 +135,7 @@ namespace AgOpenWeb.Services.YouTurn
                 output.Success = true;
                 output.TurnPath = new List<Vec3>(ytList);
                 output.IsOutSameCurve = isOutSameCurve;
+                output.IsWideTurn = isWideTurn;
                 output.IsGoingStraightThrough = IsGoingStraightThrough();
                 output.IsOutOfBounds = isOutOfBounds;
                 output.DistancePivotToTurnLine = Distance(ytList[0], input.PivotPosition);
@@ -579,13 +582,21 @@ namespace AgOpenWeb.Services.YouTurn
         private bool CreateWideOrOmegaTurn(YouTurnCreationInput input, double turnOffset)
         {
             youTurnPhase = 0;
-            for (int phase = 0; phase < 3 && youTurnPhase == phase; phase++)
+            isWideTurn = false;
+            for (int phase = 0; phase < 3 && youTurnPhase == phase && !input.NoWideTurn; phase++)
             {
                 if (!CreateCurveWideTurn(input, turnOffset)) break;
             }
-            if (youTurnPhase == 10 && ytList.Count > 0) return true;
+            if (youTurnPhase == 10 && ytList.Count > 0)
+            {
+                isWideTurn = true;
+                return true;
+            }
 
-            _logger.LogDebug("[YouTurn] Wide turn not built (phase {Phase}); the omega turn instead", youTurnPhase);
+            if (input.NoWideTurn)
+                _logger.LogDebug("[YouTurn] The wide turn was no U-turn; the omega turn instead");
+            else
+                _logger.LogDebug("[YouTurn] Wide turn not built (phase {Phase}); the omega turn instead", youTurnPhase);
             ytList.Clear();
             ytList2.Clear();
             nextCurve.Clear();
@@ -1659,6 +1670,22 @@ namespace AgOpenWeb.Services.YouTurn
                     if (back >= 0)
                     {
                         j = back;
+                        continue;
+                    }
+
+                    // Nor is a stretch outside the turn line that stays inside the fence, the pass
+                    // back inside the turn line after it: the pass is driven through it when it is
+                    // the tractor's own (PassEnds.Find), so its end at this end is beyond. Taken
+                    // as the end, the next pass "ended" where it runs past a bulge of the fence
+                    // nearer than the U-turn distance, and the wide turn followed the turn line
+                    // there: 300 m round a corner of a tester's field, refused as malformed, with
+                    // the next pass's real end 16 m from the turn's start.
+                    if (_currentInput.IsPointDrivenThrough is { } drivenThrough
+                        && PassEnds.IsDrivenThrough(nextCurve, j, count, p => _currentInput.IsPointInsideTurnArea(p) == 0, drivenThrough, out int on))
+                    {
+                        _logger.LogDebug("[YouTurn] The next pass runs outside the turn line from point {J} to {On}, inside the fence: driven through, its end is beyond",
+                            j, on);
+                        j = on;
                         continue;
                     }
 

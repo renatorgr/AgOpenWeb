@@ -162,6 +162,8 @@ public partial class YouTurnCreationService
         // Where the pass leaves the turn area on the first try: a try with the turn lines moved in
         // seats the turn back from there (YouTurnCreationInput.TurnLineEndIndex).
         int? turnLineEnd = null;
+        // The second try after a wide turn of no U-turn's shape: the omega turn (see below).
+        bool omegaOnly = false;
 
         while (true)
         {
@@ -177,6 +179,7 @@ public partial class YouTurnCreationService
                 return new TurnPathResult(null, false);
             }
             if (extraSetback > 0) input.TurnLineEndIndex = turnLineEnd;
+            input.NoWideTurn = omegaOnly;
 
             var output = CreateTurn(input);
             if (turnLineEnd == null && output.Success && output.TurnLineEndIndex >= 0)
@@ -296,6 +299,20 @@ public partial class YouTurnCreationService
 
                 if (!netIsUTurnLike || cumulativeRunaway)
                 {
+                    // A wide turn runs along the turn line from the end of this pass to the end
+                    // of the next. Where the next pass runs on far past this one's end (this pass
+                    // ends at a bump of the fence, the next one 150 m on round a corner of the
+                    // field) that is no U-turn, and it was refused with a turn onto the next pass
+                    // abreast of the tractor there to be made: the omega turn, one shape square to
+                    // the track, is tried first, seated from the start. Fork only.
+                    if (output.IsWideTurn && !omegaOnly)
+                    {
+                        _logger.LogDebug("[YouTurn] Wide turn malformed (net={Net:F0}° cumulative={Cum:F0}°); trying the omega turn",
+                            netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI);
+                        omegaOnly = true;
+                        extraSetback = 0.0;
+                        continue;
+                    }
                     if (atObstacle)
                     {
                         _logger.LogWarning("[YouTurn] Turn before obstacle {I} was malformed (net={Net:F0}° cumulative={Cum:F0}°); no turn.",
@@ -715,10 +732,11 @@ public partial class YouTurnCreationService
         // there is an end, as at the fence, and the turn is made before the obstacle, as the gap
         // crossing (GapCrossingEnd) never crosses one. Fork only (the obstacles' turn lines are).
         var obstacleAreas = obstacles;
+        Func<Vec3, bool> isPointDrivenThrough = p => !obstacleAreas.Exists(o => o.Area.Contains(p.Easting, p.Northing))
+            && boundary.OuterBoundary.IsPointInside(p.Easting, p.Northing);
         var passEnd = PassEnds.Find(currentCurvePoints, currentLocationIndex, guidance.IsHeadingSameWay,
             p => isPointInsideTurnArea(p) == 0, turnBoundaryVec3,
-            p => !obstacleAreas.Exists(o => o.Area.Contains(p.Easting, p.Northing))
-                && boundary.OuterBoundary.IsPointInside(p.Easting, p.Northing),
+            isPointDrivenThrough,
             m => _logger.LogDebug("[YouTurn] Pass {Path}: {What}", guidance.HowManyPathsAway, m));
         if (passEnd is { } end)
             _logger.LogDebug("[YouTurn] End of pass {Path} ahead at ({E:F1},{N:F1}), point {Idx} of {Count}",
@@ -737,6 +755,7 @@ public partial class YouTurnCreationService
             IsPointBlockedForTurn = blockedForTurn,
             MaxGapCrossing = config.Guidance.UTurnCrossGap,
             IsPointInHeadlandStrip = isPointInHeadlandStrip,
+            IsPointDrivenThrough = isPointDrivenThrough,
 
             // The single generator walks these points (the current offset pass).
             GuidancePoints = currentCurvePoints,
