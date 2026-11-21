@@ -1705,33 +1705,32 @@ public sealed class YouTurnStateMachine
     }
 
     /// <summary>
-    /// A fingerprint of the field a snake order is planned for: the headland line's and the outer
-    /// boundary's point counts and four points of each, so a headland built again (another width,
-    /// edited) or a boundary changed counts. Read every cycle a turn can be made, so it reads a few
-    /// points, not the outlines.
+    /// A fingerprint of the field a snake order is planned for: every point of the headland line and
+    /// every corner of the outer boundary, to the centimetre, so a headland built again (another width,
+    /// edited) or a boundary changed counts. Four points of each were read before: a corner moved
+    /// anywhere else, the count the same, kept the order planned for the old field (as the obstacles'
+    /// stamp, which read two points, YouTurnCreationService.ObstacleStamp). The boundary's comes with
+    /// its index (<see cref="BoundaryPolygon.OutlineStamp"/>); the headland line is read here, a few
+    /// thousand points at most, with no allocation.
     /// </summary>
     internal static long SnakeFieldStamp(Boundary? boundary, IReadOnlyList<Vec3>? headlandLine)
     {
         long h = 17;
         if (headlandLine != null)
         {
-            h = h * 31 + headlandLine.Count;
-            for (int k = 0; k < 4 && headlandLine.Count > 0; k++)
+            var line = new HashCode();
+            line.Add(headlandLine.Count);
+            for (int k = 0; k < headlandLine.Count; k++)
             {
-                var p = headlandLine[headlandLine.Count * k / 4];
-                h = (h * 31 + Cm(p.Easting)) * 31 + Cm(p.Northing);
+                var p = headlandLine[k];
+                line.Add(Cm(p.Easting));
+                line.Add(Cm(p.Northing));
             }
+            h = h * 31 + line.ToHashCode();
         }
-        var outer = boundary?.OuterBoundary?.Points;
-        if (outer != null)
-        {
-            h = h * 31 + outer.Count;
-            for (int k = 0; k < 4 && outer.Count > 0; k++)
-            {
-                var p = outer[outer.Count * k / 4];
-                h = (h * 31 + Cm(p.Easting)) * 31 + Cm(p.Northing);
-            }
-        }
+        var outer = boundary?.OuterBoundary;
+        if (outer?.Points != null)
+            h = (h * 31 + outer.Points.Count) * 31 + outer.OutlineStamp;
         return h;
     }
 

@@ -310,8 +310,8 @@ public static class ToolProfileJsonService
         // and its tram spacing follow the implement, not the tractor. As with Machine, a
         // file without the section gets the defaults, not the previous tool's values.
         var dg = new GuidanceConfig();
-        store.Guidance.UTurnRadius = dto.YouTurn?.TurnRadius ?? dg.UTurnRadius;
-        store.Guidance.UTurnExtension = dto.YouTurn?.ExtensionLength ?? dg.UTurnExtension;
+        store.Guidance.UTurnRadius = VehicleToolLimits.Hold("uturn.radius", dto.YouTurn?.TurnRadius ?? dg.UTurnRadius, dg.UTurnRadius);
+        store.Guidance.UTurnExtension = VehicleToolLimits.Hold("uturn.extension", dto.YouTurn?.ExtensionLength ?? dg.UTurnExtension, dg.UTurnExtension);
         store.Guidance.UTurnDistanceFromBoundary = dto.YouTurn?.DistanceFromBoundary ?? dg.UTurnDistanceFromBoundary;
         store.Guidance.UTurnCrossGap = dto.YouTurn?.CrossGap ?? dg.UTurnCrossGap;
         store.Guidance.LineEntryMode = dto.YouTurn?.EntryMode is int em && Enum.IsDefined(typeof(LineEntryMode), em)

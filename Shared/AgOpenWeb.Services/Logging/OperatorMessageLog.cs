@@ -69,7 +69,7 @@ public sealed class OperatorMessageLog
     /// report's logs.txt, which then reads as something the app wrote.
     /// </summary>
     public static string OneLine(string text) =>
-        text.IndexOfAny(new[] { '\r', '\n' }) < 0 ? text : text.Replace("\r", "\\r").Replace("\n", "\\n");
+        text.AsSpan().IndexOfAny('\r', '\n') < 0 ? text : text.Replace("\r", "\\r").Replace("\n", "\\n");
 
     private void Write(string line)
     {
