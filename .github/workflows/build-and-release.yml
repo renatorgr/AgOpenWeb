@@ -296,10 +296,6 @@ jobs:
         run: dotnet build Platforms/AgOpenWeb.Desktop/AgOpenWeb.Desktop.csproj -c Release -p:DesktopOnly=true
 
   build-android:
-    # Official repository only, as build-ios: the fork's owner runs the Windows build, the beta
-    # workflow still builds the APK, and the official CI compiles Android for every PR opened
-    # there. A run started by hand (workflow_dispatch) compiles it in the fork too.
-    if: github.repository == 'AgOpenGPS-Official/AgOpenWeb' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
