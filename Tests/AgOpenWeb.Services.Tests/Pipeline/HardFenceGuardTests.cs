@@ -202,4 +202,26 @@ public class HardFenceGuardTests
             Assert.That(HardFenceGuard.HeadingIn(tree, pivot, 0, Reach, 8.0, pivot, -0.1), Is.EqualTo(0), "left");
         });
     }
+
+    [Test]
+    public void In_is_how_deep_the_implement_is_in_an_obstacle_now()
+    {
+        // A strip along the passes, its east edge 2 m inside the implement's left end.
+        var strip = Tree(-10, 0, 2 - Reach, 40);
+        Assert.Multiple(() =>
+        {
+            Assert.That(HardFenceGuard.In(strip, new Vec3(0, 20, 0), 0, Reach), Is.EqualTo(2.0).Within(0.05), "going along it");
+            Assert.That(HardFenceGuard.In(strip, new Vec3(0, -3, 0), 0, Reach), Is.EqualTo(0), "short of it");
+            Assert.That(HardFenceGuard.In(strip, new Vec3(2.5, 20, 0), 0, Reach), Is.EqualTo(0), "half a metre beside it");
+            // Turned square to the strip, the implement lies along the passes and its end is out of it.
+            Assert.That(HardFenceGuard.In(strip, new Vec3(0, 20, Math.PI / 2), Math.PI / 2, Reach), Is.EqualTo(0), "turned away");
+        });
+    }
+
+    [Test]
+    public void In_sees_a_tree_between_the_implements_ends()
+    {
+        var tree = Tree(-1, 10, 1, 12);
+        Assert.That(HardFenceGuard.In(tree, new Vec3(0, 11, 0), 0, Reach), Is.EqualTo(1.0).Within(0.05));
+    }
 }
