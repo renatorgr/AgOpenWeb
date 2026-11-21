@@ -255,6 +255,13 @@ The client sends `id|arg` strings (`transport.send('track.select|0')`). `RemoteS
 (in `RemoteWiring`) switches on the id and calls the VM; `RemoteServerWiring.Helpers.cs` holds
 the `config.set|key:value` table. Projectors (`SceneProjector`, `CoverageProjector`) build the
 DTOs in `Contracts.cs`, `WireCodec` encodes them, `MapBroadcaster` schedules the sends.
+A command may be longer than the socket's read buffer (a boundary or an obstacle drawn on the map,
+a curve's points saved from the map editor, a bug report's text): `WebSocketHub` joins the pieces of
+one message before it is dispatched, up to `MaxCommandBytes` (1 MB; a longer one is dropped whole and
+logged). It read into 1024 bytes and took each piece as a command of its own, so a command over
+1024 bytes was cut there (the last number too, in the middle) and its other pieces were unknown
+commands: an outer boundary of 325 points sent as *Draw on map* sends it became 68 points, 1.36 ha
+for 13.24 (Couto da Ribeira, 21 Nov 2026). Tests: `WebSocketHubTests`.
 
 ### MainViewModel is the control brain
 `MainViewModel` has no view. It runs on the single `HostLoopDispatcher` thread (the "UI
