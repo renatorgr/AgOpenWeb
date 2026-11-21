@@ -5,9 +5,15 @@ name: CI
 # check, so CI must trigger there too (otherwise PRs into develop block forever awaiting a
 # check that never starts). It does NOT package or publish anything — all artifacts, tagged
 # releases, and the beta prerelease are produced by build-deploy-bundles.yml.
+#
+# renatorgr fork: no run on a push to pulverizador. Every change gets there by a pull request,
+# and its run tests the pull request merged into pulverizador, so the run after the merge was
+# the same 20 minutes again. GitHub stopped the fork's workflows for the scale of their use
+# (21 Nov 2026). For a run on pulverizador itself (after a sync), start this workflow by hand
+# (workflow_dispatch).
 on:
   push:
-    branches: [main, develop, pulverizador]
+    branches: [main, develop]
   pull_request:
     branches: [main, develop, pulverizador]
   workflow_dispatch:
@@ -290,6 +296,10 @@ jobs:
         run: dotnet build Platforms/AgOpenWeb.Desktop/AgOpenWeb.Desktop.csproj -c Release -p:DesktopOnly=true
 
   build-android:
+    # Official repository only, as build-ios: the fork's owner runs the Windows build, the beta
+    # workflow still builds the APK, and the official CI compiles Android for every PR opened
+    # there. A run started by hand (workflow_dispatch) compiles it in the fork too.
+    if: github.repository == 'AgOpenGPS-Official/AgOpenWeb' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
