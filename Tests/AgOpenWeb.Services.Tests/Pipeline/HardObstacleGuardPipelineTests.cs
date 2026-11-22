@@ -132,7 +132,7 @@ public class HardObstacleGuardPipelineTests
     // distance and half the boom).
     private static readonly (double E, double N)[] Square = { (-22, -60), (-18, -60), (-18, -56), (-22, -56) };
 
-    private void Open(int pass, bool hard = true, (double E, double N)[]? obstacle = null)
+    private void Open(int pass, bool hard = true, (double E, double N)[]? obstacle = null, ObstacleAction at = ObstacleAction.Turn)
     {
         _obstacle = obstacle ?? Square;
         var boundary = new Boundary
@@ -147,7 +147,7 @@ public class HardObstacleGuardPipelineTests
         {
             Points = _obstacle.Select(p => new BoundaryPoint(p.E, p.N, 0)).ToList(),
             IsHard = hard,
-            AtObstacle = ObstacleAction.Turn,
+            AtObstacle = at,
         });
         _pipeline.SetBoundary(boundary);
         _pipeline.SetActiveTrack(new Models.Track.Track
@@ -162,7 +162,7 @@ public class HardObstacleGuardPipelineTests
         _pipeline.SetAutoSteerEngaged(true);
     }
 
-    private GpsCycleResult Cycle(double e, double n, double headingRad)
+    private GpsCycleResult Cycle(double e, double n, double headingRad, double speedKmh = SpeedKmh)
     {
         // The control loop keeps the tool's position; here the test does.
         _toolPosition.Update(new Vec3(e, n, headingRad), headingRad);
@@ -172,7 +172,7 @@ public class HardObstacleGuardPipelineTests
             CurrentPosition = new Position
             {
                 Latitude = w.Latitude, Longitude = w.Longitude,
-                Heading = headingRad * 180.0 / Math.PI, Speed = SpeedKmh / 3.6, // m/s
+                Heading = headingRad * 180.0 / Math.PI, Speed = speedKmh / 3.6, // m/s
             },
             FixQuality = 4,
             IsValid = true,
@@ -200,14 +200,14 @@ public class HardObstacleGuardPipelineTests
 
     /// <summary>Drive a bicycle north on the cycle's steer angle, <paramref name="cycles"/> tenths of a
     /// second, until AutoSteer goes off; <paramref name="before"/> runs ahead of each cycle.</summary>
-    private Drive DriveNorth(double e, double n, int cycles, Action<int>? before = null)
+    private Drive DriveNorth(double e, double n, int cycles, Action<int>? before = null, double speedKmh = SpeedKmh)
     {
         var d = new Drive { E = e, N = n };
-        double step = SpeedKmh / 3.6 * 0.1;
+        double step = speedKmh / 3.6 * 0.1;
         for (int i = 0; i < cycles; i++)
         {
             before?.Invoke(i);
-            var r = Cycle(d.E, d.N, d.H);
+            var r = Cycle(d.E, d.N, d.H, speedKmh);
             d.Last = r;
             // The front boom: Hitch ahead of the pivot, Reach either side, a point every 0.25 m.
             for (double a = -Reach; a <= Reach; a += 0.25)
@@ -387,6 +387,77 @@ public class HardObstacleGuardPipelineTests
             Assert.That(_results.Select(r => r.DisengageReason), Has.None.EqualTo(GpsPipelineService.HardObstacleReason(0))
                 .And.None.EqualTo(GpsPipelineService.HardObstacleInReason(0)));
             Assert.That(d.WorstIn, Is.EqualTo(0));
+        });
+    }
+
+    // A hard obstacle chosen as Go around, 9 m right of pass 3 (E -8): too far for the pass to bend
+    // round it (half the boom and the margin are 7 m), so on the pass the boom's end goes by 3 m
+    // clear of it. Off the pass nothing kept the boom out of it but the look-ahead.
+    private static (double E, double N)[] GoAroundRightOfPass3(double south, double north)
+        => new[] { (1.0, south), (5.0, south), (5.0, north), (1.0, north) };
+
+    [Test]
+    public void EngagedAtACrawlOffTheLineBesideAHardObstacle_AutoSteerGoesOffBeforeTheBoomIsInIt()
+    {
+        // 4.5 m right of the pass, pulling away at 1 km/h, the boom 0.6 m short of the obstacle and its
+        // right end 1.5 m inside the obstacle's width: AutoSteer steers left for the line and the right
+        // end swings forward into it. Two seconds of travel at 1 km/h are 0.56 m, less than the least
+        // the look-ahead looked at, so nothing was looked at (the beta robot on Casa, simulator: put
+        // by hand beside a hard Go around obstacle, 4.5 m off the line, engaged at 0.28 m/s, a 12 m
+        // implement 1.2 m in it with AutoSteer on for 7 s).
+        Open(pass: 3, obstacle: GoAroundRightOfPass3(south: -64.9, north: -60.9), at: ObstacleAction.GoRound);
+        var d = DriveNorth(-3.5, -70, 300, speedKmh: 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.OffAtN, Is.Not.Null, "AutoSteer went off");
+            Assert.That(d.Last.DisengageReason, Is.EqualTo(GpsPipelineService.HardObstacleReason(0)));
+            Assert.That(d.WorstIn, Is.EqualTo(0), "no point of the boom in the obstacle");
+        });
+        _audio.Received().Play(SoundEffect.UTurnTooClose);
+    }
+
+    [Test]
+    public void EngagedOffTheLineWithTheBoomAlreadyInAHardGoAroundObstacle_AutoSteerGoesOffAtOnce()
+    {
+        // 4.5 m right of the pass beside a hard strip, the boom's right end 1.5 m in it. AutoSteer
+        // steers left, out of it: nothing is heading in, and only an obstacle the pass turns at was
+        // asked whether the boom is in it. Off the line no bend keeps the boom out of this one either.
+        Open(pass: 3, obstacle: GoAroundRightOfPass3(south: -80, north: -20), at: ObstacleAction.GoRound);
+        var d = DriveNorth(-3.5, -50, 100);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.OffAtN, Is.Not.Null.And.LessThan(-49), "AutoSteer went off within a metre");
+            Assert.That(d.Last.DisengageReason, Is.EqualTo(GpsPipelineService.HardObstacleInReason(0)));
+        });
+        _audio.Received().Play(SoundEffect.UTurnTooClose);
+    }
+
+    [Test]
+    public void StandingStillOffTheLineBesideAHardObstacle_NothingIsLookedAt()
+    {
+        // Not moving, the boom 0.6 m short of the obstacle: a parked tractor is not heading anywhere.
+        Open(pass: 3, obstacle: GoAroundRightOfPass3(south: -64.9, north: -60.9), at: ObstacleAction.GoRound);
+        var d = DriveNorth(-3.5, -70, 30, speedKmh: 0);
+
+        Assert.That(d.OffAtN, Is.Null, d.Last.DisengageReason);
+    }
+
+    [Test]
+    public void OnThePassBesideAHardGoAroundObstacleItClears_AutoSteerStaysOn()
+    {
+        // On pass 3 the boom's right end goes by 3 m from the strip, at a crawl and at speed.
+        Open(pass: 3, obstacle: GoAroundRightOfPass3(south: -80, north: -20), at: ObstacleAction.GoRound);
+        var slow = DriveNorth(-8, -90, 100, speedKmh: 1);
+        var fast = DriveNorth(-8, -90, 400);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(slow.OffAtN, Is.Null, slow.Last.DisengageReason);
+            Assert.That(fast.OffAtN, Is.Null, fast.Last.DisengageReason);
+            Assert.That(fast.WorstIn, Is.EqualTo(0));
+            Assert.That(fast.N, Is.GreaterThan(-20), "driven past the strip");
         });
     }
 }

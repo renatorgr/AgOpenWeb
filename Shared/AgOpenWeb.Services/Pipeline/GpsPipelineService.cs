@@ -1544,6 +1544,12 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // with its end 2 m inside a hard obstacle a metre beside the pass (the beta robot on Quinta
         // Torta, simulator). There an implement already in the obstacle counts too, and a turn
         // planned ahead keeps the implement out from where it starts, as at the fence. Fork only.
+        // Off the line an implement already in a hard obstacle counts whatever was chosen at it (no
+        // bend keeps it out of a Go around one there), and a tractor pulling away looks at least
+        // HardFenceGuard.MinLookAhead ahead: two seconds of travel at 1 km/h are 0.56 m, under the
+        // least the look-ahead looks at, so nothing was. Put by hand beside a hard Go around
+        // obstacle 4.5 m off the line and engaged at 0.28 m/s, a 12 m implement was 1.2 m in it
+        // with AutoSteer on for 7 s (the beta robot on Casa, simulator). Fork only.
         if (autoSteerEngaged && !_isReverse && !_youTurn.IsExecuting
             && _lastLineSteerAngle is double steerNow
             && boundary is { InnerBoundaries.Count: > 0 }
@@ -1556,6 +1562,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
             if (_youTurn.TurnPath is { Count: > 0 } turnAhead)
                 lookOnLine = Math.Min(lookOnLine, Math.Max(0, HardFenceGuard.AheadOf(turnAhead[0],
                     driftedEasting, driftedNorthing, headingRad)));
+            double lookOffLine = Math.Abs(pos.Speed) > HardFenceGuard.MovingSpeed
+                ? Math.Max(lookAhead, HardFenceGuard.MinLookAhead) : lookAhead;
             double reach = toolWidth / 2 + Math.Abs(config.Tool.Offset);
             double curvature = HardFenceGuard.Curvature(steerNow, config.Vehicle.Wheelbase, config.Vehicle.MaxSteerAngle);
             var pivotNow = new Vec3(driftedEasting, driftedNorthing, headingRad);
@@ -1565,8 +1573,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 if (!inner.IsHard || inner.IsDriveThrough || !inner.IsValid) continue;
                 bool turnedAt = inner.AtObstacle == ObstacleAction.Turn || noRoom.Contains(i);
                 if (!offLine && !turnedAt) continue;
-                bool inIt = turnedAt && HardFenceGuard.In(inner, toolPos, toolHeading, reach) > HardFenceGuard.ObstacleMargin;
-                if (!inIt && HardFenceGuard.HeadingIn(inner, toolPos, toolHeading, reach, offLine ? lookAhead : lookOnLine,
+                bool inIt = HardFenceGuard.In(inner, toolPos, toolHeading, reach) > HardFenceGuard.ObstacleMargin;
+                if (!inIt && HardFenceGuard.HeadingIn(inner, toolPos, toolHeading, reach, offLine ? lookOffLine : lookOnLine,
                         pivotNow, curvature) <= 0) continue;
                 autoSteerEngaged = false;
                 autoSteerDisengaged = true;
@@ -2425,7 +2433,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
     public static string HardObstacleReason(int inner) =>
         $"AutoSteer off: the implement is heading into Inner {inner + 1}. Steer by hand.";
 
-    /// <summary>What AutoSteer says when it goes off with the implement in a hard obstacle the pass turns at.</summary>
+    /// <summary>What AutoSteer says when it goes off with the implement in a hard obstacle: one the
+    /// pass turns at, or any with the tractor off the line.</summary>
     public static string HardObstacleInReason(int inner) =>
         $"AutoSteer off: the implement is in Inner {inner + 1}. Steer by hand.";
 
