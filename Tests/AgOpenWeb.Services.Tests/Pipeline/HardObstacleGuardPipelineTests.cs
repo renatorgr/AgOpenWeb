@@ -460,4 +460,65 @@ public class HardObstacleGuardPipelineTests
             Assert.That(fast.N, Is.GreaterThan(-20), "driven past the strip");
         });
     }
+
+    // A hard strip chosen as Go around, 6.6 m right of pass 3 (E -8), with a safety margin of 0.5 m:
+    // the pass is not bent (half the boom and the margin are 6.5 m) and on it the boom's right end
+    // goes by 0.6 m from the strip.
+    private static (double E, double N)[] GoAroundCloseRightOfPass3(double south, double north)
+        => new[] { (-1.4, south), (3.0, south), (3.0, north), (-1.4, north) };
+
+    [Test]
+    public void EngagedNearTheLineWithTheBoomInAHardGoAroundObstacle_AutoSteerGoesOffAtOnce()
+    {
+        // 1.3 m right of the pass, under the 1.5 m that count as off the line, the boom's right end
+        // 0.7 m in the strip. Near the line a Go around obstacle was not looked at at all: the bend
+        // keeps the boom the margin out of it, and a tractor more than the margin off the pass had
+        // spent that (the beta robot on Olival, simulator: engaged 0.45 m off the pass at 1 km/h,
+        // heading away from it, 1.3 m off before it came back, a 12 m implement 0.4 m in a hard Go
+        // around obstacle with AutoSteer on).
+        ConfigurationStore.Instance.Guidance.GoAroundMargin = 0.5;
+        Open(pass: 3, obstacle: GoAroundCloseRightOfPass3(south: -80, north: -20), at: ObstacleAction.GoRound);
+        var d = DriveNorth(-6.7, -50, 100);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.OffAtN, Is.Not.Null.And.LessThan(-49), "AutoSteer went off within a metre");
+            Assert.That(d.Last.DisengageReason, Is.EqualTo(GpsPipelineService.HardObstacleInReason(0)));
+        });
+        _audio.Received().Play(SoundEffect.UTurnTooClose);
+    }
+
+    [Test]
+    public void NearTheLineWithTheBoomShortOfAHardGoAroundObstacle_AutoSteerStaysOn()
+    {
+        // 0.3 m right of the pass the boom's right end is 0.3 m short of the strip: AutoSteer steers
+        // back to the line and nothing is in the obstacle.
+        ConfigurationStore.Instance.Guidance.GoAroundMargin = 0.5;
+        Open(pass: 3, obstacle: GoAroundCloseRightOfPass3(south: -80, north: -20), at: ObstacleAction.GoRound);
+        var d = DriveNorth(-7.7, -50, 300);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(d.OffAtN, Is.Null, d.Last.DisengageReason);
+            Assert.That(d.WorstIn, Is.EqualTo(0), "no point of the boom in the strip");
+            Assert.That(d.N, Is.GreaterThan(-20), "driven past the strip");
+        });
+    }
+
+    [Test]
+    public void OnThePassBentRoundAHardGoAroundObstacle_AutoSteerStaysOn()
+    {
+        // A hard box 5 m right of pass 3: the pass bends 2 m left round it, and the boom follows the
+        // bend the margin clear of the box, at a crawl and at speed.
+        var box = new[] { (-3.0, -62.0), (1.0, -62.0), (1.0, -58.0), (-3.0, -58.0) };
+        Open(pass: 3, obstacle: box, at: ObstacleAction.GoRound);
+        var fast = DriveNorth(-8, StartN, 600);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(fast.OffAtN, Is.Null, fast.Last.DisengageReason);
+            Assert.That(fast.WorstIn, Is.EqualTo(0), "no point of the boom in the box");
+            Assert.That(fast.N, Is.GreaterThan(-40), "driven past the box");
+        });
+    }
 }
