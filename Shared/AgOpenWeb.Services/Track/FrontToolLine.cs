@@ -22,7 +22,8 @@ namespace AgOpenWeb.Services.Track;
 /// open pass is moved to the line the implement's pull draws (<see cref="TowedShifts"/>): the pivot
 /// follows the implement as a trailer follows its hitch, which is the same √(R² − h²) on a steady
 /// bend and also holds through a short S, such as a Go around bend round a tree; it depends on
-/// the way the pass is driven.
+/// the way the pass is driven. A closed pass bent round Go around obstacles is moved the same way,
+/// as a loop (<see cref="TowedLoop"/>): round its bends' S the window fails as on an open pass.
 /// </summary>
 public static class FrontToolLine
 {
@@ -47,10 +48,15 @@ public static class FrontToolLine
     /// <param name="reach">How far ahead of the pivot the implement is, m (positive).</param>
     /// <param name="minRadius">The tightest the tractor turns, m.</param>
     /// <param name="forward">The tractor drives the pass in its own order (false: against it). An open
-    /// pass's line depends on it (<see cref="TowedShifts"/>).</param>
-    public static List<Vec3>? Steered(IReadOnlyList<Vec3> pass, bool closed, double reach, double minRadius, bool forward = true)
+    /// pass's line depends on it (<see cref="TowedShifts"/>), and a towed loop's.</param>
+    /// <param name="towed">A closed pass moved by the implement's pull all round, as a loop
+    /// (<see cref="TowedLoop"/>), not one for one by the window: a lap bent round Go around
+    /// obstacles. Open passes are always towed.</param>
+    public static List<Vec3>? Steered(IReadOnlyList<Vec3> pass, bool closed, double reach, double minRadius, bool forward = true,
+        bool towed = false)
     {
         if (pass.Count < 3 || reach <= 0.05) return null;
+        if (closed && towed) return TowedLoop(pass, reach, minRadius, forward);
         // The pull of a bend dies away over a few reaches past it (TowedShifts), so the points added
         // near a stretch's ends reach that far.
         if (!closed) pass = WithPointsNearStretchEnds(pass, Math.Max(Math.Max(reach, MinWindow) + reach / 2 + Chord, TowSettle * reach) + StretchStep);
@@ -133,6 +139,59 @@ public static class FrontToolLine
             double t = segLen > 1e-9 ? Math.Clamp((s - cum[i]) / segLen, 0, 1) : 0;
             return new Vec2(a.Easting + (b.Easting - a.Easting) * t, a.Northing + (b.Northing - a.Northing) * t);
         }
+    }
+
+    /// <summary>
+    /// A closed pass moved by the implement's pull (<see cref="TowedShifts"/>) all round: a lap bent
+    /// round Go around obstacles has their S on it, which the window (one shift per point from the
+    /// bend over a few metres) averages out to nearly straight, so a front boom cut the bend into
+    /// the obstacle as on an open pass. The pull is walked round the lap three times, and the
+    /// middle time round is the line: whichever way the lap is driven, a pivot started straight
+    /// behind the implement has settled by then, and the headings there are the lap's own. Points every
+    /// <see cref="StretchStep"/> near the ends of a long stretch, as an open pass gets
+    /// (<see cref="WithPointsNearStretchEnds"/>); the lap's points once each, the first not
+    /// repeated at the end. Null when it would move less than <see cref="MinShift"/> anywhere, or
+    /// bends tighter than the tractor turns (<see cref="TightestBend"/>). Fork only.
+    /// </summary>
+    internal static List<Vec3>? TowedLoop(IReadOnlyList<Vec3> lap, double reach, double minRadius, bool forward)
+    {
+        int count = lap.Count;
+        if (count > 2 && lap[count - 1].Easting == lap[0].Easting && lap[count - 1].Northing == lap[0].Northing) count--;
+        if (count < 3 || reach <= 0.05) return null;
+        // The lap joined at its seam, the points near its stretches' ends added, the seam left once.
+        var joined = new List<Vec3>(count + 1);
+        for (int i = 0; i < count; i++) joined.Add(lap[i]);
+        joined.Add(lap[0]);
+        var dense = WithPointsNearStretchEnds(joined, Math.Max(Math.Max(reach, MinWindow) + reach / 2 + Chord, TowSettle * reach) + StretchStep);
+        int n = dense.Count - 1;
+        if (n < 3) return null;
+
+        // Round three times and back to the start.
+        var thrice = new List<Vec3>(3 * n + 1);
+        for (int k = 0; k < 3; k++)
+            for (int i = 0; i < n; i++) thrice.Add(dense[i]);
+        thrice.Add(dense[0]);
+        var cum = new double[thrice.Count];
+        for (int i = 1; i < thrice.Count; i++) cum[i] = cum[i - 1] + GeometryMath.Distance(thrice[i - 1], thrice[i]);
+        if (cum[^1] < 1e-6) return null;
+        var shifts = TowedShifts(thrice, cum, reach, forward, minRadius);
+
+        double most = 0;
+        var line = new List<Vec3>(n);
+        for (int i = 0; i < n; i++)
+        {
+            int j = n + i; // the middle time round
+            double shift = shifts[j];
+            most = Math.Max(most, Math.Abs(shift));
+            double h = HeadingOn(thrice, cum, cum[j]);
+            var p = thrice[j];
+            // Right of a heading h is (cos h, -sin h).
+            line.Add(new Vec3(p.Easting + shift * Math.Cos(h), p.Northing - shift * Math.Sin(h), p.Heading));
+        }
+        if (most < MinShift) return null;
+        var closedLine = new List<Vec3>(line) { line[0] };
+        if (TightestBend(closedLine) < minRadius * TightestBendShare) return null;
+        return line;
     }
 
     /// <summary>An open pass's line bending tighter than this share of the tractor's turning radius

@@ -481,4 +481,71 @@ public class ObstacleDetourTests
         Assert.That(without, Is.LessThan(margin - 0.2));
         Assert.That(with, Is.GreaterThanOrEqualTo(margin - 0.1));
     }
+
+    // A lap 60 x 60 m, clockwise, a point every metre, starting on its west side at N 0 (its seam)
+    // and back there, the first point repeated at the end as a boundary curve's is.
+    private static List<Vec3> LapFromWestSide()
+    {
+        var corners = new[] { (-30.0, 0.0), (-30.0, 30.0), (30.0, 30.0), (30.0, -30.0), (-30.0, -30.0), (-30.0, 0.0) };
+        var lap = new List<Vec3>();
+        for (int c = 0; c + 1 < corners.Length; c++)
+        {
+            var (e0, n0) = corners[c];
+            var (e1, n1) = corners[c + 1];
+            int steps = (int)Math.Round(Math.Abs(e1 - e0) + Math.Abs(n1 - n0));
+            for (int k = 0; k < steps; k++)
+                lap.Add(new Vec3(e0 + (e1 - e0) * k / steps, n0 + (n1 - n0) * k / steps, 0));
+        }
+        lap.Add(lap[0]);
+        return lap;
+    }
+
+    [Test]
+    public void A_lap_is_bent_as_a_loop_even_with_its_seam_beside_the_tree()
+    {
+        // A boundary curve's lap is a loop: walked from where it was drawn, a bend round a tree at
+        // its seam was cut in two. Walked from its point furthest from the tree, the bend is whole
+        // and the lap comes back joined (fork only).
+        var field = Field(-100, 100, Tree(-30, 0, 4));
+        var lap = LapFromWestSide();
+        var bend = Detour.Compute(lap, field, KeepOut, Radius, loop: true);
+
+        Assert.That(bend, Is.Not.Null);
+        Assert.That(bend!.GoneRound, Is.EqualTo(new[] { 0 }));
+        var pts = bend.Points;
+        Assert.Multiple(() =>
+        {
+            // The tree's 2 m and the keep-out, less a few centimetres of the sampling.
+            Assert.That(pts.Min(p => Math.Sqrt((p.Easting + 30) * (p.Easting + 30) + p.Northing * p.Northing)),
+                Is.GreaterThan(2 + KeepOut - 0.06), "clear of the tree");
+            Assert.That(Dist(pts[0], pts[^1]), Is.GreaterThan(1e-3), "the first point is not repeated");
+            Assert.That(Gaps(pts).Max(), Is.LessThan(1.5), "no jump anywhere, the seam (last to first) too");
+            Assert.That(pts.Any(p => Math.Abs(p.Easting - 30) < 1e-6 && Math.Abs(p.Northing) < 1), "the far side as it was");
+            Assert.That(pts.Count(p => p.Northing > -15 && p.Northing < 15 && p.Easting < -20), Is.GreaterThan(30),
+                "the whole bend on the west side, either side of the old seam");
+        });
+    }
+
+    [Test]
+    public void A_lap_the_bends_would_reach_round_is_not_bent()
+    {
+        // A lap 12 x 12 m with a tree on it: the bend in and out reaches further than the lap goes
+        // from the tree, all the way round to its seam. No bend: the tree is blocked.
+        var field = Field(-100, 100, Tree(-6, 0, 4));
+        var small = new List<Vec3>();
+        foreach (var p in LapFromWestSide()) small.Add(new Vec3(p.Easting / 5, p.Northing / 5, 0));
+        var bend = Detour.Compute(small, field, KeepOut, Radius, loop: true);
+
+        Assert.That(bend, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(bend!.GoneRound, Is.Empty);
+            Assert.That(bend.Blocked, Is.EqualTo(new[] { 0 }));
+        });
+    }
+
+    private static IEnumerable<double> Gaps(IReadOnlyList<Vec3> loop)
+    {
+        for (int i = 0; i < loop.Count; i++) yield return Dist(loop[i], loop[(i + 1) % loop.Count]);
+    }
 }

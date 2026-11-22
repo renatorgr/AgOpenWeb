@@ -770,7 +770,20 @@ obstacle whose outline could not be grown and lies across the pass is told as on
 is built once per pass and cached (the key holds every corner of every obstacle and of the field's edge,
 `BoundaryPolygon.OutlineStamp`); it is the line
 steered (`CalculateTrackGuidance`), the line shown and the light bar's line, AutoSteer on or off.
-U-turn planning and pass numbering keep the straight pass. Closed tracks are not bent.
+U-turn planning and pass numbering keep the straight pass.
+
+**A boundary curve's laps** (closed tracks) are bent too (fork only). They were not: on a tester's field
+(Eucaliptal, 22 Nov 2026, the real tractor, an 8 m front boom) lap 2 was shown and steered straight through two
+hard Go around obstacles. A lap steered is bent as a loop (`ObstacleDetour.Compute`'s `loop`, asked by
+`GoAroundPasses.For` with `Lap.Whole`): started at the vertex furthest from every Go around obstacle
+(`FromSeam`), so no bend is cut at the lap's seam, and a bend that would reach round the whole lap is not made
+(the obstacle is blocked). The piece of a lap shown beside a neck (`FitPieceShown`) is bent as an open line
+(`Lap.Piece`); the U-turn planner asks with `Lap.None` and gets no bend, as before (laps have no U-turns). A front
+implement's line on a bent lap is the implement's pull round the loop (`FrontToolLine.TowedLoop`: the lap three
+times, the middle one kept). The neck check (`PassUnfit`) is made on the unbent lap. An obstacle with no room
+either side on a lap is a blocked obstacle: AutoSteer goes off 10 m plus 2 s before it, with the toast "No room
+to go around Inner N on this lap: steer round by hand". Tests: `ClosedLapGoAroundTests`, `ObstacleDetourTests`
+(`A_lap_is_bent_as_a_loop...`), `GoAroundPassesTests`.
 
 ## A closed track's pass across a neck
 On a closed track (a boundary curve) the offset leaves out the points too near the reference and joins what

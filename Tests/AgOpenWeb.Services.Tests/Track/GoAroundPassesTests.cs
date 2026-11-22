@@ -4,6 +4,7 @@
 
 using System.Collections.Generic;
 using System.Linq;
+using AgOpenWeb.Models;
 using AgOpenWeb.Models.Base;
 using AgOpenWeb.Models.Configuration;
 using AgOpenWeb.Models.Guidance;
@@ -194,5 +195,40 @@ public class GoAroundPassesTests
         var snapped = passes.For(track, dSnap, pSnap, field.Boundary)!;
         Assert.That(snapped.Rounds.Single(r => r.InnerIndex == Tree18).Side, Is.EqualTo(side));
         Assert.That(EastingAt(snapped.Points, 74.5), Is.LessThan(75), "west, where the tractor is");
+    }
+
+    [Test]
+    public void A_closed_tracks_lap_is_bent_only_when_asked_as_a_lap()
+    {
+        // A boundary curve's lap through a tree (fork only). The pipeline asks for the whole lap
+        // (steered, shown) or the piece of it shown, and gets it bent; the U-turn planner walks a
+        // lap as an open line not joined at its seam and asks without saying: no bend, as before.
+        var (passes, _, _) = Setup();
+        var boundary = new Boundary
+        {
+            OuterBoundary = new BoundaryPolygon
+            {
+                Points = new[] { (-100.0, -100.0), (-100.0, 100.0), (100.0, 100.0), (100.0, -100.0) }
+                    .Select(p => new BoundaryPoint(p.Item1, p.Item2, 0)).ToList(),
+            },
+        };
+        var tree = new BoundaryPolygon { AtObstacle = ObstacleAction.GoRound };
+        tree.SetCircle(new ObstacleCircle(-50, 0, 4));
+        boundary.InnerBoundaries.Add(tree);
+        var ring = new List<Vec3> { new(-50, -50, 0), new(-50, 50, 0), new(50, 50, 0), new(50, -50, 0) };
+        var track = new Models.Track.Track
+        {
+            Name = "Boundary Curve", Points = CurveProcessing.DensifyLoop(ring), Type = Models.Track.TrackType.Curve, IsClosed = true,
+        };
+
+        var lap = passes.For(track, 0, track.Points, boundary, GoAroundPasses.Lap.Whole);
+        Assert.Multiple(() =>
+        {
+            Assert.That(passes.For(track, 0, track.Points, boundary), Is.Null, "the planner's ask");
+            Assert.That(passes.Bent(track, 0, track.Points, boundary), Is.SameAs(track.Points), "the planner walks the lap as it is");
+            Assert.That(lap?.GoneRound, Is.EqualTo(new[] { 0 }), "the whole lap");
+            Assert.That(passes.For(track, 0, track.Points.Take(120).ToList(), boundary, GoAroundPasses.Lap.Piece)?.GoneRound,
+                Is.EqualTo(new[] { 0 }), "a piece of it, as an open line");
+        });
     }
 }

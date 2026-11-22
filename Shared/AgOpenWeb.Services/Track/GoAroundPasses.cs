@@ -137,16 +137,34 @@ public sealed class GoAroundPasses
     // is the obstacle's side.
     private double Margin => SafetyMargin + ObstacleDetour.TrailedCutIn(_config.Tool, _config.Vehicle.HitchLength, Radius);
 
+    /// <summary>What the pass given to <see cref="For"/> is of a closed track's lap. Open tracks: not read.</summary>
+    public enum Lap
+    {
+        /// <summary>Not bent: the U-turn planner's lap, walked as an open line not joined at its seam.</summary>
+        None,
+        /// <summary>The whole lap (the line steered, the line shown): bent as a loop.</summary>
+        Whole,
+        /// <summary>A stretch of it (the piece shown where the lap does not fit everywhere): bent as an open line.</summary>
+        Piece,
+    }
+
     /// <summary>
     /// The pass <paramref name="pass"/> (offset <paramref name="distAway"/> from
     /// <paramref name="track"/>) bent round its Go around obstacles, or null when it runs into
-    /// none. Open tracks only: a closed loop is a boundary pass. Cached while nothing changed.
+    /// none. Cached while nothing changed.
+    /// <para>A closed track's lap is bent when <paramref name="lap"/> says what the pass is of it:
+    /// the whole lap as a loop (<see cref="ObstacleDetour.Compute"/>), a piece of it as an open line.
+    /// The U-turn planner asks with <see cref="Lap.None"/> and gets no bend, as before. Fork only:
+    /// laps were never bent, and on a tester's boundary curve (Eucaliptal, 22 Nov 2026) the second
+    /// lap ran across hard Go around obstacles with AutoSteer on.</para>
     /// </summary>
-    public ObstacleDetour.Bend? For(Models.Track.Track track, double distAway, IReadOnlyList<Vec3> pass, Boundary? boundary)
+    public ObstacleDetour.Bend? For(Models.Track.Track track, double distAway, IReadOnlyList<Vec3> pass, Boundary? boundary,
+        Lap lap = Lap.None)
     {
-        if (track.IsClosed || !HasGoRound(boundary)) return null;
+        if (!HasGoRound(boundary)) return null;
+        if (track.IsClosed && lap == Lap.None) return null;
         var pins = ReferenceEquals(track, _pinsTrack) ? _pinSides : null;
-        return _detour.For(track, distAway, pass, boundary, KeepOut, Radius, Margin, pins);
+        return _detour.For(track, distAway, pass, boundary, KeepOut, Radius, Margin, pins, track.IsClosed && lap == Lap.Whole);
     }
 
     /// <summary>
