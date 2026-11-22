@@ -218,15 +218,17 @@ kickout) the next press counts at once. Fork only.
 
 ### A module heard on two network links
 The module sockets are bound to every address, so a host on two links to the modules' subnet (a tablet on cable
-and on Wi-Fi to the same router) gets every broadcast once per link, the Wi-Fi copy up to half a second late (the
-router holds broadcasts for the Wi-Fi's beacon). On a tester's Puma (20 Nov 2026) the late copy of a fix put the
+and on Wi-Fi to the same router) gets every broadcast once per link, the Wi-Fi copy late (the
+router holds broadcasts for the Wi-Fi's beacon and sends a few at each: 0.3 s the day it was found; 1.49-1.73 s, 8
+every 205 ms and half of them lost, measured on that router 22 Nov 2026 with more broadcasts). On a tester's Puma (20 Nov 2026) the late copy of a fix put the
 tractor 0.3-0.5 m back, the dual reverse test read a reverse, the pause sent status 0 and the module in Button
 mode let go: AutoSteer off over and over, and the Auto sections off in each "reverse". `UdpCommunicationService`
 asks each socket but the loopback one for the link a datagram came in on (IP_PKTINFO, `BeginReceiveMessageFrom`)
 and `LinkCopyFilter` (`Services/Network`) drops the copy: each datagram is taken from the link it comes in on first,
-the same bytes from the same sender on another link within 2 s are its copy, and each datagram taken cancels one
+the same bytes from the same sender on another link within 5 s (`WindowMs`; 2 s left the measured copy 0.27 s) are its copy, and each datagram taken cancels one
 copy at most, so a module repeating the same bytes (PGN 253 with nothing changed) is not taken for its own copy. No
-link is preferred: with the first one gone the other's datagrams match nothing and are taken at once. Before the
+link is preferred: with the first one gone the other's datagrams match nothing and are taken at once (but bytes the
+module repeats, with copies lost on the way, can be taken for the lost copies for up to those 5 s; positions never). Before the
 GPS text reaches the parser, so the copies never reach the line splitter either. The first copy from a module in
 30 s is logged with both links (`[UDP] ... is heard on two network links`). Where the system does not give the link
 everything is taken, as before. Tests: `LinkCopyFilterTests`. Docs/ARCHITECTURE.md (same text as official draft PR, branch `fix/udp-second-link-copies`).
