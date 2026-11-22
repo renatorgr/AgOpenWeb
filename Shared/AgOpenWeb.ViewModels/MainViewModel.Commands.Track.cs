@@ -1068,6 +1068,7 @@ public partial class MainViewModel
                 return;
             }
 
+            _youTurnsOnBeforeClosedTrack = false; // the operator's choice stands
             SwitchYouTurn(!IsYouTurnEnabled, "U-turn button");
             SyncGuidanceStateToPipeline();
             StatusMessage = IsYouTurnEnabled ? "YouTurn enabled" : "YouTurn disabled";

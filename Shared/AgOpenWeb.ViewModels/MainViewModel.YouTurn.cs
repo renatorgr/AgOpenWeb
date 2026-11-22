@@ -54,6 +54,29 @@ public partial class MainViewModel
     }
 
     /// <summary>
+    /// U-turns were on when a closed track turned them off (#421), and the operator has not
+    /// pressed the U-turn button nor stopped guidance since. Fork only.
+    /// </summary>
+    private bool _youTurnsOnBeforeClosedTrack;
+
+    /// <summary>
+    /// An open track chosen after a closed one gets back automatic U-turns that the closed track
+    /// turned off. They stayed off: on Eucaliptal (22 Nov 2026) the operator drove the Boundary
+    /// Curve, chose the AB line again, and AutoSteer went off twice at the end of the pass with
+    /// U-turns off, which he had not switched off. No track (guidance stopped) forgets it, and so
+    /// does the U-turn button. The track cycle button still turns U-turns off when they are on
+    /// (AgOpenGPS Controls.Designer.cs btnCycleLines). Fork only.
+    /// </summary>
+    private void TurnYouTurnsBackOnAfterClosedTrack(Track? chosen)
+    {
+        if (!_youTurnsOnBeforeClosedTrack) return;
+        _youTurnsOnBeforeClosedTrack = false;
+        if (chosen == null) return;
+        SwitchYouTurn(true, "open track chosen after a closed one; they were on before it");
+        ReportFailure("Automatic U-turns on again: they were on before the closed track");
+    }
+
+    /// <summary>
     /// True when the active track is a closed loop (polygon / boundary curve /
     /// water pivot). U-turns make no sense on a closed track — there's no field
     /// end to turn at, you just drive the loop continuously — so they're disabled
