@@ -38,6 +38,10 @@ public static class HardFenceGuard
     /// <summary>Shorter than this (slower than walking pace) nothing is looked at.</summary>
     public const double MinLookAhead = 1.0;
 
+    /// <summary>Faster than this (m/s) the tractor is moving: off the line, beside a hard obstacle,
+    /// it then looks <see cref="MinLookAhead"/> ahead at least. Slower it is parked, heading nowhere.</summary>
+    public const double MovingSpeed = 0.1;
+
     /// <summary>
     /// How far outside the fence an implement end must be going for it to count: a fence drawn
     /// on a photo is a little off the ground, and an implement working along it brushes it.
