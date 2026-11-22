@@ -146,6 +146,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private (Models.Track.Track? Track, List<Vec3>? TrackPoints, double DistAway, List<Vec3>? Points) _lastSteered;
     private List<Vec3>? _shownBendPoints;
     private Models.Track.Track? _shownBendTrack;
+    private bool _shownBendWholeLap;
     private string? _blockedNoticeKey;
     private string? _obstacleNotice;
     // The pivot's distance from the line last cycle: the line steered with AutoSteer on, else the line shown.
@@ -1748,10 +1749,12 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 baseTrack = track;
             }
 
-            // The line shown is the line steered: bent round the Go around obstacles.
-            if (GoRoundLine(track, distAway, displayTrack.Points, boundary) is { } bentShown)
+            // The line shown is the line steered: bent round the Go around obstacles. A lap shown
+            // whole is bent as the lap steered; the piece of one that fits, as an open line.
+            var lapShown = LapShown(track, distAway, displayTrack);
+            if (GoRoundLine(track, distAway, displayTrack.Points, boundary, lapShown) is { } bentShown)
             {
-                displayTrack = BendTrack(bentShown, displayTrack.Name, track);
+                displayTrack = BendTrack(bentShown, displayTrack.Name, track, lapShown == Track.GoAroundPasses.Lap.Whole);
                 baseTrack = track;
             }
 
@@ -2409,8 +2412,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
         double reach = Math.Abs(Models.Tool.RigGeometry.AttachX(config.Vehicle, config.Tool));
         double minRadius = config.Vehicle.MinTurningRadius;
         double passRadius = config.Guidance.UTurnRadius; // the passes' bends are opened to it
-        // An open pass's line depends on the way it is driven (FrontToolLine.TowedShifts).
-        if (steered.IsClosed) forward = true;
+        // An open pass's line depends on the way it is driven (FrontToolLine.TowedShifts), and so
+        // does a lap bent round Go around obstacles, moved by the pull as a loop (fork only).
+        bool towedLap = steered.IsClosed && bent != null;
+        if (steered.IsClosed && !towedLap) forward = true;
         var key = (track, track.Points, distAway, bent, steered.Points.Count, steered.IsClosed, reach, minRadius, passRadius, forward);
         if (!ReferenceEquals(key.track, _frontLineKey.Track) || !ReferenceEquals(key.Points, _frontLineKey.TrackPoints)
             || key.distAway != _frontLineKey.DistAway || !ReferenceEquals(bent, _frontLineKey.Bent)
@@ -2419,7 +2424,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             || passRadius != _frontLineKey.PassRadius || forward != _frontLineKey.Forward)
         {
             // The line first, then the key with it: a line that failed is not taken for this pass's.
-            var line = Track.FrontToolLine.Steered(steered.Points, steered.IsClosed, reach, minRadius, forward);
+            var line = Track.FrontToolLine.Steered(steered.Points, steered.IsClosed, reach, minRadius, forward, towedLap);
             _frontLine = line;
             _frontLineKey = key;
         }
@@ -2534,13 +2539,16 @@ public sealed class GpsPipelineService : IGpsPipelineService
 
         // Round the Go around obstacles on this pass, tractor and implement kept out of them. The
         // bend steered is the one the planner and the display use (GoAroundPasses.Current), and
-        // it pins the side of each obstacle the tractor is beside.
-        var bend = GoRoundBend(track, distAway, currentTrack.Points, boundary, report: true);
+        // it pins the side of each obstacle the tractor is beside. A closed track's lap is bent as
+        // a loop and steered as one (fork only).
+        var lapPoints = currentTrack.Points; // the pass before the bend: a lap's neck test reads it
+        var bend = GoRoundBend(track, distAway, currentTrack.Points, boundary, report: true, Track.GoAroundPasses.Lap.Whole);
         var bent = bend != null && bend.GoneRound.Count > 0 ? bend.Points : null;
         if (bent != null)
             currentTrack = new Models.Track.Track
             {
-                Name = currentTrack.Name, Points = bent, Type = track.Type, IsVisible = true, IsActive = true
+                Name = currentTrack.Name, Points = bent, Type = track.Type, IsVisible = true, IsActive = true,
+                IsClosed = track.IsClosed
             };
         _goAround.Steered(track, bend, driftedEasting, driftedNorthing);
         // A line bent or straightened has other points: find the nearest one afresh.
@@ -2617,23 +2625,25 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // the pass's offset, where the offset joins across it along the fence): AutoSteer goes off
         // 10 m plus 2 s of travel before it, as before a U-turn obstacle with no turn. Only passes
         // with such a stretch get a look, and the stretch is found once per pass. Fork only.
+        // A lap bent round Go around obstacles is looked at on the lap as offset, which the marks
+        // are for: the bend only moves the line away from the obstacles.
         bool unfitAhead = false;
-        if (track.IsClosed && bent == null && Math.Abs(distAway) >= 0.01
+        if (track.IsClosed && Math.Abs(distAway) >= 0.01
             && PassUnfit(track, distAway) is { } unfit
-            && unfit.Length == currentTrack.Points.Count)
+            && unfit.Length == lapPoints.Count)
         {
-            int at = output.CurrentLocationIndex >= 0 && output.CurrentLocationIndex < unfit.Length
+            int at = bent == null && output.CurrentLocationIndex >= 0 && output.CurrentLocationIndex < unfit.Length
                 ? output.CurrentLocationIndex
-                : CurveProcessing.NearestIndex(currentTrack.Points, driftedEasting, driftedNorthing);
+                : CurveProcessing.NearestIndex(lapPoints, driftedEasting, driftedNorthing);
             double travel = _isReverse ? headingRad + Math.PI : headingRad;
             double reach = ObstacleStopDistance + ObstacleStopSeconds * Math.Abs(currentPosition.Speed);
-            unfitAhead = CurveProcessing.UnfitAhead(currentTrack.Points, unfit, at, travel, reach);
+            unfitAhead = CurveProcessing.UnfitAhead(lapPoints, unfit, at, travel, reach);
         }
         // An implement shifted to one side runs on the pass's centre, the tool offset beside the
         // line steered: across a neck the tractor's line can fit where the implement's does not
         // (shifted away from the fence the laps follow, it is that much nearer the fence across
         // the neck). Where the implement's own line does not fit ahead counts too.
-        if (!unfitAhead && track.IsClosed && bent == null && Math.Abs(config.Tool.Offset) >= 0.01)
+        if (!unfitAhead && track.IsClosed && Math.Abs(config.Tool.Offset) >= 0.01)
         {
             double toolDist = Models.Track.PassGeometry.Offset(track, passNumber, widthMinusOverlap, nudgeOffset);
             if (Math.Abs(toolDist) >= 0.01 && PassUnfit(track, toolDist) is { } toolUnfit)
@@ -3116,16 +3126,18 @@ public sealed class GpsPipelineService : IGpsPipelineService
         }
 
         // A closed track's pass is shown only where it fits (CurveProcessing.PassUnfit), the
-        // stretch nearest the tractor. Closed tracks are not bent round obstacles.
+        // stretch nearest the tractor.
         if (track.IsClosed && !onReference)
             resultTrack = FitPieceShown(track, distAway, resultTrack, pivotEasting, pivotNorthing);
 
         // The pass bent round its Go around obstacles is the line shown, and the light bar
-        // shows the distance to it: driving by hand, the operator follows the bend.
-        var bent = GoRoundLine(track, distAway, resultTrack.Points, boundary);
+        // shows the distance to it: driving by hand, the operator follows the bend. A closed
+        // track's lap too, shown whole or the piece of it that fits (fork only).
+        var lapShown = LapShown(track, distAway, resultTrack);
+        var bent = GoRoundLine(track, distAway, resultTrack.Points, boundary, lapShown);
         if (bent != null)
         {
-            resultTrack = BendTrack(bent, resultTrack.Name, track);
+            resultTrack = BendTrack(bent, resultTrack.Name, track, lapShown == Track.GoAroundPasses.Lap.Whole);
             onReference = false;
         }
 
@@ -3694,9 +3706,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
     /// once for each pass: the U-turn planner makes a turn before them on this pass.
     /// </summary>
     private Track.ObstacleDetour.Bend? GoRoundBend(Models.Track.Track track, double distAway, IReadOnlyList<Vec3> pass,
-        Boundary? boundary, bool report)
+        Boundary? boundary, bool report, Track.GoAroundPasses.Lap lap)
     {
-        var bend = _goAround.For(track, distAway, pass, boundary);
+        var bend = _goAround.For(track, distAway, pass, boundary, lap);
         if (bend == null) return null;
         if (report && bend.Blocked.Count > 0)
         {
@@ -3705,9 +3717,13 @@ public sealed class GpsPipelineService : IGpsPipelineService
             {
                 _blockedNoticeKey = key;
                 var names = string.Join(", ", bend.Blocked.Select(i => $"Inner {i + 1}"));
-                _obstacleNotice = bend.Blocked.Count == 1
-                    ? $"No room to go around {names} on this pass: U-turn before it"
-                    : $"No room to go around {names} on this pass: U-turn before them";
+                // A closed track's lap has no U-turn before it: AutoSteer goes off before it
+                // (ObstacleAheadWithoutTurn, the obstacle taken as a U-turn one on this lap).
+                _obstacleNotice = track.IsClosed
+                    ? $"No room to go around {names} on this lap: steer round by hand"
+                    : bend.Blocked.Count == 1
+                        ? $"No room to go around {names} on this pass: U-turn before it"
+                        : $"No room to go around {names} on this pass: U-turn before them";
                 _logger.LogInformation("[Obstacles] {Notice}", _obstacleNotice);
             }
         }
@@ -3715,21 +3731,38 @@ public sealed class GpsPipelineService : IGpsPipelineService
     }
 
     /// <summary>The bent pass's points, or null when the pass goes round nothing.</summary>
-    private List<Vec3>? GoRoundLine(Models.Track.Track track, double distAway, IReadOnlyList<Vec3> pass, Boundary? boundary)
+    private List<Vec3>? GoRoundLine(Models.Track.Track track, double distAway, IReadOnlyList<Vec3> pass, Boundary? boundary,
+        Track.GoAroundPasses.Lap lap)
     {
-        var bend = GoRoundBend(track, distAway, pass, boundary, report: false);
+        var bend = GoRoundBend(track, distAway, pass, boundary, report: false, lap);
         return bend != null && bend.GoneRound.Count > 0 ? bend.Points : null;
     }
 
-    // The track drawn for a bent pass, kept while the bend is the same.
-    private Models.Track.Track BendTrack(List<Vec3> points, string name, Models.Track.Track track)
+    /// <summary>
+    /// What the line shown is of a closed track's lap: the whole lap, or the piece of it that fits
+    /// (<see cref="FitPieceShown"/> made another track). Open tracks: not read.
+    /// </summary>
+    private Track.GoAroundPasses.Lap LapShown(Models.Track.Track track, double distAway, Models.Track.Track shown)
     {
-        if (!ReferenceEquals(points, _shownBendPoints) || _shownBendTrack == null)
+        if (!track.IsClosed) return Track.GoAroundPasses.Lap.None;
+        return ReferenceEquals(shown, _fitPiece) && Math.Abs(distAway) >= 0.01
+            ? Track.GoAroundPasses.Lap.Piece
+            : Track.GoAroundPasses.Lap.Whole;
+    }
+
+    // The track drawn for a bent pass, kept while the bend is the same. A whole lap bent round
+    // obstacles ends where it starts (the bend gives a loop's points once each), so the line drawn
+    // is joined at its seam.
+    private Models.Track.Track BendTrack(List<Vec3> points, string name, Models.Track.Track track, bool wholeLap = false)
+    {
+        if (!ReferenceEquals(points, _shownBendPoints) || _shownBendTrack == null || _shownBendWholeLap != wholeLap)
         {
             _shownBendPoints = points;
+            _shownBendWholeLap = wholeLap;
             _shownBendTrack = new Models.Track.Track
             {
-                Name = name, Points = points, Type = track.Type, IsVisible = true, IsActive = true
+                Name = name, Points = wholeLap && points.Count > 2 ? new List<Vec3>(points) { points[0] } : points,
+                Type = track.Type, IsVisible = true, IsActive = true
             };
         }
         return _shownBendTrack;

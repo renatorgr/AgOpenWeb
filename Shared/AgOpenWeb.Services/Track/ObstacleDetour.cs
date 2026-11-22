@@ -33,6 +33,13 @@ namespace AgOpenWeb.Services.Track;
 /// round the same side, never across the obstacle in front of the tractor; with no room on the
 /// pinned side the obstacle is blocked, not flipped.
 /// </para>
+/// <para>
+/// A lap of a closed track (a boundary curve) is bent the same way (<c>loop</c>): the lap is
+/// walked from a point of it far from every Go around obstacle, so no bend is cut at its seam, and
+/// the bent lap is a loop again, its last point joining its first. Laps were not bent before, and
+/// a tester's boundary curve (Eucaliptal, 22 Nov 2026, a front sprayer) ran its second lap
+/// across hard Go around obstacles with AutoSteer on. Fork only.
+/// </para>
 /// Built once per pass and kept while the pass, the boundary, the pins and the settings are the
 /// same. Pure geometry: the one object the steered line, the shown line and the U-turn planner
 /// share (<see cref="GoAroundPasses"/>), so they see one and the same bent pass.
@@ -81,7 +88,7 @@ public sealed class ObstacleDetour
     public ObstacleDetour(IPolygonOffsetService offset) => _offset = offset;
 
     private readonly record struct Entry(object Track, object Points, double DistAway, Boundary Boundary, long Key,
-        double KeepOut, double Radius, double Margin, long Pins, int PassCount, Vec3 PassStart, Vec3 PassEnd, Bend? Result);
+        double KeepOut, double Radius, double Margin, long Pins, int PassCount, Vec3 PassStart, Vec3 PassEnd, bool Loop, Bend? Result);
 
     // The last few passes asked for: the line steered and the line shown can be two passes for
     // a moment, and each would otherwise throw the other's bend away.
@@ -93,9 +100,10 @@ public sealed class ObstacleDetour
     /// <paramref name="track"/>) bent round its Go around obstacles, or null when it runs into
     /// none: the same result while the inputs are the same, so a cycle costs a comparison.
     /// <paramref name="pinnedSides"/> holds the side (+1 left, -1 right) each pinned obstacle keeps.
+    /// <paramref name="loop"/>: the pass is a whole lap of a closed track (<see cref="Compute"/>).
     /// </summary>
     public Bend? For(Models.Track.Track track, double distAway, IReadOnlyList<Vec3> pass, Boundary? boundary,
-        double keepOut, double radius, double margin, IReadOnlyDictionary<int, int>? pinnedSides = null)
+        double keepOut, double radius, double margin, IReadOnlyDictionary<int, int>? pinnedSides = null, bool loop = false)
     {
         if (boundary == null || boundary.InnerBoundaries.Count == 0) return null;
         if (pass.Count < 2) return null;
@@ -111,12 +119,13 @@ public sealed class ObstacleDetour
             if (e is { } c && ReferenceEquals(c.Track, track) && ReferenceEquals(c.Points, track.Points)
                 && c.DistAway == distAway && ReferenceEquals(c.Boundary, boundary) && c.Key == key
                 && c.KeepOut == keepOut && c.Radius == radius && c.Margin == margin && c.Pins == pins
-                && c.PassCount == pass.Count && SamePlace(c.PassStart, start) && SamePlace(c.PassEnd, end))
+                && c.PassCount == pass.Count && SamePlace(c.PassStart, start) && SamePlace(c.PassEnd, end)
+                && c.Loop == loop)
                 return c.Result;
 
-        var result = Compute(pass, boundary, keepOut, radius, margin, pinnedSides);
+        var result = Compute(pass, boundary, keepOut, radius, margin, pinnedSides, loop);
         _cache[_next] = new Entry(track, track.Points, distAway, boundary, key, keepOut, radius, margin, pins,
-            pass.Count, start, end, result);
+            pass.Count, start, end, loop, result);
         _next = (_next + 1) % _cache.Length;
         return result;
     }
@@ -204,11 +213,17 @@ public sealed class ObstacleDetour
     /// implement (keepOut less the margin) inside the field's edge.</param>
     /// <param name="pinnedSides">The side (+1 left, -1 right) each pinned obstacle keeps; one with no
     /// room on that side is blocked, not gone round the other way.</param>
+    /// <param name="loop">The pass is a whole lap of a closed track, its last point joined to its
+    /// first (repeated or not). It is walked from its point furthest from the Go around obstacles,
+    /// so a bend never runs across its seam, and the bent lap comes back as a loop starting there,
+    /// its first point not repeated at the end. A bend that would still reach the seam (a lap too
+    /// short for its bends) is not made: those obstacles are blocked.</param>
     public Bend? Compute(IReadOnlyList<Vec3> pass, Boundary boundary, double keepOut, double radius, double margin = 1.0,
-        IReadOnlyDictionary<int, int>? pinnedSides = null)
+        IReadOnlyDictionary<int, int>? pinnedSides = null, bool loop = false)
     {
         if (pass.Count < 2 || keepOut <= 0) return null;
-        var line = pass.Count == 2 ? ExtendLine(pass[0], pass[1]) : pass;
+        loop = loop && pass.Count >= 3;
+        var line = loop ? FromSeam(pass, boundary) : pass.Count == 2 ? ExtendLine(pass[0], pass[1]) : pass;
         var frame = new Frame(line);
 
         var fences = new List<Fence>();      // Go around obstacles, grown by the keep-out distance
@@ -260,10 +275,20 @@ public sealed class ObstacleDetour
             if (hits.Count == 0) break;
 
             var (first, offsets) = Profile(hits, radius);
+            if (loop && (first < 0 || (first + offsets.Length - 1) * SampleStep > frame.Length))
+            {
+                // The bends reach round to the lap's seam, as far as the lap goes from every Go
+                // around obstacle: a lap too short for them. Not gone round.
+                foreach (var h in hits) if (!blocked.Contains(h.Fence.InnerIndex)) blocked.Add(h.Fence.InnerIndex);
+                hits.Clear();
+                break;
+            }
             var (points, bases) = BentLine(frame, first, offsets);
             var conflict = FirstConflict(points, bases, fences, others, outer, edge);
             if (conflict == null)
             {
+                // A lap: its last point is the seam again, which closes it.
+                if (loop && points.Count > 2 && SamePlace(points[^1], points[0])) points.RemoveAt(points.Count - 1);
                 CurveProcessing.CalculateHeadings(points);
                 var rounds = hits.Select(h => new RoundedObstacle(h.Fence.InnerIndex, h.Side, h.Fence.Ring,
                     Lead(Math.Max(h.NeedLeft, h.NeedRight), radius) + BesideSlack)).ToList();
@@ -295,6 +320,37 @@ public sealed class ObstacleDetour
         }
         foreach (var h in hits) if (!blocked.Contains(h.Fence.InnerIndex)) blocked.Add(h.Fence.InnerIndex);
         return new Bend(new List<Vec3>(pass), Array.Empty<int>(), blocked, Array.Empty<RoundedObstacle>());
+    }
+
+    /// <summary>
+    /// A lap walked from its point furthest from every Go around obstacle (its own points, the
+    /// first not repeated) and back to it: the seam where the line starts and ends is where no
+    /// bend is. Walked from where it was drawn, a lap whose seam lies beside an obstacle had its
+    /// bend cut in two there.
+    /// </summary>
+    private static List<Vec3> FromSeam(IReadOnlyList<Vec3> lap, Boundary boundary)
+    {
+        int n = lap.Count;
+        if (n > 2 && SamePlace(lap[n - 1], lap[0])) n--;
+        var rings = new List<List<Vec2>>();
+        foreach (var inner in boundary.InnerBoundaries)
+            if (inner.IsValid && inner.AtObstacle == ObstacleAction.GoRound)
+                rings.Add(inner.Points.Select(p => new Vec2(p.Easting, p.Northing)).ToList());
+        int seam = 0;
+        double furthest = double.NegativeInfinity;
+        for (int i = 0; i < n && rings.Count > 0; i++)
+        {
+            double nearest = double.PositiveInfinity;
+            foreach (var ring in rings)
+            {
+                nearest = Math.Min(nearest, DistanceToRing(ring, lap[i].Easting, lap[i].Northing));
+                if (nearest <= furthest) break;
+            }
+            if (nearest > furthest) { furthest = nearest; seam = i; }
+        }
+        var line = new List<Vec3>(n + 1);
+        for (int k = 0; k <= n; k++) line.Add(lap[(seam + k) % n]);
+        return line;
     }
 
     /// <summary>Beyond the bend's lead, how much nearer than the start of the bend still counts as beside the obstacle.</summary>
