@@ -1550,6 +1550,13 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // least the look-ahead looks at, so nothing was. Put by hand beside a hard Go around
         // obstacle 4.5 m off the line and engaged at 0.28 m/s, a 12 m implement was 1.2 m in it
         // with AutoSteer on for 7 s (the beta robot on Casa, simulator). Fork only.
+        // An implement already in a hard obstacle counts near the line too: the bend round a Go
+        // around obstacle gives the implement the safety margin, and the tractor is "off the line"
+        // only GoAroundOffLine from it, so between the two nothing looked. Engaged 0.45 m off the
+        // pass at 1 km/h and heading away from it, the tractor got 1.3 m off before it came back,
+        // and a 12 m implement was 0.4 m in a hard Go around obstacle (margin 0.5 m) with AutoSteer
+        // on (the beta robot on Olival, simulator). On the line the bend keeps it at least the
+        // margin out, so this asks nothing new of a tractor that follows it. Fork only.
         if (autoSteerEngaged && !_isReverse && !_youTurn.IsExecuting
             && _lastLineSteerAngle is double steerNow
             && boundary is { InnerBoundaries.Count: > 0 }
@@ -1572,8 +1579,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 var inner = boundary.InnerBoundaries[i];
                 if (!inner.IsHard || inner.IsDriveThrough || !inner.IsValid) continue;
                 bool turnedAt = inner.AtObstacle == ObstacleAction.Turn || noRoom.Contains(i);
-                if (!offLine && !turnedAt) continue;
                 bool inIt = HardFenceGuard.In(inner, toolPos, toolHeading, reach) > HardFenceGuard.ObstacleMargin;
+                if (!inIt && !offLine && !turnedAt) continue;
                 if (!inIt && HardFenceGuard.HeadingIn(inner, toolPos, toolHeading, reach, offLine ? lookOffLine : lookOnLine,
                         pivotNow, curvature) <= 0) continue;
                 autoSteerEngaged = false;
@@ -2433,8 +2440,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
     public static string HardObstacleReason(int inner) =>
         $"AutoSteer off: the implement is heading into Inner {inner + 1}. Steer by hand.";
 
-    /// <summary>What AutoSteer says when it goes off with the implement in a hard obstacle: one the
-    /// pass turns at, or any with the tractor off the line.</summary>
+    /// <summary>What AutoSteer says when it goes off with the implement in a hard obstacle, whatever
+    /// was chosen at it and wherever the tractor is from the line.</summary>
     public static string HardObstacleInReason(int inner) =>
         $"AutoSteer off: the implement is in Inner {inner + 1}. Steer by hand.";
 

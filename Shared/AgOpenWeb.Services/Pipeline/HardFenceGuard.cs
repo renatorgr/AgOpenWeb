@@ -29,6 +29,9 @@ namespace AgOpenWeb.Services.Pipeline;
 /// its turn line, on a pass that goes by beside it, had no turn there and nothing ahead of the tractor.
 /// A 6 m implement was driven 50 m with its end 2 m inside a hard obstacle a metre beside the pass
 /// (the beta robot on Quinta Torta, simulator).</para>
+/// <para><see cref="In"/> is asked for every hard obstacle not driven through, wherever the tractor is
+/// from the line: a tractor between a Go around bend's safety margin and "off the line" had spent the
+/// margin and nothing looked (the beta robot on Olival, simulator: a 12 m implement 0.4 m in one).</para>
 /// </summary>
 public static class HardFenceGuard
 {
