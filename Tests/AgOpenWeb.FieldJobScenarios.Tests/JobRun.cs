@@ -758,6 +758,9 @@ public sealed class JobRun : IAsyncDisposable
         int saidAtTurnStart = 0;
         TurnRecord? turn = null;
         int offSince = -1, lastPassSeen = int.MinValue;
+        // Why AgOpenWeb switched AutoSteer off this time (its alarm), and when; null while AutoSteer is on.
+        string? offReason = null;
+        double offAt = -1;
         double leftWorkAt = -1;
         bool inWorkSinceEnd = false;
         int lastEventCheck = 0;
@@ -979,7 +982,13 @@ public sealed class JobRun : IAsyncDisposable
 
             if (!engaged && c != null && ExpectEngaged)
             {
-                if (offSince < 0) { offSince = Fix; Said.Add(F($"{Seconds:0.0} s: AutoSteer off: {c.DisengageReason ?? "no reason given"}")); }
+                if (offSince < 0)
+                {
+                    offSince = Fix;
+                    offReason = c.DisengageReason;
+                    offAt = Seconds;
+                    Said.Add(F($"{Seconds:0.0} s: AutoSteer off: {c.DisengageReason ?? "no reason given"}"));
+                }
                 // The careful operator looks up, and after two seconds engages again.
                 else if (Fix - offSince == 20 && Spec.Reengage)
                 {
@@ -988,7 +997,7 @@ public sealed class JobRun : IAsyncDisposable
                     if (Reengaged > 8) { Problems.Add("AutoSteer kept going off; gave up after 8 re-engagements"); break; }
                 }
             }
-            else offSince = -1;
+            else { offSince = -1; offReason = null; }
 
             double hitch = Math.Abs(Truth.HitchAngleDeg);
             if (hitch > MaxHitchDeg)
@@ -1078,6 +1087,17 @@ public sealed class JobRun : IAsyncDisposable
             }
             if (TookOverAt >= 0) break;
             double far = OutsideBoundaryM().Worst;
+            if (far > 25 && !engaged && !string.IsNullOrEmpty(offReason))
+            {
+                // AgOpenWeb switched AutoSteer off with its alarm and the reason (the implement heading
+                // across a hard fence, an obstacle ahead with no U-turn before it, ...), the operator's
+                // attempt to engage again did not hold, and the tractor rolled on steered by nobody. That
+                // is the operator's to take over, as the alarm asked: not a run-off with no warning.
+                TookOverAt = Seconds;
+                EndedBy = F($"the operator took over at AgOpenWeb's alarm at {offAt:0} s (\"{offReason}\"); the harness tractor, steered by nobody, rolled on out of the field");
+                EndedEarly = true;
+                break;
+            }
             if (far > 25)
             {
                 // The run-off is the finding (RAN-OFF); the ground left from here is its consequence.
