@@ -2889,7 +2889,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private int? TurnTargetPass() =>
         _youTurn.TurnPath is { Count: > 0 } ? _youTurn.ReturnPassTargetPath ?? _youTurn.PlannedNextPath : null;
 
-    private (Models.Track.Track Track, int Pass, double Width, double Nudge, double Shift, bool Extend, int Count, int? Target) _guideKey;
+    private (Models.Track.Track Track, List<Vec3> Points, int Pass, double Width, double Nudge, double Shift, bool Extend, int Count, int? Target) _guideKey;
     private IReadOnlyList<IReadOnlyList<Vec3>>? _guideLines;
 
     /// <summary>
@@ -2953,7 +2953,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
         double nudge, double toolShift, bool extend, int count, int? turnTarget)
     {
         if (track.IsPivot) return Array.Empty<IReadOnlyList<Vec3>>();
-        var key = (track, pass, widthMinusOverlap, nudge, toolShift, extend, count, turnTarget);
+        var key = (track, track.Points, pass, widthMinusOverlap, nudge, toolShift, extend, count, turnTarget);
         if (_guideLines != null && _guideKey.Equals(key)) return _guideLines;
 
         var lines = new List<IReadOnlyList<Vec3>>(2 * count);
