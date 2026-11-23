@@ -208,7 +208,7 @@ Flags, recorded paths and the worked area stay where the GPS put them.
 
 - opens next to the buttons on the right, just under the U-turn arrow, not over the map ahead of the tractor;
 - the U-turn arrow and its distance stay where they are and in sight;
-- with a bigger UI size or a short screen, where it would cover the roll gauge or the zoom buttons, it opens beside them instead.
+- with a bigger UI size or a short screen, where it would cover the roll gauge and the zoom buttons, those go under it while it is open (side by side if one above the other does not fit).
 
 **Rate on the field data card counts the sections that are on.** The card's Rate (and the Rate in the field line) is the speed times the width of the sections that are on.
 
