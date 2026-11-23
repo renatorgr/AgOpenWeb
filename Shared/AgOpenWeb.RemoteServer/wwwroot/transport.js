@@ -293,6 +293,11 @@ window.RemoteTransport = {
           if (o < dv.byteLength && u8()) {
             lineTune = { stage: u8(), stanley: !!u8(), tried: u8(), description: str(), result: str(), measurements: str() };
           }
+          // Modules found on two network links (append-only): one is now (nothing from it is
+          // used), and each found since the start. kind: 0 unknown, 1 cable, 2 Wi-Fi.
+          const onTwoLinks = o < dv.byteLength && !!u8();
+          const secondLinks = [];
+          for (let k = o < dv.byteLength ? u8() : 0; k > 0; k--) secondLinks.push({ module: str(), linkA: str(), kindA: u8(), linkB: str(), kindB: u8(), notUsed: i32(), now: !!u8() });
           handlers.onStatusBar && handlers.onStatusBar({
             fixQuality, fixText, age, sats, isMetric,
             gpsOk, imuOk, autoSteerOk, machineOk, imuIp, autoSteerIp, machineIp,
@@ -305,7 +310,7 @@ window.RemoteTransport = {
             simPanelVisible, driftEasting, driftNorthing, unsavedCoveragePrompt,
             devOverlay, gpsToPgnLatencyMs, gpsSentence, dualHeadingMissing, ntripRtcm, systemData,
             gpsLost, isobus, fieldData, sendCorrectedPosition, scanReplySubnet, ntripSession, simDrivesSteering, sprayer,
-            lineTune,
+            lineTune, onTwoLinks, secondLinks,
           });
           break;
         }

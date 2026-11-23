@@ -495,7 +495,9 @@ public sealed class SceneProjector : System.IDisposable
             BuildNtripSession(cfg.NtripProfilePerField, c),
             _state.Simulator.SteersModule,
             SprayerProvider?.Invoke(),
-            LineTuneProvider?.Invoke());
+            LineTuneProvider?.Invoke(),
+            c.SecondLinks,
+            c.IsOnTwoLinks);
     }
 
     // The NTRIP session for the Network IO card, read live for every status frame.
