@@ -296,6 +296,15 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private bool _headlandEntryTurnSeen;
     private int _headlandEntryNoTurnCycles;
 
+    // A line joined in the headland that runs along it, out of the field with no crop on it, the
+    // fence further than YouTurnPathingService.FaceFieldReach ahead (fork only): watched until the
+    // fence is HeadlandPassStopReach ahead, then AutoSteer off. Kept for that pass of that track,
+    // with AutoSteer on, until the tractor has been MinRunAfterGap in the crop.
+    private bool _headlandPassWatch;
+    private Models.Track.Track? _headlandPassWatchTrack;
+    private int _headlandPassWatchPass;
+    private Vec2? _headlandPassCropFrom;
+
     /// <summary>
     /// GPS cycles without a planned turn before a turn lost in the headland counts as lost: one
     /// dropped by a nudge, the skip or the arrow is planned again within a cycle or two.
@@ -1448,7 +1457,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
                     && (!_headlandEntryTurnSeen || _headlandEntryNoTurnCycles > HeadlandEntryTurnWait))
                 {
                     _headlandEntryArmed = false;
-                    if (autoSteerEngaged && !_isReverse && fence.IsPointInside(driftedEasting, driftedNorthing)
+                    // A line joined in the headland along it (_headlandPassWatch) crosses a sliver of
+                    // crop: its end is the fence ahead, watched below, not the sliver's edge.
+                    if (autoSteerEngaged && !_isReverse && !_headlandPassWatch && fence.IsPointInside(driftedEasting, driftedNorthing)
                         && _youTurnStateMachine.EndOfPassWithoutTurn(in tickCtx, _guidanceWorking, _youTurn,
                             SteeredLineNow(track, config)))
                     {
@@ -1473,24 +1484,83 @@ public sealed class GpsPipelineService : IGpsPipelineService
 
         // (5b'''') AutoSteer joining a line (engaged, the line moved a pass, another track) with the
         // tractor in the headland facing out of the field: the line, driven the way it faces, runs
-        // to a hard fence before any crop, so AutoSteer would steer it there. AutoSteer off with
-        // the alarm, and the operator is told to turn the tractor to the field. Not when a way to
-        // the start of the pass is driven or offered (Joining a new line in the headland), which
-        // turns round through the headland when it fits; looked at again when an offer (Ask) is
-        // answered with "keep", cannot be planned again, or is left unanswered: the nearest point
-        // is then what is steered, and facing the fence that is the way to it. Fork only.
+        // to a hard fence before any crop, within FaceFieldReach, so AutoSteer would steer it there.
+        // AutoSteer off with the alarm, and the operator is told to turn the tractor to the field.
+        // Not when a way to the start of the pass is driven or offered (Joining a new line in the
+        // headland), which turns round through the headland when it fits; looked at again when an
+        // offer (Ask) is answered with "keep", cannot be planned again, or is left unanswered: the
+        // nearest point is then what is steered, and facing the fence that is the way to it.
+        // With the fence further ahead the line runs along the headland: AutoSteer drives it and
+        // goes off before the fence (_headlandPassWatch, below). Walked to MaxWalkToFence, the look
+        // refused pass 13L on Tapada da Casa (23 Nov 2026), in the headland band along the west
+        // fence with the north fence 155 m ahead, and its strip stayed unsprayed. Fork only.
         if ((joinedNewLine || _lineEntryOfferUntaken) && autoSteerEngaged && !_isReverse && !_youTurn.IsExecuting
             && _lineEntryPath == null && _lineEntryOffer == null
             && boundary?.OuterBoundary is { IsHard: true, IsValid: true } && hasValidHeadlandLine && hasTickableTrack
-            && InHeadland(boundary, headlandLine!, driftedEasting, driftedNorthing)
-            && _youTurnStateMachine.LineAheadLeavesField(in tickCtx, _guidanceWorking, SteeredLineNow(track, config)))
+            && InHeadland(boundary, headlandLine!, driftedEasting, driftedNorthing))
         {
-            autoSteerEngaged = false;
-            autoSteerDisengaged = true;
-            disengageReason = "AutoSteer off: the line ahead runs out of the field. Turn the tractor to face the field.";
-            lock (_stateLock) _autoSteerEngaged = false;
-            _lineEntryNotice = null; // "joining it at the nearest point" is not what happens
-            _audioService.Play(SoundEffect.UTurnTooClose);
+            var steeredNow = SteeredLineNow(track, config);
+            _headlandPassWatch = false;
+            if (_youTurnStateMachine.LineAheadLeavesField(in tickCtx, _guidanceWorking, steeredNow,
+                    YouTurnPathingService.FaceFieldReach))
+            {
+                autoSteerEngaged = false;
+                autoSteerDisengaged = true;
+                disengageReason = "AutoSteer off: the line ahead runs out of the field. Turn the tractor to face the field.";
+                lock (_stateLock) _autoSteerEngaged = false;
+                _lineEntryNotice = null; // "joining it at the nearest point" is not what happens
+                _audioService.Play(SoundEffect.UTurnTooClose);
+            }
+            else if (_youTurnStateMachine.LineAheadLeavesField(in tickCtx, _guidanceWorking, steeredNow))
+            {
+                _headlandPassWatch = true;
+                _headlandPassWatchTrack = track;
+                _headlandPassWatchPass = passNumber;
+                _headlandPassCropFrom = null;
+            }
+        }
+        else if (joinedNewLine)
+            _headlandPassWatch = false;
+
+        // (5b'''') A line joined in the headland that runs along it, out of the field with no crop on
+        // it (above): AutoSteer off with the alarm as the fence comes within HeadlandPassStopReach
+        // ahead on the line, so the operator has room to turn by hand. Nothing else stops it in
+        // time: the end of a pass is looked at as the tractor leaves the crop, which it never
+        // enters, and the fence guard only 2 s before an end of the implement crosses the fence.
+        // Not while a U-turn, a way to the start of a pass or an S onto the line is planned or
+        // driven. The watch ends with AutoSteer off, another pass or track, or MinRunAfterGap in
+        // the crop (the pass goes on into the field: its end is looked at as any other's). Fork only.
+        if (_headlandPassWatch)
+        {
+            if (!autoSteerEngaged || !ReferenceEquals(track, _headlandPassWatchTrack) || passNumber != _headlandPassWatchPass
+                || boundary?.OuterBoundary is not { IsHard: true, IsValid: true } || !hasValidHeadlandLine || !hasTickableTrack)
+                _headlandPassWatch = false;
+            else if (!InHeadland(boundary, headlandLine!, driftedEasting, driftedNorthing))
+            {
+                if (GeometryMath.IsPointInPolygon(headlandLine!, driftedEasting, driftedNorthing))
+                {
+                    var from = _headlandPassCropFrom ??= new Vec2(driftedEasting, driftedNorthing);
+                    double ce = driftedEasting - from.Easting, cn = driftedNorthing - from.Northing;
+                    if (ce * ce + cn * cn >= YouTurnPathingService.MinRunAfterGap * YouTurnPathingService.MinRunAfterGap)
+                        _headlandPassWatch = false;
+                }
+            }
+            else
+            {
+                _headlandPassCropFrom = null;
+                if (!_isReverse && !_youTurn.IsExecuting && _youTurn.TurnPath == null
+                    && _lineEntryPath == null && _lineEntryOffer == null && _sideStepPath == null
+                    && _youTurnStateMachine.LineAheadLeavesField(in tickCtx, _guidanceWorking, SteeredLineNow(track, config),
+                        YouTurnPathingService.HeadlandPassStopReach))
+                {
+                    _headlandPassWatch = false;
+                    autoSteerEngaged = false;
+                    autoSteerDisengaged = true;
+                    disengageReason = HeadlandPassEndReason;
+                    lock (_stateLock) _autoSteerEngaged = false;
+                    _audioService.Play(SoundEffect.UTurnTooClose);
+                }
+            }
         }
 
         // (5b'''') AutoSteer joining a line sideways beside a hard fence, with no S onto it that keeps
@@ -3653,6 +3723,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
         _sideStepPath = null;
         return false;
     }
+
+    /// <summary>Why AutoSteer went off before the fence on a line joined along the headland.</summary>
+    internal const string HeadlandPassEndReason = "AutoSteer off: the fence is near ahead on this line. Turn by hand.";
 
     private static bool InHeadland(Boundary boundary, List<Vec3> headlandLine, double e, double n) =>
         boundary.OuterBoundary is { IsValid: true } outer && outer.IsPointInside(e, n)

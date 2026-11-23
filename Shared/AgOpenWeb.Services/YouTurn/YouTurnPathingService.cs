@@ -663,6 +663,22 @@ public sealed class YouTurnPathingService
     /// <summary>How far ahead <see cref="PassLeavesFieldAhead"/> walks the pass for the fence.</summary>
     public const double MaxWalkToFence = 300.0;
 
+    /// <summary>
+    /// AutoSteer joining a line in the headland is refused when the line runs out of the field
+    /// within this many metres: the tractor faces the fence (the case it was made for had the
+    /// fence 24 m ahead). Further, the line runs along the headland (a pass in the headland band,
+    /// pass 13L on Tapada da Casa, 23 Nov 2026: the fence 155 m ahead), and AutoSteer drives it
+    /// up to <see cref="HeadlandPassStopReach"/> before the fence. Fork only.
+    /// </summary>
+    public const double FaceFieldReach = 50.0;
+
+    /// <summary>
+    /// A line joined in the headland that runs out of the field with no crop on it: AutoSteer goes
+    /// off with the alarm when the fence is this many metres ahead of the tractor on the line,
+    /// so the operator has room to turn by hand. Fork only.
+    /// </summary>
+    public const double HeadlandPassStopReach = 20.0;
+
     /// <summary>The step of the walks along a pass ahead of the tractor.</summary>
     private const double WalkStep = 1.0;
 
@@ -671,21 +687,21 @@ public sealed class YouTurnPathingService
     /// tractor is heading, leave the outer boundary before it is inside the cultivated area again
     /// for <see cref="MinRunAfterGap"/>? So the tractor, in the headland, is at the end of its pass
     /// heading out, not heading into the field or across a gap with more field past it. False when
-    /// the fence is not met within <see cref="MaxWalkToFence"/>, the pass (a curve) ends first, or
-    /// there is no usable outer boundary. With <paramref name="steeredLine"/> (the pass bent round
-    /// Go around obstacles, the line the tractor follows) that line is walked instead, from its
-    /// point nearest the tractor: the straight pass beside a bend can still be in the crop where
-    /// the bend has left it. Fork only.
+    /// the fence is not met within <paramref name="reach"/> (<see cref="MaxWalkToFence"/> unless
+    /// given), the pass (a curve) ends first, or there is no usable outer boundary. With
+    /// <paramref name="steeredLine"/> (the pass bent round Go around obstacles, the line the
+    /// tractor follows) that line is walked instead, from its point nearest the tractor: the
+    /// straight pass beside a bend can still be in the crop where the bend has left it. Fork only.
     /// </summary>
     public bool PassLeavesFieldAhead(Models.Track.Track track, double abHeading, int pathsAway,
         Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay,
-        IReadOnlyList<Vec3>? steeredLine = null, double nudge = 0, double toolShift = 0)
+        IReadOnlyList<Vec3>? steeredLine = null, double nudge = 0, double toolShift = 0, double reach = MaxWalkToFence)
     {
         var outer = boundary?.OuterBoundary;
         if (outer == null || !outer.IsValid || track.Points.Count < 2) return false;
 
         double insideRun = 0;
-        foreach (var p in PassPointsAhead(track, abHeading, pathsAway, position, headingSameWay, steeredLine, MaxWalkToFence,
+        foreach (var p in PassPointsAhead(track, abHeading, pathsAway, position, headingSameWay, steeredLine, reach,
                      nudge, toolShift))
         {
             if (!outer.IsPointInside(p.Easting, p.Northing)) return true;

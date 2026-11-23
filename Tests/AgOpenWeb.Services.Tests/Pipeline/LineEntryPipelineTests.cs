@@ -121,7 +121,8 @@ public class LineEntryPipelineTests
     /// <see cref="PassE"/> running north; AutoSteer engaged.</summary>
     private Models.Track.Track _track = null!;
 
-    private void OpenField(LineEntryMode mode, double headland = 20, bool hard = false)
+    private void OpenField(LineEntryMode mode, double headland = 20, bool hard = false, double trackE = PassE,
+        List<Vec3>? headlandLine = null)
     {
         _config.Guidance.LineEntryMode = mode;
         var outer = new BoundaryPolygon
@@ -130,13 +131,13 @@ public class LineEntryPipelineTests
             IsHard = hard,
         };
         _pipeline.SetBoundary(new Boundary { OuterBoundary = outer });
-        _pipeline.SetHeadlandLine(new List<Vec3>
+        _pipeline.SetHeadlandLine(headlandLine ?? new List<Vec3>
         {
             new(-100 + headland, -10 + headland, 0), new(100 - headland, -10 + headland, 0),
             new(100 - headland, 290 - headland, 0), new(-100 + headland, 290 - headland, 0),
         });
-        var track = _track = Models.Track.Track.FromABLine("AB", new Vec3(PassE, -10, 0), new Vec3(PassE, 290, 0));
-        _passLineE = PassE + Models.Track.PassGeometry.Offset(track, 0, 6);
+        var track = _track = Models.Track.Track.FromABLine("AB", new Vec3(trackE, -10, 0), new Vec3(trackE, 290, 0));
+        _passLineE = trackE + Models.Track.PassGeometry.Offset(track, 0, 6);
         _pipeline.SetActiveTrack(track, passNumber: 0, nudgeOffset: 0);
         _pipeline.SetAutoSteerEngaged(true);
     }
@@ -504,6 +505,107 @@ public class LineEntryPipelineTests
             Assert.That(first.DisengageReason, Is.EqualTo(FaceTheField));
             Assert.That(first.LineEntryNotice, Is.Null, "not \"joining it at the nearest point\"");
         });
+    }
+
+    // ── A line along the headland (Tapada da Casa, 23 Nov 2026: pass 13L in the headland band along
+    // the west fence, the north fence 155 m ahead, was refused as facing out of the field) ──
+
+    /// <summary>The AB line's east so that pass 0 runs 10 m inside the west fence, in the 20 m
+    /// headland band.</summary>
+    private static double BandTrackE =>
+        -90 - Models.Track.PassGeometry.Offset(Models.Track.Track.FromABLine("AB", new Vec3(0, -10, 0), new Vec3(0, 290, 0)), 0, 6);
+
+    [Test]
+    public void A_line_along_the_headland_is_driven_and_AutoSteer_goes_off_before_the_fence([Values] bool uTurns)
+    {
+        OpenField(LineEntryMode.Nearest, hard: true, trackE: BandTrackE);
+        _pipeline.SetYouTurnEnabled(uTurns);
+        var (track, off) = DriveUntilOff(_passLineE, 40, 0, untilN: 289);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(off, Is.Not.Null, "AutoSteer went off");
+            Assert.That(off!.DisengageReason, Is.EqualTo(GpsPipelineService.HeadlandPassEndReason));
+            Assert.That(track[^1].Northing, Is.InRange(290 - YouTurnPathingService.HeadlandPassStopReach - 2,
+                290 - YouTurnPathingService.HeadlandPassStopReach + 2), "the fence about 20 m ahead");
+            Assert.That(track.Max(p => Math.Abs(p.Easting - _passLineE)), Is.LessThan(0.5), "on the line all the way");
+        });
+        // With U-turns on, the U-turn at this end does not fit inside the boundary: told once, with
+        // the same sound.
+        _audio.Received(uTurns ? 2 : 1).Play(SoundEffect.UTurnTooClose);
+    }
+
+    [Test]
+    public void A_line_along_the_headland_with_the_fence_near_ahead_goes_off_and_says_to_face_the_field()
+    {
+        // 40 m from the north fence on the same line: within FaceFieldReach.
+        OpenField(LineEntryMode.Nearest, hard: true, trackE: BandTrackE);
+        var first = Cycle(_passLineE, 250, 0);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.AutoSteerDisengagedThisCycle, Is.True);
+            Assert.That(first.DisengageReason, Is.EqualTo(FaceTheField));
+        });
+    }
+
+    [Test]
+    public void A_sliver_of_crop_on_a_line_along_the_headland_does_not_end_it([Values] bool uTurns)
+    {
+        // The crop reaches into the band across the line for 5 m at 100-105 m north: less than a
+        // pass going on into the field, so the line's end is still the fence ahead, not the
+        // sliver's edge (the end of a pass is looked at as the tractor leaves the crop).
+        var headland = new List<Vec3>
+        {
+            new(-80, 10, 0), new(80, 10, 0), new(80, 270, 0), new(-80, 270, 0),
+            new(-80, 105, 0), new(-95, 105, 0), new(-95, 100, 0), new(-80, 100, 0),
+        };
+        OpenField(LineEntryMode.Nearest, hard: true, trackE: BandTrackE, headlandLine: headland);
+        _pipeline.SetYouTurnEnabled(uTurns);
+        var (track, off) = DriveUntilOff(_passLineE, 40, 0, untilN: 289);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(track.Any(p => p.Northing > 100 && p.Northing < 105), "the line crosses the sliver");
+            Assert.That(off, Is.Not.Null, "AutoSteer went off");
+            Assert.That(off!.DisengageReason, Is.EqualTo(GpsPipelineService.HeadlandPassEndReason));
+            Assert.That(track[^1].Northing, Is.GreaterThan(290 - YouTurnPathingService.HeadlandPassStopReach - 2),
+                "not at the sliver");
+        });
+    }
+
+    [Test]
+    public void A_line_from_the_headland_into_the_crop_is_left_to_the_end_of_the_pass()
+    {
+        // Joined in the south headland facing north on the ordinary pass: the line runs into the
+        // crop, so nothing here stops it before the north headland.
+        OpenField(LineEntryMode.Nearest, hard: true);
+        var (track, off) = DriveUntilOff(_passLineE, 0, 0, untilN: 240);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(off, Is.Null, off?.DisengageReason);
+            Assert.That(track[^1].Northing, Is.GreaterThanOrEqualTo(239));
+        });
+    }
+
+    /// <summary><see cref="DriveFrom"/> until AutoSteer goes off: the pivot's track and the cycle
+    /// that took it off (null if it stayed on).</summary>
+    private (List<Vec3> Track, GpsCycleResult? Off) DriveUntilOff(double e0, double n0, double headingDeg, double untilN)
+    {
+        double e = e0, n = n0, h = headingDeg * Math.PI / 180.0, step = SpeedKmh / 3.6 * 0.1;
+        var track = new List<Vec3>();
+        for (int i = 0; i < 3000 && n < untilN && n > -15; i++)
+        {
+            var r = Cycle(e, n, h);
+            track.Add(new Vec3(e, n, h));
+            if (r.AutoSteerDisengagedThisCycle) return (track, r);
+            double steer = r.Guidance!.SteerAngle * Math.PI / 180.0;
+            h += step / Wheelbase * Math.Tan(steer);
+            e += Math.Sin(h) * step;
+            n += Math.Cos(h) * step;
+        }
+        return (track, null);
     }
 
     /// <summary><see cref="Drive"/> from (<paramref name="e0"/>, <paramref name="n0"/>).</summary>
