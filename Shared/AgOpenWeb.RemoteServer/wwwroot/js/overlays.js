@@ -458,9 +458,100 @@ SB.rot.addEventListener('pointerdown', e => {
   const show = FC.card.style.display !== 'block';
   FC.card.style.display = show ? 'block' : 'none';
   if (show) { SB.gpsCard.style.display = 'none'; renderFieldCard(); }
+  renderAreaPanel(); // the card takes the panel's place
 });
 FC.card.addEventListener('pointerdown', e => e.stopPropagation());
 FC.reset.addEventListener('pointerdown', e => { e.preventDefault(); transport.send('fielddata.resetTrip'); });
+
+// "Unpainted in an area" (fork): the corners of an area are tapped on the map, as an obstacle drawn
+// on the map (a double tap on the last corner, or Finish, closes it), and the host counts the ground
+// inside it and inside the field (less the obstacles), how much of that is still to paint and the
+// time to paint it at the job's pace (MainViewModel.SetAreaSelection). From the third corner each
+// tap sends the area, so the numbers come while drawing. The area stays on the map, its numbers
+// counted again every 3 s as the work goes on, until Close (or the field closes).
+const AREA_DOUBLE_TAP_MS = 500, AREA_DOUBLE_TAP_PX = 32;
+let areaDraw = false;   // tapping the corners of an area
+let areaPts = [];       // [{e,n}] corners so far (the preview; the host has the area once it has 3)
+let areaLastTap = null; // { t, e, n }: to see a double tap
+const AP = {
+  panel: document.getElementById('area-panel'), inside: document.getElementById('ap-inside'),
+  left: document.getElementById('ap-left'), time: document.getElementById('ap-time'),
+};
+function areaNear(a, b) {
+  const p = w2s(a.e, a.n), q = w2s(b.e, b.n);
+  return !!p && !!q && Math.hypot(p[0] - q[0], p[1] - q[1]) <= AREA_DOUBLE_TAP_PX;
+}
+function setAreaHint() {
+  hintEl.textContent = areaPts.length < 3
+    ? tr('Tap the corners of the area — double-tap the last one to close it')
+    : tr('Area: {n} corners — double-tap or Finish to close it', { n: areaPts.length });
+}
+function sendArea() {
+  transport.send('area.select|' + areaPts.map(p => p.e.toFixed(2) + ',' + p.n.toFixed(2)).join(';'));
+}
+function startAreaDraw() {
+  if (!scene || !scene.hasField) return;
+  if (mapTap) endMapTap();
+  FC.card.style.display = 'none';
+  areaDraw = true; areaPts = []; areaLastTap = null;
+  showAbBar(false, true, true);           // Undo + Finish + Cancel
+  startMapTap({ hint: '', onTap: areaTap });
+  setAreaHint();
+  renderAreaPanel();
+}
+function areaTap(e, n, t) {
+  const now = t > 0 ? t : performance.now(), tap = { t: now, e, n }, prev = areaLastTap;
+  areaLastTap = tap;
+  if (prev && now - prev.t <= AREA_DOUBLE_TAP_MS && areaNear(prev, tap) && areaPts.length) {
+    // The double tap's first tap placed the last corner (a copy of one already there goes).
+    const k = areaPts.length;
+    if (k >= 2 && (areaNear(areaPts[k - 1], areaPts[k - 2]) || (k >= 4 && areaNear(areaPts[k - 1], areaPts[0])))) areaPts.pop();
+    areaLastTap = null;
+    areaFinish();
+    return;
+  }
+  areaPts.push({ e, n });
+  if (areaPts.length >= 3) sendArea();
+  setAreaHint();
+}
+function areaUndo() {
+  if (!areaPts.length) return;
+  areaPts.pop(); areaLastTap = null;
+  if (areaPts.length >= 3) sendArea(); else transport.send('area.clear');
+  setAreaHint();
+}
+function areaFinish() {
+  if (areaPts.length < 3) { showToast(tr('An area needs at least three corners')); setAreaHint(); return; }
+  sendArea();
+  endAreaDraw();
+}
+function areaCancel() { transport.send('area.clear'); endAreaDraw(); }
+function endAreaDraw() {
+  areaDraw = false; areaPts = []; areaLastTap = null;
+  drawBar.classList.remove('show'); endMapTap(); hintEl.classList.remove('show');
+  renderAreaPanel();
+}
+// The panel shows while an area is selected (the Scene's), or being drawn.
+function renderAreaPanel() {
+  const sel = scene && scene.areaSelection;
+  const show = !!(scene && scene.hasField && (areaDraw || (sel && sel.length >= 3)))
+    && FC.card.style.display !== 'block'; // the field card opens in its place
+  AP.panel.classList.toggle('show', show);
+  if (!show) return;
+  const fd = statusBar && statusBar.fieldData, has = !!(sel && sel.length >= 3);
+  const inside = has && fd ? fd.selInsideSqM : NaN, left = has && fd ? fd.selUnpaintedSqM : NaN;
+  AP.inside.textContent = Number.isFinite(inside) ? fmtArea(inside) : '…';
+  AP.left.textContent = Number.isFinite(left)
+    ? fmtArea(left) + (inside > 0 ? '  (' + Math.min(100, left * 100 / inside).toFixed(0) + '%)' : '') : '…';
+  AP.time.textContent = Number.isFinite(left) ? fmtHoursMinutes(fd.selTimeLeftS) : '…';
+}
+document.getElementById('fc-area').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); startAreaDraw(); });
+AP.panel.addEventListener('pointerdown', e => e.stopPropagation());
+document.getElementById('ap-redraw').addEventListener('pointerdown', e => { e.preventDefault(); startAreaDraw(); });
+document.getElementById('ap-close').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (areaDraw) areaCancel(); else transport.send('area.clear');
+});
 function renderFieldCard() {
   if (FC.card.style.display !== 'block') return;
   const s = statusBar, fd = s && s.fieldData;
@@ -500,6 +591,7 @@ function renderStatusBar() {
   SB.age.textContent = tr('Age {age}', { age: Number.isFinite(s.age) ? s.age.toFixed(1) : '—' }); // NaN: the sentence has no age ($KSXT)
   SB.rot.textContent = rotatingLineText();
   renderFieldCard();
+  renderAreaPanel();
   // Speed from the live tick (m/s), formatted per the host's unit preference.
   const mps = lastTick ? lastTick.speed : 0;
   SB.speed.textContent = toDisplayUnit(mps * 3.6, 'kmh').toFixed(1);

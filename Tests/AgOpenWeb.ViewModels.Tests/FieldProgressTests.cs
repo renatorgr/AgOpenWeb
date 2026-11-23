@@ -14,7 +14,7 @@ namespace AgOpenWeb.ViewModels.Tests;
 /// The field data card's Remaining and Time left, and the status bar's Done and Left (fork only): the ground
 /// inside the field still to paint, from the coverage map, and the time to paint it at the job's pace
 /// (<c>MainViewModel.FieldProgress</c>). The job keeps its pace, so it goes on from there when opened again;
-/// a trip off the field is not work.
+/// a trip off the field is not work. An area selected on the map is counted the same way, kept to the field.
 /// </summary>
 [TestFixture]
 [NonParallelizable] // ConfigurationStore is a singleton
@@ -122,6 +122,51 @@ public class FieldProgressTests
         for (int s = 61; s <= 70; s++) _vm.SampleJobPace(s);
 
         Assert.That(_job.WorkSeconds, Is.EqualTo(10).Within(1e-9));
+    }
+
+    [Test]
+    public void An_area_selected_is_counted_kept_to_the_field_with_its_time_left()
+    {
+        // The selection: its own ring, the field's rings as the clip.
+        _b.CoverageMapService.MeasureCoverage(Arg.Any<IReadOnlyList<IReadOnlyList<Vec2>>>(), null).Returns((99600.0, 50000.0));
+        IReadOnlyList<IReadOnlyList<Vec2>>? clip = null;
+        _b.CoverageMapService.MeasureCoverage(Arg.Is<IReadOnlyList<IReadOnlyList<Vec2>>>(r => r.Count == 1), Arg.Is<IReadOnlyList<IReadOnlyList<Vec2>>?>(c => c != null))
+            .Returns(c => { clip = (IReadOnlyList<IReadOnlyList<Vec2>>?)c[1]; return (8000.0, 6000.0); });
+        _vm.State.Vehicle.Speed = 10 / 3.6;
+        ConfigurationStore.Instance.NumSections = 1;
+        ConfigurationStore.Instance.Tool.SetSectionWidth(0, 1200);
+
+        _vm.SetAreaSelection(new[] { new Vec2(-50, 0), new Vec2(80, 0), new Vec2(80, 100), new Vec2(-50, 100) });
+        _vm.CountFieldNow();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_vm.State.FieldTools.AreaSelection, Has.Count.EqualTo(4), "kept for the map (the Scene)");
+            Assert.That(clip, Has.Count.EqualTo(2), "kept to the field: its boundary and its obstacle");
+            Assert.That(_vm.SelectionInsideSqM, Is.EqualTo(8000));
+            Assert.That(_vm.SelectionUnpaintedSqM, Is.EqualTo(2000));
+            Assert.That(_vm.SelectionTimeLeftSeconds, Is.EqualTo(2000 / (12 * 10 / 3.6)).Within(1e-6),
+                "no pace yet: at the speed times the width");
+            Assert.That(_vm.FieldUnpaintedSqM, Is.EqualTo(49600), "the field counted as before");
+        });
+
+        _vm.SetAreaSelection(null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(_vm.State.FieldTools.AreaSelection, Is.Null);
+            Assert.That(_vm.SelectionInsideSqM, Is.NaN);
+            Assert.That(_vm.SelectionTimeLeftSeconds, Is.NaN);
+        });
+    }
+
+    [Test]
+    public void An_area_of_two_corners_or_with_a_corner_not_a_number_is_no_selection()
+    {
+        _vm.SetAreaSelection(new[] { new Vec2(0, 0), new Vec2(10, 0) });
+        Assert.That(_vm.State.FieldTools.AreaSelection, Is.Null);
+
+        _vm.SetAreaSelection(new[] { new Vec2(0, 0), new Vec2(10, 0), new Vec2(double.NaN, 5) });
+        Assert.That(_vm.State.FieldTools.AreaSelection, Is.Null);
     }
 
     [Test]
