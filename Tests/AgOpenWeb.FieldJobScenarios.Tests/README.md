@@ -80,7 +80,10 @@ drives the pass to its end (the implement out of the cultivated area with none a
 tractor at the boundary) and takes over there. The ground left from there is the consequence of
 that one finding, not `FIELD-NOT-FINISHED` too. A tractor that drives on after such a warning is
 AgOpenGPS behaviour (leaving the field does not switch AutoSteer off, #494), so `RAN-OFF` is a
-run-off with no warning. Before, AutoSteer was left to drive on and the job ended as a run-off.
+run-off with no warning. AutoSteer switched off by AgOpenWeb with its alarm and a reason ("the implement is
+heading across the hard boundary", "Inner 1 ahead and no U-turn before it"), and still off when the tractor
+is 25 m out, is the operator taking over at that alarm (the job ends there; `AUTOSTEER-DROPPED` lists the
+offs), not `RAN-OFF`: the harness tractor rolls on steered by nobody, which no operator would do. Before, AutoSteer was left to drive on and the job ended as a run-off.
 
 ## Running
 
