@@ -342,7 +342,11 @@ public record StatusDto(
     // Sprayer readout from the machine module (PGN 160); null until it is heard.
     SprayerDto? Sprayer = null,
     // Tuning on the line (AutoSteer page); null until the panel is first used. Fork only.
-    LineTuneDto? LineTune = null);
+    LineTuneDto? LineTune = null,
+    // Modules found on two network links (cable and Wi-Fi to the same router), for Network IO;
+    // OnTwoLinks: one is now, nothing from it is used and the client shows why over the map.
+    IReadOnlyList<AgOpenWeb.Models.State.SecondLink>? SecondLinks = null,
+    bool OnTwoLinks = false);
 
 /// <summary>Tuning on the line: <c>LineTuneStage</c> (0 Idle, 1 Waiting, 2 Measuring, 3 Result,
 /// 4 Accepted, 5 Stopped, 6 Failed), whether it tunes the Stanley gains (else Steer Response),

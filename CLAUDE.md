@@ -217,21 +217,21 @@ each time (Button, a bench module with the simulator driving it). After the modu
 kickout) the next press counts at once. Fork only.
 
 ### A module heard on two network links
-The module sockets are bound to every address, so a host on two links to the modules' subnet (a tablet on cable
-and on Wi-Fi to the same router) gets every broadcast once per link, the Wi-Fi copy late (the
-router holds broadcasts for the Wi-Fi's beacon and sends a few at each: 0.3 s the day it was found; 1.49-1.73 s, 8
-every 205 ms and half of them lost, measured on that router 22 Nov 2026 with more broadcasts). On a tester's Puma (20 Nov 2026) the late copy of a fix put the
-tractor 0.3-0.5 m back, the dual reverse test read a reverse, the pause sent status 0 and the module in Button
-mode let go: AutoSteer off over and over, and the Auto sections off in each "reverse". `UdpCommunicationService`
-asks each socket but the loopback one for the link a datagram came in on (IP_PKTINFO, `BeginReceiveMessageFrom`)
-and `LinkCopyFilter` (`Services/Network`) drops the copy: each datagram is taken from the link it comes in on first,
-the same bytes from the same sender on another link within 5 s (`WindowMs`; 2 s left the measured copy 0.27 s) are its copy, and each datagram taken cancels one
-copy at most, so a module repeating the same bytes (PGN 253 with nothing changed) is not taken for its own copy. No
-link is preferred: with the first one gone the other's datagrams match nothing and are taken at once (but bytes the
-module repeats, with copies lost on the way, can be taken for the lost copies for up to those 5 s; positions never). Before the
-GPS text reaches the parser, so the copies never reach the line splitter either. The first copy from a module in
-30 s is logged with both links (`[UDP] ... is heard on two network links`). Where the system does not give the link
-everything is taken, as before. Tests: `LinkCopyFilterTests`. Docs/ARCHITECTURE.md (same text as official draft PR, branch `fix/udp-second-link-copies`).
+An installation fault (a tablet on cable and on Wi-Fi to the modules' router): every broadcast comes once per link,
+the Wi-Fi copy late (1.49-1.73 s, 8 every 205 ms, half lost, measured on a tester's router 22 Nov 2026), and on a
+tester's Puma (20 Nov 2026) late fixes read as reverses took AutoSteer off over and over. The app refuses to work
+with it, as Chris asked on official #900: `UdpCommunicationService` asks each socket but the loopback one for the
+link a datagram came in on (IP_PKTINFO, `BeginReceiveMessageFrom`), and `TwoLinkDetector` (`Services/Network`)
+finds a module on two links (10 datagrams in a row on each, no gap over 1 s; never one stray datagram). While it
+is, nothing from that module is used and `MainViewModel.UpdateSecondLinks` holds the control-ended safe state
+(`OnBrowserControlEnded`); the page shows a box over the map (`#twolinks`) naming both links, and on cable and
+Wi-Fi only "turn the Wi-Fi off and keep the cable" (`SecondLink.CableAndWiFi`: module data needs the cable). It
+clears 1 s after one link goes quiet. Where the system does not give the link, everything is used, as before.
+Docs/ARCHITECTURE.md has the rule, the measurements and the Linux checks. Tests: `TwoLinkDetectorTests`,
+`TwoLinksTests`. Same code as official draft PR #900 (branch `fix/udp-second-link-copies`); it replaced the fork's
+`LinkCopyFilter` (#296, #316), which dropped the copies and kept working. Fork status frame: the two-link fields
+come after `LineTune` (official: after the NTRIP session); at a sync after #900 merges, keep one copy, in the order
+the merged codec has.
 
 ### The simulator's 10x is a time-lapse
 The sim bar's 10x (`IsSimulatorSpeed10x`) runs time ten times faster at the speed shown, not the tractor
