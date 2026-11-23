@@ -180,6 +180,8 @@ public static class JobJsonService
         public double DistanceTraveledMeters { get; set; }
         public double AreaWorkedHectares { get; set; }
         public int UTurnCount { get; set; }
+        public double WorkSeconds { get; set; }
+        public double WorkPaintedSqM { get; set; }
         public JobRig? Rig { get; set; }
 
         /// <summary>Members this build doesn't read, kept as they were.</summary>
@@ -201,6 +203,8 @@ public static class JobJsonService
             DistanceTraveledMeters = j.DistanceTraveledMeters,
             AreaWorkedHectares = j.AreaWorkedHectares,
             UTurnCount = j.UTurnCount,
+            WorkSeconds = j.WorkSeconds,
+            WorkPaintedSqM = j.WorkPaintedSqM,
             Rig = j.Rig,
             Other = j.UnknownProperties?.ToDictionary(p => p.Key, p => p.Value),
         };
@@ -219,6 +223,8 @@ public static class JobJsonService
             DistanceTraveledMeters = DistanceTraveledMeters,
             AreaWorkedHectares = AreaWorkedHectares,
             UTurnCount = UTurnCount,
+            WorkSeconds = WorkSeconds,
+            WorkPaintedSqM = WorkPaintedSqM,
             Rig = Rig,
             UnknownProperties = Other,
         };

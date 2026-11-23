@@ -249,12 +249,15 @@ window.RemoteTransport = {
             isobus = { sectionControl, sections, clients, reported };
           }
           // Field data card (append-only, #321); null with no field open. m² and m; the work
-          // rate of the sections that are on in ha/hr (fork).
+          // rate of the sections that are on in ha/hr; the ground inside the field painted and
+          // still to paint (m²), the job's pace (ha/hr) and the time left (s), NaN when not
+          // known (fork).
           let fieldData = null;
           if (u8()) {
             const f64 = () => { const v = dv.getFloat64(o, true); o += 8; return v; };
             fieldData = { boundaryAreaSqM: f64(), actualAreaSqM: f64(), tripAreaSqM: f64(), tripDistanceM: f64(),
-              workRateHaPerHour: f64() };
+              workRateHaPerHour: f64(), paintedInsideSqM: f64(), unpaintedSqM: f64(), paceHaPerHour: f64(),
+              timeLeftS: f64() };
           }
           // Network IO: PGN 100 sent (append-only, #337).
           const sendCorrectedPosition = !!u8();

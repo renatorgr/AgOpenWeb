@@ -79,6 +79,17 @@ public class Job
     public int UTurnCount { get; set; }
 
     /// <summary>
+    /// Seconds of work in this job: time with the tractor moving on or near the field
+    /// (<c>JobPace</c>), so the time left can be worked out at the job's own pace. Fork only.
+    /// </summary>
+    public double WorkSeconds { get; set; }
+
+    /// <summary>
+    /// Ground painted during <see cref="WorkSeconds"/>, in square meters (painted once). Fork only.
+    /// </summary>
+    public double WorkPaintedSqM { get; set; }
+
+    /// <summary>
     /// The vehicle and the chain of tools the job was worked with (#547), a copy of the loaded
     /// profiles kept up to date while the job is open; null for a job saved before it was kept.
     /// </summary>

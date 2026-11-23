@@ -1972,6 +1972,7 @@ public partial class MainViewModel : ObservableObject
             // tick when ActiveJob is null (field-only open), so it's safe
             // to start unconditionally here.
             StartCoverageAutosave();
+            StartFieldProgress(); // the ground left to paint and the job's pace (fork)
 
             // Tram lines aren't saved (parsing a large saved file was costing seconds on the
             // open critical path, see Plans/Completed/BOUNDARY_RESOLUTION_NORMALIZATION.md):
@@ -2208,6 +2209,7 @@ public partial class MainViewModel : ObservableObject
         // Stop autosave (idempotent if already stopped). Belt-and-braces
         // for callers that bypass CloseFieldAsync.
         StopCoverageAutosave();
+        StopFieldProgress();
 
         // Disengage autosteer first so the cycle stops emitting steer commands
         // before the track / boundary / U-turn state vanishes out from under it.
