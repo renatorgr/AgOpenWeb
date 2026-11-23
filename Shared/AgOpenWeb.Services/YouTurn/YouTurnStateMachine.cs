@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 
 using AgOpenWeb.Models;
@@ -155,7 +156,11 @@ public sealed class YouTurnStateMachine
         // more than 10 m wider than the U-turn distance never stopped AutoSteer at the end of a
         // pass, and the headland's own uncovered band made every worked pass look open. Null:
         // HeadlandLine.
-        IReadOnlyList<Vec3>? PassEndLine = null)
+        IReadOnlyList<Vec3>? PassEndLine = null,
+        // Fork only: how long the snake's search for a turn may run in this cycle before it stops and
+        // goes on in the next (see LiveCyclePlanningBudget); null: no limit, the whole search in one
+        // call (tests, the simulator's time-lapse, the scenario harnesses).
+        TimeSpan? PlanningBudget = null)
     {
         /// <summary>The line the fork's end-of-pass checks measure from (<see cref="PassEndLine"/>).</summary>
         public IReadOnlyList<Vec3>? WorkEndLine => PassEndLine ?? HeadlandLine;
@@ -168,6 +173,7 @@ public sealed class YouTurnStateMachine
     /// </summary>
     public YouTurnEffects Tick(in TickContext ctx, GuidanceWorkingState guidance, YouTurnWorkingState turn)
     {
+        _ticks++;
         var effects = new YouTurnEffects();
         var track = ctx.SelectedTrack;
         if (track == null || track.Points.Count < 2 || ctx.HeadlandLine == null)
@@ -1266,6 +1272,7 @@ public sealed class YouTurnStateMachine
 
         // This end was tried and no turn built: again every 1.5 s, silently (see _failedEnd).
         if (TriedJustNow(in ctx, track, guidance, turn, fieldStamp)) return;
+        StartSearch(in ctx, track, guidance, turn, fieldStamp);
 
         // Never onto a worked pass: the next pass of the order that is still to do.
         var isWorked = WorkedPasses(in ctx, track, guidance, turn, atEndOf: abHeading);
@@ -1321,9 +1328,10 @@ public sealed class YouTurnStateMachine
         bool nearestTried = false;
         if (!swappedSide && Math.Abs(target - guidance.HowManyPathsAway) > MaxFallbackStep(ctx.UTurnSkipRows + 1))
         {
-            if (TurnOntoNearestOpenPass(in ctx, track, abHeading, headingRadians, guidance, turn, effects, isWorked, target, operatorSide,
-                    orderPassFar: true))
-                return;
+            var near = TurnOntoNearestOpenPass(in ctx, track, abHeading, headingRadians, guidance, turn, effects, isWorked, target, operatorSide,
+                orderPassFar: true);
+            if (near == Search.OutOfTime) GoOnNextCycle(turn, effects);
+            if (near != Search.NoTurn) return;
             nearestTried = true;
         }
 
@@ -1333,19 +1341,32 @@ public sealed class YouTurnStateMachine
         YouTurnCreationService.TurnPathResult? refused = null;
         if (landable)
         {
-            AimTurnAt(track, abHeading, guidance, turn, effects, target, "Snake");
-            string? message = effects.StatusMessage;
-            var built = BuildTurnPath(in ctx, track, headingRadians, abHeading, guidance, turn, effects);
-            // Taken for its end left to do, and the turn lands short of it: worked at this end, and
-            // the next pass of the order is looked for on the next cycle. One across the crop of the
-            // passes between is not made: the nearest pass still to do is looked for, else the end.
-            if (built.Path != null && !TurnCrossesCrop(in ctx, track, target, guidance, turn, effects, message))
+            // Tried earlier in this search, in a cycle that ran out of time: the same answer (no turn
+            // built, or one across the crop: the nearest pass still to do).
+            if (_searchNotBuilt.TryGetValue(target, out var notBuilt))
+                refused = notBuilt;
+            else if (!_searchCrossesCrop.Contains(target))
             {
-                if (!TurnMissesOpenEnd(in ctx, track, target, turn, effects, message))
-                    TurnRepeatsLanding(in ctx, track, target, turn, effects, message);
-                return;
+                if (SearchOutOfTime())
+                {
+                    GoOnNextCycle(turn, effects);
+                    return;
+                }
+                AimTurnAt(track, abHeading, guidance, turn, effects, target, "Snake");
+                string? message = effects.StatusMessage;
+                var built = BuildForSearch(in ctx, track, headingRadians, abHeading, guidance, turn, effects);
+                // Taken for its end left to do, and the turn lands short of it: worked at this end, and
+                // the next pass of the order is looked for on the next cycle. One across the crop of the
+                // passes between is not made: the nearest pass still to do is looked for, else the end.
+                if (built.Path != null && !TurnCrossesCrop(in ctx, track, target, guidance, turn, effects, message))
+                {
+                    if (!TurnMissesOpenEnd(in ctx, track, target, turn, effects, message))
+                        TurnRepeatsLanding(in ctx, track, target, turn, effects, message);
+                    return;
+                }
+                if (built.Path == null) refused = _searchNotBuilt[target] = built;
+                else _searchCrossesCrop.Add(target);
             }
-            if (built.Path == null) refused = built;
         }
         else
         {
@@ -1360,9 +1381,12 @@ public sealed class YouTurnStateMachine
         // Ours, not AgOpenGPS's: its GetNextNotWorkedTrack starts at the skip in the turn's direction
         // and steps outward past worked tracks, checks neither room nor whether the turn builds, and
         // never looks at the other side.
-        if (!nearestTried
-            && TurnOntoNearestOpenPass(in ctx, track, abHeading, headingRadians, guidance, turn, effects, isWorked, target, operatorSide))
-            return;
+        if (!nearestTried)
+        {
+            var near = TurnOntoNearestOpenPass(in ctx, track, abHeading, headingRadians, guidance, turn, effects, isWorked, target, operatorSide);
+            if (near == Search.OutOfTime) GoOnNextCycle(turn, effects);
+            if (near != Search.NoTurn) return;
+        }
 
         if (refused is { } failed)
         {
@@ -1496,20 +1520,106 @@ public sealed class YouTurnStateMachine
     /// <summary>At most this many passes still to do are looked at on each side for one with room.</summary>
     private const int MaxOpenPassesLookedAt = 6;
 
+    // ── The snake's search spread over GPS cycles (fork only) ───────────
+    // The snake builds a turn onto each pass it tries (the order's, then the nearest still to do on
+    // each side), and every build runs inside the GPS cycle, before the cycle steers. A build near
+    // obstacles and a hard fence took 0.1 to 0.5 s on a tester's tablet (a Surface Pro 4), seated back
+    // a few metres at a time and scanned "anywhere along the pass", and one search built up to eight:
+    // cycles of 1.0 to 1.24 s, so AutoSteer went off with "no GPS/guidance update for over 1 s" (#169)
+    // four times in 16 minutes, three of them within 15 s at one end, as the end is tried again every
+    // 1.5 s (Couto da Ribeira, the Puma, 23 Nov 2026). In a live cycle the search now stops before its
+    // next build once it has run LiveCyclePlanningBudget, and goes on in the next cycle where it
+    // stopped: the passes it built onto give the same answer (_searchNotBuilt, _searchCrossesCrop),
+    // the ones a turn dropped as worked at this end are worked, as before. At least one build per
+    // cycle, so the search always ends; nothing is said or sounded until it has. A search that is not
+    // gone on with in the very next cycle starts again from the start.
+
+    /// <summary>
+    /// How long the snake's search may run in one live GPS cycle before it stops and goes on in the next
+    /// (<see cref="TickContext.PlanningBudget"/>; the pipeline gives it to live cycles only). With the one
+    /// build it always makes (0.5 s at most on the tablet above) a cycle stays well under
+    /// <c>AutoSteerService.GuidanceStaleLimit</c> (1 s).
+    /// </summary>
+    public static readonly TimeSpan LiveCyclePlanningBudget = TimeSpan.FromMilliseconds(250);
+
+    private enum Search { Turn, NoTurn, OutOfTime }
+
+    private int _ticks;                 // Tick calls, to tell the very next cycle
+    private long _searchStartedAt;      // Stopwatch timestamp of this cycle's search
+    private TimeSpan? _searchBudget;
+    private bool _searchBuilt;          // a turn was built in this cycle's search
+    private EndTried _searchKey;
+    private (EndTried Key, int Tick)? _searchStopped; // the search that ran out of time, and the Tick it did
+    // Passes built onto in this search: no turn built (its result, for the message), or a turn that
+    // drove across the crop of the passes between (TurnCrossesCrop).
+    private readonly Dictionary<int, YouTurnCreationService.TurnPathResult> _searchNotBuilt = new();
+    private readonly HashSet<int> _searchCrossesCrop = new();
+
+    /// <summary>
+    /// The search at this end starts: the one stopped in the last cycle goes on with what it found
+    /// (the same end: the pass, the way, the order, the field, the arrow and the settings), any other
+    /// starts afresh.
+    /// </summary>
+    private void StartSearch(in TickContext ctx, Models.Track.Track track, GuidanceWorkingState guidance,
+        YouTurnWorkingState turn, long fieldStamp)
+    {
+        _searchKey = EndKey(in ctx, track, guidance, turn, fieldStamp);
+        bool goesOn = _searchStopped is { } stopped && stopped.Tick == _ticks - 1 && stopped.Key == _searchKey;
+        _searchStopped = null;
+        if (!goesOn)
+        {
+            _searchNotBuilt.Clear();
+            _searchCrossesCrop.Clear();
+        }
+        _searchStartedAt = Stopwatch.GetTimestamp();
+        _searchBudget = ctx.PlanningBudget;
+        _searchBuilt = false;
+    }
+
+    /// <summary>This cycle's search has built a turn and had its time: it stops before the next build.</summary>
+    private bool SearchOutOfTime() =>
+        _searchBudget is { } budget && _searchBuilt && Stopwatch.GetElapsedTime(_searchStartedAt) >= budget;
+
+    private YouTurnCreationService.TurnPathResult BuildForSearch(in TickContext ctx, Models.Track.Track track,
+        double headingRadians, double abHeading, GuidanceWorkingState guidance, YouTurnWorkingState turn, YouTurnEffects effects)
+    {
+        var built = BuildTurnPath(in ctx, track, headingRadians, abHeading, guidance, turn, effects);
+        _searchBuilt = true;
+        return built;
+    }
+
+    /// <summary>
+    /// The search stopped for this cycle: no turn yet, nothing said, and no pass drawn as the next line
+    /// (the last one tried was aimed at). Gone on with in the next cycle.
+    /// </summary>
+    private void GoOnNextCycle(YouTurnWorkingState turn, YouTurnEffects effects)
+    {
+        _searchStopped = (_searchKey, _ticks);
+        _logger.LogDebug("[YouTurn] Looking for a turn took {Ms:F0} ms this cycle - going on in the next",
+            Stopwatch.GetElapsedTime(_searchStartedAt).TotalMilliseconds);
+        if (turn.NextTrack != null)
+        {
+            turn.NextTrack = null;
+            turn.ReturnPassTargetPath = null;
+            effects.SyncNextTrackToMap = true;
+        }
+    }
+
     /// <summary>
     /// A turn onto the nearest pass of the snake order other than <paramref name="orderPass"/> that is
     /// still to do and has room at this end, on the side the order is going first (the passes on the
     /// other side are the ones it comes back for), then on the other side; only on the operator's
     /// side when they chose one. On each side a pass at least the skip away comes before a nearer one
     /// (a turn onto the next pass is a loop), and one turn is built: when the nearest does not fit
-    /// (a hard fence on that side), the ones further that way fit no better. True when one was built
-    /// and is the planned turn. Ours: AgOpenGPS (CYouTurn.GetNextNotWorkedTrack) only steps outward
+    /// (a hard fence on that side), the ones further that way fit no better. <see cref="Search.Turn"/>
+    /// when one was built and is the planned turn; <see cref="Search.OutOfTime"/> when this cycle's
+    /// time for the search ran out before the next build (<see cref="SearchOutOfTime"/>). Ours: AgOpenGPS (CYouTurn.GetNextNotWorkedTrack) only steps outward
     /// on the turn's side past worked tracks; the other side, passes nearer than the skip and the
     /// room and build checks are not in it. Passes up to <see cref="MaxFallbackStep"/> away are looked
     /// at, or with <paramref name="orderPassFar"/> (asked before the order's pass, which is further than
     /// that) every pass nearer than the order's.
     /// </summary>
-    private bool TurnOntoNearestOpenPass(
+    private Search TurnOntoNearestOpenPass(
         in TickContext ctx,
         Models.Track.Track track,
         double abHeading,
@@ -1522,7 +1632,7 @@ public sealed class YouTurnStateMachine
         int operatorSide,
         bool orderPassFar = false)
     {
-        if (turn.SnakeSequence is not { } seq) return false;
+        if (turn.SnakeSequence is not { } seq) return Search.NoTurn;
         int current = guidance.HowManyPathsAway;
         int skip = ctx.UTurnSkipRows + 1;
         int orderSide = orderPass >= current ? 1 : -1;
@@ -1545,28 +1655,38 @@ public sealed class YouTurnStateMachine
                 if (++looked > MaxOpenPassesLookedAt) break;
                 if (!SnakeLandable(in ctx, track, abHeading, pass, guidance, turn))
                     continue;
+                // Tried earlier in this search, in a cycle that ran out of time: the same answer.
+                if (_searchNotBuilt.ContainsKey(pass)) break;
+                if (_searchCrossesCrop.Contains(pass)) continue;
+                if (SearchOutOfTime()) return Search.OutOfTime;
                 AimTurnAt(track, abHeading, guidance, turn, effects, pass, "Snake (nearest open pass)");
                 string? message = effects.StatusMessage;
-                if (BuildTurnPath(in ctx, track, headingRadians, abHeading, guidance, turn, effects).Path != null)
+                var built = BuildForSearch(in ctx, track, headingRadians, abHeading, guidance, turn, effects);
+                if (built.Path != null)
                 {
                     // Taken for its end left to do, and the turn lands short of it: the next one.
                     if (TurnMissesOpenEnd(in ctx, track, pass, turn, effects, message)) continue;
                     // Lands where a turn landed before, on worked ground: the next one.
                     if (TurnRepeatsLanding(in ctx, track, pass, turn, effects, message)) continue;
                     // Drives across the crop of the passes between: the next one.
-                    if (TurnCrossesCrop(in ctx, track, pass, guidance, turn, effects, message)) continue;
+                    if (TurnCrossesCrop(in ctx, track, pass, guidance, turn, effects, message))
+                    {
+                        _searchCrossesCrop.Add(pass);
+                        continue;
+                    }
                     if (orderPassFar)
                         _logger.LogDebug("[YouTurn] Snake pass {Order} is {Count} passes over - turning onto pass {Pass}, the nearest still to do",
                             orderPass, Math.Abs(orderPass - current), pass);
                     else
                         _logger.LogDebug("[YouTurn] Snake pass {Order} has no turn at this end - turning onto pass {Pass}, the nearest still to do",
                             orderPass, pass);
-                    return true;
+                    return Search.Turn;
                 }
+                _searchNotBuilt[pass] = built;
                 break;
             }
         }
-        return false;
+        return Search.NoTurn;
     }
 
     /// <summary>
