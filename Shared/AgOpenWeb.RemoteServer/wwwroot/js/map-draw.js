@@ -355,6 +355,22 @@ function drawPolyObstacleSk(canvas) {
     canvas.drawCircle(xy[0], xy[1], rad, SKP.flagOutline);
   }
 }
+// An area selected on the map (fork): the corners being tapped, closed from three on, or else the
+// area the host has (the Scene's), for every screen.
+function drawAreaSelectionSk(canvas) {
+  const pts = areaDraw ? areaPts : (scene && scene.areaSelection);
+  if (!pts || !pts.length) return;
+  if (pts.length >= 2) strokePtsSk(canvas, pts, pts.length >= 3, [SKP.areaSelShadow, SKP.areaSel]);
+  if (!areaDraw) return;
+  const rad = Math.max(4, 0.5 * pxPerM);
+  SKP.flagFill.setColor(ckColor('#FFFFFF'));
+  for (const p of pts) {
+    if ((pw(p.e, p.n)) < 1.0) continue;
+    const xy = w2s(p.e, p.n);
+    canvas.drawCircle(xy[0], xy[1], rad, SKP.flagFill);
+    canvas.drawCircle(xy[0], xy[1], rad, SKP.flagOutline);
+  }
+}
 // #40: preview the AB/curve points being drawn as dots — orange A (first),
 // blue B (last), white interior — so the placed A point is visible before B is set. The
 // host holds the real point list; drawPts is the client's tap echo (preview only).

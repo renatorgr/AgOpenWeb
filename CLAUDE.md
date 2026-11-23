@@ -266,6 +266,14 @@ minutes the speed times the implement stands in, as AgOpenGPS. The instant speed
 at 8 km/h ± 1 with 10 ha to do; the job's pace by seconds (`JobPaceTests`). Tests: `CoverageAreaCountTests`,
 `JobPaceTests`, `FieldProgressTests`.
 
+**Unpainted in an area** (the field card's button; fork only): the operator taps the corners of an area on the map
+(`startAreaDraw` in `js/overlays.js`, as an obstacle drawn on the map: a double tap or Finish closes it), and from
+the third corner each tap sends it (`area.select|e,n;...`, `MainViewModel.SetAreaSelection`, kept in
+`FieldToolsState.AreaSelection` and drawn from the Scene's `AreaSelection` on every screen). It is counted with the
+field, kept to the field (`MeasureCoverage`'s clip: the boundary less its obstacles): its ground in the field, how
+much of that is still to paint and the time to paint it at the job's pace, in a panel in the field card's place,
+counted again every 3 s as the work goes on, until Close (`area.clear`) or the field closes. Not saved.
+
 ### Host ↔ client commands
 The client sends `id|arg` strings (`transport.send('track.select|0')`). `RemoteServerWiring`
 (in `RemoteWiring`) switches on the id and calls the VM; `RemoteServerWiring.Helpers.cs` holds

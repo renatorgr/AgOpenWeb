@@ -257,7 +257,8 @@ public sealed class SceneProjector : System.IDisposable
             guideLines,
             _state.Guidance.ToolPass?.Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList(),
             _state.Operation.LineEntryPath?.ToArray().Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList(),
-            _state.Operation.LineEntryPath != null ? _state.Operation.LineEntryOfferPass : null);
+            _state.Operation.LineEntryPath != null ? _state.Operation.LineEntryOfferPass : null,
+            _state.FieldTools.AreaSelection?.Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList());
     }
 
     // Tracks-manager display label — mirrors native TracksDialog (Contour → Path →
@@ -1119,6 +1120,10 @@ public sealed class SceneProjector : System.IDisposable
         var lep = _state.Operation.LineEntryPath;
         h = h * 31 + (lep is null ? -1 : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(lep));
         h = h * 31 + (_state.Operation.LineEntryOfferPass?.GetHashCode() ?? 0);
+
+        // The area selected on the map (fork only): a new array per selection.
+        var sel = _state.FieldTools.AreaSelection;
+        h = h * 31 + (sel is null ? -1 : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(sel));
 
         // U-turn path: appears/changes per turn (replaced, not mutated).
         var tp = _state.YouTurn.TurnPath;

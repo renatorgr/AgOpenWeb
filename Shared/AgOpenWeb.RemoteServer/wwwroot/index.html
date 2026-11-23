@@ -106,6 +106,18 @@
         <div class="gc-row"><span class="gc-k">Trip area:</span><span class="gc-v" id="fc-triparea">—</span></div>
         <div class="gc-row"><span class="gc-k">Trip distance:</span><span class="gc-v" id="fc-tripdist">—</span></div>
         <button id="fc-reset">Reset trip</button>
+        <button id="fc-area" class="fc-bnd">Unpainted in an area</button>
+      </div>
+      <!-- An area selected on the map (fork): its ground inside the field, how much of it is still to
+           paint and the time to paint it, from the host, counted again as the work goes on. In the
+           field card's place, which "Unpainted in an area" closes. -->
+      <div id="area-panel">
+        <div class="gc-ll">Selected area</div>
+        <div class="gc-rule"></div>
+        <div class="gc-row"><span class="gc-k">In the field:</span><span class="gc-v" id="ap-inside">…</span></div>
+        <div class="gc-row"><span class="gc-k">Unpainted:</span><span class="gc-v" id="ap-left">…</span></div>
+        <div class="gc-row"><span class="gc-k">Time left:</span><span class="gc-v" id="ap-time">…</span></div>
+        <div class="ap-btns"><button id="ap-redraw">Draw again</button><button id="ap-close">Close</button></div>
       </div>
     </div>
     <button id="sb-fs" title="Fullscreen (hide browser bars)">⛶</button>

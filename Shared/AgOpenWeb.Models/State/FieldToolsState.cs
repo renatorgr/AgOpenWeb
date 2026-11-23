@@ -2,6 +2,8 @@
 // Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Collections.Generic;
+
 namespace AgOpenWeb.Models.State;
 
 /// <summary>
@@ -37,4 +39,8 @@ public sealed class FieldToolsState
     /// <summary>Tram lights (#451): bit 0 right on a tram track, bit 1 left (the PGN 239 tram
     /// byte), bit 2 right forced on by hand, bit 3 left.</summary>
     public byte TramLights { get; set; }
+
+    /// <summary>The area selected on the map to see how much of it is still to paint (its corners, field
+    /// metres; replaced, never changed in place), or null. Not saved: a field closing clears it. Fork only.</summary>
+    public IReadOnlyList<AgOpenWeb.Models.Base.Vec2>? AreaSelection { get; set; }
 }

@@ -64,7 +64,8 @@ public record SceneDto(
     IReadOnlyList<IReadOnlyList<Vec2Dto>> GuideLines, // a curve's extra guidelines, built by the host (#450)
     IReadOnlyList<Vec2Dto>? ToolPass, // the centre of the pass shown, where the tool runs: the map draws the tool's width along it
     IReadOnlyList<Vec2Dto>? EntryPath = null, // the way through the headland to the start of the pass, driven or offered (fork only)
-    string? EntryOffer = null); // while EntryPath is offered, not driven: the pass it leads to ("26R"); the operator takes it or not
+    string? EntryOffer = null, // while EntryPath is offered, not driven: the pass it leads to ("26R"); the operator takes it or not
+    IReadOnlyList<Vec2Dto>? AreaSelection = null); // the area selected on the map to see what is left to paint in it (fork only)
 
 /// <summary>A field flag marker: field-local position (m) + display colour hex + name.</summary>
 public record FlagDto(double E, double N, string ColorHex, string Name);
@@ -355,10 +356,13 @@ public record LineTuneDto(int Stage, bool Stanley, int Tried, string Description
 /// rate (ha/hr) counts only the sections that are on (<c>MainViewModel.WorkRateHaPerHour</c>; fork only).
 /// The ground inside the field (boundary less obstacles) painted and still to paint, m², the job's pace
 /// (ha/hr) and the time to paint what is left (s): NaN when not known (<c>MainViewModel.FieldProgress</c>;
-/// fork only).</summary>
+/// fork only). The area selected on the map: its ground inside the field and still to paint, m², and the
+/// time to paint it, s; NaN with no selection (fork only).</summary>
 public record FieldDataDto(double BoundaryAreaSqM, double ActualAreaSqM, double TripAreaSqM, double TripDistanceM,
     double WorkRateHaPerHour = 0, double PaintedInsideSqM = double.NaN, double UnpaintedSqM = double.NaN,
-    double PaceHaPerHour = double.NaN, double TimeLeftSeconds = double.NaN);
+    double PaceHaPerHour = double.NaN, double TimeLeftSeconds = double.NaN,
+    double SelectionInsideSqM = double.NaN, double SelectionUnpaintedSqM = double.NaN,
+    double SelectionTimeLeftSeconds = double.NaN);
 
 /// <summary>The ISOBUS task controller's heartbeat (PGN 240): whether section control is
 /// enabled on the implement, the implement's section count (0 = no implement), how many

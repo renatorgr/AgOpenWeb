@@ -354,6 +354,21 @@ public static partial class RemoteServerWiring
                                         vm.RemoteAddObstacleCircle(bce, bcn, bcd);
                                     return;
                                 }
+                                case "area.select": // arg = "e,n;e,n;…": an area selected on the map, to see
+                                {                   // how much of it is still to paint (fork only)
+                                    var corners = new System.Collections.Generic.List<AgOpenWeb.Models.Base.Vec2>();
+                                    foreach (var pair in arg.Split(';'))
+                                    {
+                                        var en = pair.Split(',');
+                                        if (en.Length == 2
+                                            && FiniteNumber(en[0], out var ae)
+                                            && FiniteNumber(en[1], out var an))
+                                            corners.Add(new AgOpenWeb.Models.Base.Vec2(ae, an));
+                                    }
+                                    vm.SetAreaSelection(corners);
+                                    return;
+                                }
+                                case "area.clear": vm.SetAreaSelection(null); return;
                                 case "boundary.obstacle.fromMapPoints": // arg = "e,n;e,n;…": an obstacle drawn
                                 {                                       // on the map, its corners in order
                                     var bop = new System.Collections.Generic.List<(double, double)>();
@@ -1169,7 +1184,8 @@ public static partial class RemoteServerWiring
                         ? new AgOpenWeb.RemoteServer.FieldDataDto(vm.FieldBoundaryAreaSqM,
                             fieldDataCoverage.ActualAreaCovered, fieldDataCoverage.TotalWorkedAreaUser, vm.TripDistanceMeters,
                             vm.WorkRateHaPerHour, vm.FieldPaintedSqM, vm.FieldUnpaintedSqM, vm.JobPaceHaPerHour,
-                            vm.FieldTimeLeftSeconds)
+                            vm.FieldTimeLeftSeconds, vm.SelectionInsideSqM, vm.SelectionUnpaintedSqM,
+                            vm.SelectionTimeLeftSeconds)
                         : null;
 
                     // ISOBUS task controller (#312): its heartbeat for the status frame.

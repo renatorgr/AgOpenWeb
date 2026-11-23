@@ -182,6 +182,9 @@ function buildSkPaints() {
     track: mk('#ffd24a', 4), reference: mk('rgb(180,100,255)', 5, [9, 7]),
     guidance: mk('rgb(252,86,186)', 5), guidanceOutline: mk('rgb(0,0,0)', 15), uturn: mk('rgb(77,242,77)', 5), next: mk('rgb(0,200,200)', 4),
     entryOffer: mk('rgb(77,242,77)', 5, [10, 8]), // the way to the start of the pass, offered (fork only)
+    // An area selected on the map to see what is left to paint in it (fork only): white, dashed, over a
+    // dark edge so it reads on the green coverage and on the aerial image alike. Fixed widths (px).
+    areaSel: mk('rgb(255,255,255)', 3, [12, 8]), areaSelShadow: mk('rgba(0,0,0,0.55)', 6),
     // Extra guidelines (adjacent passes) — green(51,153,50,153)
     // over a black shadow, both 0.3 m. Widths set per frame in updateLineWidths.
     extraGuide: mk('rgba(51,153,50,0.6)', 1), extraGuideShadow: mk('rgba(0,0,0,0.5)', 1),

@@ -97,7 +97,23 @@ body.fs-on #sb-role { margin-left: 75px; }
 #sb-fieldcard .gc-v { color: var(--text-2); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 #fc-reset { margin-top: 6px; width: 100%; text-align: center; height: 34px; border: 1px solid var(--border); border-radius: 8px;
   background: rgba(var(--ov),0.06); color: var(--text-2); font: 600 12px system-ui, sans-serif; cursor: pointer; }
-#fc-reset:hover { background: rgba(var(--ov),0.14); }
+#fc-reset:hover, #fc-area:hover, #area-panel button:hover { background: rgba(var(--ov),0.14); }
+#fc-area { margin-top: 6px; width: 100%; text-align: center; height: 34px; border: 1px solid var(--border); border-radius: 8px;
+  background: rgba(var(--ov),0.06); color: var(--text-2); font: 600 12px system-ui, sans-serif; cursor: pointer; }
+#fc-area.fc-hide { display: none; }
+/* An area selected on the map (fork): in the field card's place, the same look. */
+#area-panel { display: none; position: fixed; top: calc(var(--bar-bottom) + 106px); right: calc(var(--sar) + 81px); min-width: 230px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.5); z-index: 10; font-weight: 500; }
+#area-panel.show { display: block; }
+#area-panel .gc-ll { color: #3498DB; font-size: 13px; font-weight: 700; white-space: nowrap; }
+#area-panel .gc-rule { height: 1px; background: var(--border); margin: 5px 0; }
+#area-panel .gc-row { display: flex; justify-content: space-between; gap: 16px; padding: 1px 0; }
+#area-panel .gc-k { color: var(--text-muted); font-size: 12px; }
+#area-panel .gc-v { color: var(--text-2); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#area-panel .ap-btns { display: flex; gap: 8px; margin-top: 6px; }
+#area-panel button { flex: 1; height: 34px; border: 1px solid var(--border); border-radius: 8px;
+  background: rgba(var(--ov),0.06); color: var(--text-2); font: 600 12px system-ui, sans-serif; cursor: pointer; }
 /* Lightbar readout (arrow + cm) — DOM overlay so it renders identically under both the
    2D and Skia map renderers (CanvasKit has no bundled font). Sits just below the LED strip. */
 /* Top-centre HUD column: the light-bar readout (+ tram lights), the
