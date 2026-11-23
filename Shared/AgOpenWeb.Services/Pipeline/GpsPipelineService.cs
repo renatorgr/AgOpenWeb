@@ -610,6 +610,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private static readonly TimeSpan SlowCycleLogThreshold = TimeSpan.FromMilliseconds(500);
     private long _lastGpsInputTicks;
     private int _droppedWhileBusy;
+    private TimeSpan? _planningBudget; // this cycle's time for the U-turn search (ProcessCycle)
 
     private void OnGpsDataUpdated(object? sender, GpsData data)
     {
@@ -656,7 +657,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             long c0 = System.Diagnostics.Stopwatch.GetTimestamp();
             try
             {
-                ProcessCycle(data);
+                ProcessCycle(data, live: true);
                 var took = System.Diagnostics.Stopwatch.GetElapsedTime(c0);
                 int dropped = Interlocked.Exchange(ref _droppedWhileBusy, 0);
                 if (took > SlowCycleLogThreshold)
@@ -678,9 +679,14 @@ public sealed class GpsPipelineService : IGpsPipelineService
     // Core cycle — runs on background thread
     // ══════════════════════════════════════════════════════════════════════
 
-    private void ProcessCycle(GpsData data)
+    private void ProcessCycle(GpsData data, bool live = false)
     {
         _cycleCounter++;
+        // A live cycle (a receiver, or the simulator at 1x) is on the clock of the AutoSteer guard (#169):
+        // the snake's search for a U-turn stops before it makes this cycle late and goes on in the next
+        // (YouTurnStateMachine.LiveCyclePlanningBudget; fork only). The tests' synchronous cycles and the
+        // time-lapse, which waits for each cycle, search to the end as before.
+        _planningBudget = live ? YouTurnStateMachine.LiveCyclePlanningBudget : null;
 
         // PERF-05 #3: GPS pipeline cycle = one full ProcessCycle invocation
         // (background thread, fires per GPS fix). Captures everything from
@@ -1211,7 +1217,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
             _isPointCovered,
             workHeadland,
             // Fork only: the fork's end-of-pass checks measure from where the crop ends.
-            turnField?.HeadlandLine ?? headlandLine);
+            turnField?.HeadlandLine ?? headlandLine,
+            PlanningBudget: _planningBudget);
 
         // Manual trigger — runs even when the auto gate would fail (e.g., YouTurn
         // toggle off). TriggerManual enforces its own preconditions (autosteer +
