@@ -252,6 +252,20 @@ real time (the process outlives the backend on Android and iOS). Tests: `Simulat
 (the same U-turn at 1x and 10x; the old 10x drove 1.7 km on past the fence), `SimulatorTimeLapseTests`,
 `MotionClockTests`. Fork only: at a sync keep the fork side in the simulator files.
 
+### The ground left to paint and the time left
+The status bar's Stats page ("Done ... Left ...%") and the field data card's Remaining and Time left come from the
+host (fork only). `CoverageMapService.MeasureCoverage` counts the coverage map's 0.1 m cells inside the field's
+boundary less its obstacles, and how many are painted (`CoverageAreaCount`: a row of cells at a time, the bits a word
+at a time; a 15 ha field in a few milliseconds), every 3 s on a worker thread (`MainViewModel.FieldProgress`). Done
+is the ground inside painted, Left what is still to paint: the page took every pass painted (headland passes, overlap,
+paint outside the fence) from the headland's area and read "Left -14%" (Tapada da Casa, simulator, 23 Nov 2026). The
+time left is that ground at the job's pace (`JobPace`): the ground painted for each second of work, work being the
+tractor moving faster than 1 km/h within 30 m of the field, turns included, stops and trips off the field not;
+kept in `job.json` (`workSeconds`, `workPaintedSqM`), so a job opened again goes on at its own pace. Its first 2
+minutes the speed times the implement stands in, as AgOpenGPS. The instant speed times the width swung by 13 minutes
+at 8 km/h ± 1 with 10 ha to do; the job's pace by seconds (`JobPaceTests`). Tests: `CoverageAreaCountTests`,
+`JobPaceTests`, `FieldProgressTests`.
+
 ### Host ↔ client commands
 The client sends `id|arg` strings (`transport.send('track.select|0')`). `RemoteServerWiring`
 (in `RemoteWiring`) switches on the id and calls the VM; `RemoteServerWiring.Helpers.cs` holds

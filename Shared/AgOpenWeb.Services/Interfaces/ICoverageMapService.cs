@@ -31,6 +31,14 @@ public interface ICoverageMapService
     double ActualAreaCovered { get; }
 
     /// <summary>
+    /// The ground inside an area (even-odd over its rings: an outer ring and its holes) and, with a clip,
+    /// inside the clip too, and how much of it is painted, in square meters. Counted on the detection grid
+    /// at 0.1 m: a field takes a few milliseconds, so call it off the host loop.
+    /// </summary>
+    (double InsideSqM, double CoveredSqM) MeasureCoverage(
+        IReadOnlyList<IReadOnlyList<Vec2>> area, IReadOnlyList<IReadOnlyList<Vec2>>? clip = null);
+
+    /// <summary>
     /// Number of coverage patches
     /// </summary>
     int PatchCount { get; }

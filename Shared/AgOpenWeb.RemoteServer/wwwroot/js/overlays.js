@@ -298,9 +298,6 @@ function moduleAggColor(s) {
 // Area/rate formatting — matches MainViewModel.FormatArea / WorkRateDisplay.
 function fmtArea(m2) { return fmtUnit(m2 * 0.0001, 'ha'); }
 function fmtRate(haPerHr) { return haPerHr == null ? '—' : fmtUnit(haPerHr, 'ha', 1) + '/hr'; }
-// Work rate from speed (m/s) × tool width; null without a tool width (#398). The whole
-// implement: only Time left uses it (the time to finish working at the full width).
-function workRateHa(speedMs) { const tw = toolWidthM(); return tw > 0 ? speedMs * 3600 * tw / 10000 : null; }
 // The Rate shown: the host's, the speed times the width of the sections that are on, so 0 with
 // every section off (MainViewModel.WorkRateHaPerHour; fork only).
 function workingRateHa() { const fd = statusBar && statusBar.fieldData; return fd ? fd.workRateHaPerHour : null; }
@@ -316,6 +313,24 @@ function workableAreaSqM() {
   if (scene && scene.boundaries && scene.boundaries.length && scene.boundaries[0].length >= 3)
     return shoelace(scene.boundaries[0]);
   return 0;
+}
+// Done and Left on the Stats page: the ground inside the field painted, and the share of the field
+// still to paint, as the host counts them on the coverage map (MainViewModel.FieldProgress; fork).
+// Before its first count, and with no boundary, the worked area against the workable area as before,
+// held to 0-100: that took every pass painted (headland passes, overlap, outside the fence) from the
+// headland's area and went below 0 ("Left -14%").
+function fieldStats() {
+  const fd = statusBar && statusBar.fieldData, worked = (statusBar && statusBar.workedAreaSqM) || 0;
+  if (fd && fd.boundaryAreaSqM > 0 && Number.isFinite(fd.unpaintedSqM) && Number.isFinite(fd.paintedInsideSqM))
+    return { done: fd.paintedInsideSqM, leftPct: Math.min(100, Math.max(0, fd.unpaintedSqM * 100 / fd.boundaryAreaSqM)) };
+  const workable = workableAreaSqM();
+  return { done: worked, leftPct: workable > 0 ? Math.min(100, Math.max(0, (workable - worked) * 100 / workable)) : 100 };
+}
+// Hours and minutes, h:mm, of a time in seconds; ∞ when not known.
+function fmtHoursMinutes(s) {
+  if (!Number.isFinite(s) || s < 0) return '∞';
+  const mins = Math.round(s / 60);
+  return Math.floor(mins / 60) + ':' + String(mins % 60).padStart(2, '0');
 }
 // Active track heading (deg, 0 = north) from its first two Scene points.
 function activeTrackHeadingDeg() {
@@ -335,9 +350,8 @@ function rotatingLineText() {
   }
   if (sbPage === 1) { // Stats
     if (!scene || !scene.hasField) return '—';
-    const workable = workableAreaSqM(), worked = s.workedAreaSqM || 0;
-    const leftPct = workable > 0 ? ((workable - worked) * 100 / workable) : 100;
-    return tr('Done {area}  Left {pct}%  Rate {rate}', { area: fmtArea(worked), pct: leftPct.toFixed(0), rate: fmtRate(workingRateHa()) });
+    const st = fieldStats();
+    return tr('Done {area}  Left {pct}%  Rate {rate}', { area: fmtArea(st.done), pct: st.leftPct.toFixed(0), rate: fmtRate(workingRateHa()) });
   }
   const name = tick && tick.activeTrackName; // AB-line page
   if (!name) return tr('No AB Line');
@@ -425,14 +439,16 @@ addEventListener('pointerdown', () => {
 });
 
 // Field data card (#321), after AgOpenGPS FormFieldData: tap the rotating field line under
-// the fix readout. Total / Remaining / Time left / Actual remaining need a boundary.
+// the fix readout. Total / Remaining / Time left / Pace need a boundary.
 // Worked counts every pass (overlap included); Actual is the ground covered at least once.
+// Remaining is the ground inside the field (less its obstacles) not painted yet, Time left that
+// ground at the job's Pace (ha per hour of work, turns included), both from the host (fork).
 const FC = {
   card: document.getElementById('sb-fieldcard'), reset: document.getElementById('fc-reset'),
   name: document.getElementById('fc-name'), total: document.getElementById('fc-total'),
   worked: document.getElementById('fc-worked'), remain: document.getElementById('fc-remain'),
   time: document.getElementById('fc-time'), overlap: document.getElementById('fc-overlap'),
-  actual: document.getElementById('fc-actual'), actRemain: document.getElementById('fc-actremain'),
+  actual: document.getElementById('fc-actual'), pace: document.getElementById('fc-pace'),
   rate: document.getElementById('fc-rate'), tripArea: document.getElementById('fc-triparea'),
   tripDist: document.getElementById('fc-tripdist'),
 };
@@ -453,10 +469,6 @@ function renderFieldCard() {
   // A cell on the tool's edge can count as covered a little before the strip area
   // catches up, so keep Actual within Worked.
   const actual = Math.min(fd.actualAreaSqM, worked);
-  const speedKmh = (lastTick ? lastTick.speed : 0) * 3.6;
-  // Time left is the time to finish at the full width (AgOpenGPS), not at the Rate shown,
-  // which is 0 while the sections are off in a turn.
-  const fullHaPerHr = workRateHa(lastTick ? lastTick.speed : 0);
   for (const r of FC.card.querySelectorAll('.fc-bnd')) r.classList.toggle('fc-hide', !(total > 0));
   FC.name.textContent = scene.fieldName + (s.jobName ? '  ·  ' + s.jobName : '');
   FC.worked.textContent = fmtArea(worked);
@@ -466,15 +478,14 @@ function renderFieldCard() {
   FC.tripArea.textContent = fmtArea(fd.tripAreaSqM);
   FC.tripDist.textContent = fmtUnit(fd.tripDistanceM, 'm', 0);
   if (total > 0) {
-    const left = Math.max(0, total - worked);
+    // Until the host has counted the field: the boundary less the ground covered, as before.
+    const left = Number.isFinite(fd.unpaintedSqM) ? fd.unpaintedSqM : Math.max(0, total - actual);
     FC.total.textContent = fmtArea(total);
-    FC.remain.textContent = fmtArea(left) + '  (' + (left * 100 / total).toFixed(1) + '%)';
-    FC.actRemain.textContent = fmtArea(Math.max(0, total - actual));
-    // AgOpenGPS: no estimate below 2 km/h.
-    if (speedKmh > 2 && fullHaPerHr > 0) {
-      const mins = Math.round(left / 10000 / fullHaPerHr * 60);
-      FC.time.textContent = Math.floor(mins / 60) + ':' + String(mins % 60).padStart(2, '0');
-    } else FC.time.textContent = '∞';
+    FC.remain.textContent = fmtArea(left) + '  (' + Math.min(100, left * 100 / total).toFixed(1) + '%)';
+    // At the job's pace; before the job has one (its first 2 minutes) at the speed times the
+    // whole implement, as AgOpenGPS (none below 2 km/h).
+    FC.time.textContent = fmtHoursMinutes(fd.timeLeftS);
+    FC.pace.textContent = Number.isFinite(fd.paceHaPerHour) ? fmtRate(fd.paceHaPerHour) : '—';
   }
 }
 

@@ -133,6 +133,27 @@ public class CoverageMapService : ICoverageMapService
     public double ActualAreaCovered =>
         System.Threading.Interlocked.Read(ref _coveredCells) * BITMAP_CELL_SIZE * BITMAP_CELL_SIZE;
     public int PatchCount => (int)GetTotalCellCount(); // Total covered cells across all zones
+
+    /// <summary>The ground inside <paramref name="area"/> (even-odd over its rings: a field's boundary and
+    /// its obstacles) and, with <paramref name="clip"/>, inside the clip too, and how much of it is painted,
+    /// m², counted on the detection grid (<see cref="CoverageAreaCount"/>). The grid is read without the
+    /// lock: painting only sets bits, and a cell painted during the count is in it or the next one. Called
+    /// off the host loop (a field is a few milliseconds). Fork only.</summary>
+    public (double InsideSqM, double CoveredSqM) MeasureCoverage(
+        IReadOnlyList<IReadOnlyList<Vec2>> area, IReadOnlyList<IReadOnlyList<Vec2>>? clip = null)
+    {
+        byte[]? bits;
+        int originE, originN, width, height;
+        lock (_coverageLock)
+        {
+            bits = _fieldBoundsSet ? _detectionBits : null;
+            originE = _bitmapOriginE; originN = _bitmapOriginN;
+            width = _bitmapWidth; height = _bitmapHeight;
+        }
+        var r = CoverageAreaCount.Count(bits, originE, originN, width, height, BITMAP_CELL_SIZE, area, clip);
+        const double cellArea = BITMAP_CELL_SIZE * BITMAP_CELL_SIZE;
+        return (r.InsideCells * cellArea, r.CoveredCells * cellArea);
+    }
     public bool IsAnyZoneMapping => _activeSections.Count > 0;
     public int ActiveSectionCount => _activeSections.Count;
 

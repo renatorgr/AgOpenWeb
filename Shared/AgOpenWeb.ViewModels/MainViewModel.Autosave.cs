@@ -110,7 +110,14 @@ public partial class MainViewModel
             // Same call shape as the close-save path (MainViewModel.cs
             // CloseFieldAsync). RLE compression can take seconds on a
             // large field; the GPS cycle must not block on it.
-            await Task.Run(() => _coverageMapService.SaveToFile(savePath, taskName));
+            await Task.Run(() =>
+            {
+                _coverageMapService.SaveToFile(savePath, taskName);
+                // The job's work time and ground painted (JobPace) with it, so a crash keeps the pace
+                // up to here too; the job's other members are as they were (fork).
+                if (ReferenceEquals(_jobService.ActiveJob, activeJob))
+                    Services.Fields.JobJsonService.Save(activeJob, savePath);
+            });
             _logger.LogDebug("[Coverage] Autosaved coverage to {Path} job={Task}", savePath, taskName);
         }
         catch (Exception ex)
