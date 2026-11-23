@@ -31,6 +31,9 @@
    by (200−136)/2 so its (centred) graphic sits over the campad, not flush-right.
    The empty right margin of the SVG absorbs the overflow — no visible clipping. */
 #rollgauge { filter: drop-shadow(0 1px 2px #000); margin-right: -32px; }
+/* Side by side under the field card where one above the other doesn't fit (js/skia-setup.js
+   underSideCard; fork only). */
+#lowerright.under-row { flex-direction: row; align-items: center; }
 #campad { display: grid; grid-template-columns: 44px 44px 44px; grid-template-rows: 44px 44px 44px;
   gap: 2px; pointer-events: auto; }
 #campad button { border: 0; cursor: pointer; color: var(--text-2); font: 700 20px system-ui, sans-serif;

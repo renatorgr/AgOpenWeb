@@ -73,7 +73,7 @@ function placeCorner() {
   const rn = document.getElementById('rightnav'), lr = document.getElementById('lowerright');
   const clock = document.getElementById('clock'), bar = document.getElementById('bottomstack');
   if (!rn || !lr || !clock || !bar) return;
-  lr.style.right = ''; lr.style.bottom = ''; clock.style.bottom = '';
+  lr.style.right = ''; lr.style.bottom = ''; clock.style.bottom = ''; lr.classList.remove('under-row');
   const b = zoomRect(bar);
   // Screen pixels from the bottom edge to y, in the zoomed pixels bottom is set in.
   const above = (y, gap) => `${(innerHeight - y) / uiZoom + gap}px`;
@@ -95,11 +95,40 @@ function placeCorner() {
     lr.style.right = `calc(14px + var(--sar) + ${nav.width / uiZoom}px)`;
     lift();
   }
+  underSideCard(lr);
+}
+// The field data card and the area panel open beside the right nav, under the U-turn arrows
+// (css/map-hud.css). At a big UI size or on a short screen they reached down over the roll gauge
+// and the camera pad: on a tester's Surface at 115 % the card hid the roll and the zoom buttons.
+// The card keeps its place; while it is open over them the gauge and the pad go under it, one
+// above the other where they fit there, else side by side (shorter). Where neither fits above the
+// bottom bar and the clock (130 % and more on an 800 px screen) they stay and the card covers
+// them until it is closed. Measured on what the gauge draws: its SVG is wider than its picture.
+// Fork only.
+function underSideCard(lr) {
+  const card = ['sb-fieldcard', 'area-panel'].map(id => zoomRect(document.getElementById(id))).find(q => q.width > 0);
+  if (!card) return;
+  const meets = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  const parts = () => [...document.querySelectorAll('#rollgauge > *, #campad > button')].map(zoomRect).filter(q => q.width > 0);
+  if (!parts().some(q => meets(q, card))) return;
+  const keepOut = [...document.querySelectorAll('#bottomstack > *, #clock, #rightnav')].map(zoomRect).filter(q => q.width > 0);
+  const bottom = lr.style.bottom;
+  for (const row of [false, true]) {
+    lr.classList.toggle('under-row', row);
+    lr.style.bottom = bottom;
+    const top = Math.min(...parts().map(q => q.top)), r = zoomRect(lr);
+    lr.style.bottom = `${(innerHeight - r.bottom - (card.bottom + 8 * uiZoom - top)) / uiZoom}px`;
+    if (parts().every(q => q.bottom <= innerHeight && !keepOut.some(k => meets(q, k)))) return;
+  }
+  lr.classList.remove('under-row');
+  lr.style.bottom = bottom;
 }
 if (window.ResizeObserver) {
   const ro = new ResizeObserver(placeCorner);
   ro.observe(document.getElementById('rightnav'));
   ro.observe(document.getElementById('bottomstack'));
+  ro.observe(document.getElementById('sb-fieldcard')); // a card opening, closing or growing
+  ro.observe(document.getElementById('area-panel'));
 }
 addEventListener('resize', placeCorner);
 addEventListener('maparea', placeCorner);
