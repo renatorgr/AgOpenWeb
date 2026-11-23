@@ -145,6 +145,13 @@ public record GpsCycleResult
     /// </summary>
     public string? RtkHoldNotice { get; init; }
 
+    /// <summary>
+    /// Non-null on the cycle where a bend round a Go around obstacle comes within a few seconds
+    /// ahead with AutoSteer on and the tractor faster than the bend can be followed at (fork
+    /// only): the speed to slow down to, shown to the operator with a sound.
+    /// </summary>
+    public string? GoAroundSpeedNotice { get; init; }
+
     /// <summary>How far the position is held off the receiver's, m (0 when not held; fork only).</summary>
     public double RtkHoldM { get; init; }
 

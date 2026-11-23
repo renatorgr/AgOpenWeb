@@ -149,6 +149,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private bool _shownBendWholeLap;
     private string? _blockedNoticeKey;
     private string? _obstacleNotice;
+    // The warning to slow down before a Go around bend (fork only), and what it said this cycle.
+    private readonly GoAroundSpeedWarning _goAroundSpeed = new();
+    private string? _goAroundSpeedNotice;
     // The pivot's distance from the line last cycle: the line steered with AutoSteer on, else the line shown.
     private double _lastLineXte;
     // Phase D D3: passNumber / nudgeOffset live on _guidanceWorking as the single
@@ -2206,6 +2209,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             // Status
             StatusMessage = jumpNotice ?? statusMessage ?? youTurnTickEffects?.StatusMessage ?? fixRejectionReason,
             ObstacleNotice = Interlocked.Exchange(ref _obstacleNotice, null),
+            GoAroundSpeedNotice = Interlocked.Exchange(ref _goAroundSpeedNotice, null),
             RtkHoldNotice = rtkHoldNotice,
             RtkHoldM = _rtkHold.OffsetM,
             YouTurnNotice = youTurnTickEffects is { TellOperator: true } ? youTurnTickEffects.StatusMessage : null,
@@ -2620,6 +2624,24 @@ public sealed class GpsPipelineService : IGpsPipelineService
             _trackGuidanceState.CurrentLocationIndex = output.CurrentLocationIndex;
 
         _lastLineXte = output.CrossTrackError; // from the bent line: the Go around net (5b'') reads it
+
+        // A bend round a Go around obstacle a few seconds ahead and the tractor too fast for it: the
+        // speed to slow down to, with a sound (only a warning: nothing steers or slows). Pure Pursuit
+        // only: the cut is worked out with its look-ahead. Fork only.
+        if (bent != null && bend != null && !_isReverse && !config.Guidance.IsStanley)
+        {
+            var follower = new Track.GoAroundSpeed.Follower(config.Vehicle.Wheelbase, config.Vehicle.MaxSteerAngle,
+                LookAheadHold, config.Guidance.GoalPointLookAheadMult, config.Guidance.MinLookAheadDistance);
+            if (_goAroundSpeed.Check(track, distAway, bend, currentTrack.Points, driftedEasting, driftedNorthing, headingRad,
+                    speedKmh, follower, _goAround.SafetyMargin) is { } slow)
+            {
+                _goAroundSpeedNotice = slow.Notice;
+                _audioService.Play(SoundEffect.GoAroundSlowDown);
+                _logger.LogInformation("[Go around] {Line}", slow.LogLine);
+            }
+        }
+        else if (bent == null)
+            _goAroundSpeed.Reset();
 
         // A closed track's pass that does not fit ahead (a neck of the field narrower than twice
         // the pass's offset, where the offset joins across it along the fence): AutoSteer goes off

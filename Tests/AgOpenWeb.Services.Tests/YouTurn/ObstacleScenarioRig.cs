@@ -153,6 +153,11 @@ public sealed class ObstacleScenarioRig : IDisposable
     public GpsCycleResult Last => _last!;
 
     public double Speed { get; set; } = DefaultSpeed;
+    /// <summary>How fast the wheels turn at most, degrees per second.</summary>
+    public double SteerRate { get; set; } = SteerRateDeg;
+    /// <summary>How late the wheels start to answer the angle asked, seconds (a valve's dead time): 0, or a multiple of <see cref="Dt"/>.</summary>
+    public double SteerDelay { get; set; }
+    private readonly Queue<double> _asked = new();
     /// <summary>The operator is backing up: the tractor moves backwards along its heading, wheels straight.</summary>
     public bool Reversing { get; set; }
     public bool Engaged { get; private set; }
@@ -200,6 +205,8 @@ public sealed class ObstacleScenarioRig : IDisposable
     public double? ArcStartedAt { get; private set; }
     public double? TurnEndedAt { get; private set; }
     public List<string> Log { get; } = new();
+    /// <summary>What the host said to slow down for a Go around bend, and where the tractor was then.</summary>
+    public List<(string Text, double E, double N)> SpeedNotices { get; } = new();
 
     public bool Executing => _last?.YouTurn?.IsExecuting == true;
     public bool Planned => _last?.YouTurn?.TurnPath != null;
@@ -271,6 +278,11 @@ public sealed class ObstacleScenarioRig : IDisposable
         bool executing = r.YouTurn?.IsExecuting == true;
         bool planned = r.YouTurn?.TurnPath != null;
         if (r.ObstacleNotice != null) Note($"host: {r.ObstacleNotice}");
+        if (r.GoAroundSpeedNotice != null)
+        {
+            SpeedNotices.Add((r.GoAroundSpeedNotice, _e, _n));
+            Note($"host: {r.GoAroundSpeedNotice}");
+        }
         if (planned && !_wasPlanned)
         {
             var path = r.YouTurn!.TurnPath!;
@@ -309,7 +321,9 @@ public sealed class ObstacleScenarioRig : IDisposable
         // AutoSteer turns the wheels toward the angle asked, at the rate a steering valve can;
         // with it off, or backing up, the operator holds them straight.
         double want = Engaged && !Reversing ? Math.Clamp(Pipeline.SimulatorSteerAngle, -MaxSteerDeg, MaxSteerDeg) : 0;
-        double step = SteerRateDeg * Dt;
+        _asked.Enqueue(want);
+        want = _asked.Count > (int)Math.Round(SteerDelay / Dt) ? _asked.Dequeue() : 0;
+        double step = SteerRate * Dt;
         _steer += Math.Clamp(want - _steer, -step, step);
         double v = Reversing ? -Speed : Speed;
         _h += v / Wheelbase * Math.Tan(_steer * Math.PI / 180) * Dt;

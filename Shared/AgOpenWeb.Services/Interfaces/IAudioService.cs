@@ -25,7 +25,10 @@ public enum SoundEffect
     YouTurnApproach,
     /// <summary>A sprayer alarm came on: pressure out of range or the flow not what the
     /// open nozzles should spray (SprayerService).</summary>
-    SprayerAlarm
+    SprayerAlarm,
+    /// <summary>A bend round a Go around obstacle ahead and the tractor too fast for it
+    /// (<c>GoAroundSpeedWarning</c>; fork only).</summary>
+    GoAroundSlowDown
 }
 
 /// <summary>
