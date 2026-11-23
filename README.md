@@ -207,7 +207,8 @@ Flags, recorded paths and the worked area stay where the GPS put them.
 **Field data card beside the right buttons.** The card that opens from the field line in the top bar (Total, Worked, Remaining... Reset trip):
 
 - opens next to the buttons on the right, just under the U-turn arrow, not over the map ahead of the tractor;
-- the U-turn arrow and its distance stay where they are and in sight.
+- the U-turn arrow and its distance stay where they are and in sight;
+- with a bigger UI size or a short screen, where it would cover the roll gauge or the zoom buttons, it opens beside them instead.
 
 **Rate on the field data card counts the sections that are on.** The card's Rate (and the Rate in the field line) is the speed times the width of the sections that are on.
 

@@ -95,11 +95,40 @@ function placeCorner() {
     lr.style.right = `calc(14px + var(--sar) + ${nav.width / uiZoom}px)`;
     lift();
   }
+  placeSideCards();
 }
 if (window.ResizeObserver) {
   const ro = new ResizeObserver(placeCorner);
   ro.observe(document.getElementById('rightnav'));
   ro.observe(document.getElementById('bottomstack'));
+}
+// The field data card and the area panel open beside the right nav, under the U-turn arrows
+// (css/map-hud.css). At a big UI size or on a short screen they reached down over the roll gauge
+// and the camera pad: on a tester's Surface at 115 % the card hid the roll and the zoom buttons.
+// Those keep their place, as the U-turn arrows do (nothing on the map moves for a card); the card
+// moves left, beside what it would cover. Measured on what the gauge draws: its SVG is wider than
+// its picture. A card too tall for the room above the bottom bar (130 % and more on an 800 px
+// screen) stays where it was: over the gauge and the pad, not over the section buttons. Fork only.
+function placeSideCards() {
+  const shown = sel => [...document.querySelectorAll(sel)].map(zoomRect).filter(q => q.width > 0 && q.height > 0);
+  const meets = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  const corner = shown('#rollgauge > *, #campad'), bar = shown('#bottomstack > *');
+  for (const id of ['sb-fieldcard', 'area-panel']) {
+    const card = document.getElementById(id);
+    if (!card) continue;
+    card.style.right = '';
+    const c = zoomRect(card);
+    if (c.width === 0) continue; // closed
+    const under = corner.filter(q => meets(q, c));
+    if (!under.length) continue;
+    card.style.right = `${(innerWidth - Math.min(...under.map(q => q.left))) / uiZoom + 8}px`;
+    const moved = zoomRect(card);
+    if (bar.some(q => meets(q, moved))) card.style.right = '';
+  }
+}
+if (window.ResizeObserver) {
+  const ro = new ResizeObserver(placeSideCards); // a card opening, closing or growing
+  for (const id of ['sb-fieldcard', 'area-panel']) ro.observe(document.getElementById(id));
 }
 addEventListener('resize', placeCorner);
 addEventListener('maparea', placeCorner);
