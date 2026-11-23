@@ -275,10 +275,12 @@ About an hour and a half; nightly on develop (`.github/workflows/job-scenarios.y
 ## Farm jobs: a farmer's own fields and machines (fork only)
 
 `FarmJobScenarioTests` (`FarmJobs.cs`) runs the field job on fields read from the computer it runs on,
-never from the repository: each field folder is opened as it was saved (`JobSpec.FieldFolder`: its
-obstacles keep their Go around / U-turn choices, its headland line, hard boundary and skip mode come
-with it), worked on its active AB line (else its first). Without the variables it is ignored, so CI and
-the nightly workflows skip it.
+never from the repository.
+
+- Each field folder is opened as it was saved (`JobSpec.FieldFolder`): its obstacles keep their Go around
+  / U-turn choices, and its headland line, hard boundary and skip mode come with it.
+- It is worked on its active AB line (else its first).
+- Without the variables it is ignored, so CI and the nightly workflows skip it.
 
 | Variable | |
 |---|---|
@@ -286,23 +288,35 @@ the nightly workflows skip it.
 | `AGOPENWEB_JOB_FIELD_LIST` | The fields to work, `;`-separated; field i's jobs are R*i*1 to R*i*6 |
 | `AGOPENWEB_JOB_PROFILES` | Optional: the data folder whose `Vehicles` and `Tools` profiles give the first tractor's and the boom's settings (`AGOPENWEB_JOB_VEHICLE`, `AGOPENWEB_JOB_TOOL` name them) |
 
-The rigs (the code's last digit): 1 the Puma with the 8 m front boom (2/1/2/1/2 m), 2 the Maxxum with the
-same boom, 3 and 4 the two tractors with the semi-mounted 3 m no-till drill, 5 and 6 the Puma with a
-mounted fertiliser spreader at 12 and 20 m in two sections. The operator starts on the first pass from the edge with 80 % of the longest
-pass's line in the cultivated area and no U-turn obstacle at its start (`JobSpec.StartChordOfLongest`,
-`JobRun.TurnObstacles`), not on a corner of short passes beside a hard fence. A "take over manually" before the implement first reaches the cultivated
-area (AutoSteer engaged in the headland, facing the field) is reported as `TAKE-OVER-AT-START` and the operator
-drives on (`JobSpec.DriveOnPastStartWarnings`): on a hard boundary it ended the job before its first turn. With
-the skip mode *ignore worked tracks* the snake check of W1/W2 runs too. An A+ line whose B is under 1 m from A
-(imported from AgOpenGPS) is made with B 100 m along its heading.
+The rigs (the code's last digit):
+
+- 1: the Puma with the 8 m front boom (2/1/2/1/2 m);
+- 2: the Maxxum with the same boom;
+- 3 and 4: the two tractors with the semi-mounted 3 m no-till drill;
+- 5 and 6: the Puma with a mounted fertiliser spreader at 12 and 20 m in two sections.
+
+Where the operator starts:
+
+- On the first pass from the edge with 80 % of the longest pass's line in the cultivated area and no
+  U-turn obstacle at its start (`JobSpec.StartChordOfLongest`, `JobRun.TurnObstacles`), not on a corner
+  of short passes beside a hard fence.
+- A "take over manually" before the implement first reaches the cultivated area (AutoSteer engaged in the
+  headland, facing the field) is reported as `TAKE-OVER-AT-START`, and the operator drives on
+  (`JobSpec.DriveOnPastStartWarnings`). On a hard boundary it ended the job before its first turn.
+
+Also:
+
+- With the skip mode *ignore worked tracks* the snake check of W1/W2 runs too.
+- An A+ line whose B is under 1 m from A (imported from AgOpenGPS) is made with B 100 m along its
+  heading.
 
 ```bash
 AGOPENWEB_JOB_FIELDS=~/AgOpenWeb/Fields AGOPENWEB_JOB_FIELD_LIST="Field A;Field B" AGOPENWEB_SCENARIO_ONLY=R11,R21 \
   dotnet test Tests/AgOpenWeb.FieldJobScenarios.Tests/ -c Release --filter "FullyQualifiedName~FarmJobScenarioTests"
 ```
 
-The report goes to `farm-job-scenarios-report.md`, or to `AGOPENWEB_SCENARIO_REPORT`; it names the fields,
-so keep it on that computer.
+The report goes to `farm-job-scenarios-report.md`, or to `AGOPENWEB_SCENARIO_REPORT`. It names the
+fields, so keep it on that computer.
 
 ## Turn interventions: an operator who acts during a U-turn
 

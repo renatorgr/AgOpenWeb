@@ -43,22 +43,36 @@ antenna) the operator doesn't know; at the end the settings are compared with th
 ## Tuning the wheels
 
 `TuneScenarios.cs` runs the wizard's *Tune steering* step (it finds Minimum To Move, Max Limit and
-Proportional Gain by moving the wheels through Free Drive) on three steerings the step knows
-nothing about, then checks the values against the steering itself:
+Proportional Gain by moving the wheels through Free Drive) on three steerings the step knows nothing
+about, then checks the values against the steering itself.
 
-- **A PWM valve that answers late, with a pressure sensor** (settings as on a Maxxum 135), **a Keya
-  on the steering wheel with a kickout sensor**, **a motor on the steering wheel with no stop at
-  the wheel**: the stop check as the page asks, the run, *Use these values*, Finish. Minimum To
-  Move must not move the wheels by itself, the Max Limit must give the wheel speed asked for (or
-  what the operator's own Max Limit allows: the run never drives above it, nor proposes more), a
-  6° turn each way with the new values must not swing, and the profile on disk must carry them.
-  The valve is then driven on an AB line with AutoSteer.
-- **Careless**: takes the wheel in the first part and in the middle (with and without a kickout
-  sensor), the steer switch off, ✕, Next or the browser lost in the middle, the motor wired
-  backwards with the motor test skipped (and with a Minimum To Move that moves the wheels), Start
-  with the wheels turned, while driving, Continue before the stop check, the stop check left out,
-  and values found but not taken. After each one the module must have let go and the operator's
-  own values must be back in the settings and in the module.
+**Careful**, on three steerings:
+
+- **a PWM valve that answers late, with a pressure sensor** (settings as on a Maxxum 135);
+- **a Keya on the steering wheel with a kickout sensor**;
+- **a motor on the steering wheel with no stop at the wheel**.
+
+Each goes through the stop check as the page asks, the run, *Use these values*, Finish. Then:
+
+- Minimum To Move must not move the wheels by itself.
+- The Max Limit must give the wheel speed asked for, or what the operator's own Max Limit allows: the run
+  never drives above it, nor proposes more.
+- A 6° turn each way with the new values must not swing.
+- The profile on disk must carry them.
+- The valve is then driven on an AB line with AutoSteer.
+
+**Careless**:
+
+- takes the wheel in the first part and in the middle (with and without a kickout sensor);
+- the steer switch off, ✕, Next or the browser lost in the middle;
+- the motor wired backwards with the motor test skipped (and with a Minimum To Move that moves the
+  wheels);
+- Start with the wheels turned, while driving;
+- Continue before the stop check, the stop check left out;
+- values found but not taken.
+
+After each one the module must have let go and the operator's own values must be back in the settings and
+in the module.
 
 The careful operator's whole wizard does the step too, between the Ackermann circle and the gains.
 
