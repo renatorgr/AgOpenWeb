@@ -776,6 +776,21 @@ is built once per pass and cached (the key holds every corner of every obstacle 
 steered (`CalculateTrackGuidance`), the line shown and the light bar's line, AutoSteer on or off.
 U-turn planning and pass numbering keep the straight pass.
 
+**Slowing down before a bend** (fork only). With AutoSteer on the line (Pure Pursuit), a bend round a Go
+around obstacle within 6 s of travel ahead (15 m at least) that the tractor is too fast for is told once each time
+it comes to it, with a sound (`SoundEffect.GoAroundSlowDown`): "Slow down to N km/h for the bend round Inner X"
+(`GoAroundSpeedWarning` in `Services/Pipeline`, `GpsCycleResult.GoAroundSpeedNotice`, a `[Go around]` log line
+with the numbers). Only a warning: nothing steers or slows. Too fast is cutting the bend into the obstacle grown
+by the keep-out by more than the safety margin in force less 10 cm (`GoAroundSpeed.Allowed`), worked out by
+driving the line steered in a model of the app's own steering (`GoAroundSpeed.Cut`: the Pure Pursuit goal the
+look-ahead ahead, as `GoalLookAheadFor` on the line, the wheels 0.2 s late and at most 15°/s, a bicycle of the
+wheelbase), once per line, obstacle, way and half km/h. N is the fastest whole km/h that keeps within it; none
+from 2 km/h up: "Slow right down ... (raise the margin)". What cuts a bend is the look-ahead, which grows with
+the speed and with Steer Response: on the obstacle rig a 5 m bend lost 0.2 m of its margin from 4 to 12 km/h
+with Steer Response 3 and twice that with 4, while wheels turning at 15, 25 or 35°/s changed it by under a
+centimetre. Stanley is not looked at. Tests: `GoAroundSpeedTests`, `GoAroundSpeedRigTests` (its explicit `Table`
+compares the speed told with the rig's own clearance by radius, margin, Steer Response and implement).
+
 **A boundary curve's laps** (closed tracks) are bent too (fork only). They were not: on a tester's field
 (Eucaliptal, 22 Nov 2026, the real tractor, an 8 m front boom) lap 2 was shown and steered straight through two
 hard Go around obstacles. A lap steered is bent as a loop (`ObstacleDetour.Compute`'s `loop`, asked by

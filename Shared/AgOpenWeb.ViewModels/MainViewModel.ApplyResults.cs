@@ -364,6 +364,11 @@ public partial class MainViewModel
         if (result.ObstacleNotice != null)
             ReportFailure(result.ObstacleNotice);
 
+        // A Go around bend ahead taken too fast: the speed to slow down to (a toast; the sound
+        // came from the pipeline). Fork only.
+        if (result.GoAroundSpeedNotice != null)
+            ReportFailure(result.GoAroundSpeedNotice);
+
         // A manual U-turn that was refused, a turn that can't be made or was missed (a toast).
         if (result.YouTurnNotice != null)
             ReportFailure(result.YouTurnNotice);

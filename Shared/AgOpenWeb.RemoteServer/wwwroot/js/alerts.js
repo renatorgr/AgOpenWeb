@@ -114,6 +114,7 @@ const Sounds = (() => {
     'Headland',   // 10 Headland
     'Alarm10',    // 11 YouTurnApproach
     'Alarm10',    // 12 SprayerAlarm
+    'Alarm10',    // 13 GoAroundSlowDown
   ];
   const cache = new Map();   // name -> HTMLAudioElement (fallback path)
   let unlocked = false;
