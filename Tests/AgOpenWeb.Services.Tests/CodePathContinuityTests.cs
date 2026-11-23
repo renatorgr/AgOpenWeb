@@ -326,6 +326,7 @@ public class CodePathContinuityTests
         "ntrip_session.txt", // what the NTRIP connection did and why it failed (Plans/Completed/NTRIP_MAIN_FALLBACK_PLAN.md, Phase 2)
         "contact.txt", // the reporter's email, maintainers only (#407 follow-up)
         "field_background_left_out.txt", // the background image was left out of the report (Bug Report panel box off)
+        "device_info.txt", // the device, its networks and USB devices (#922: the dump could not say how the modules were connected)
         "appsettings_error.txt", "configuration_error.txt", "field_error.txt", "job_error.txt",
         "logs_error.txt", "save_error.txt", "screenshot_error.txt", "state_error.txt",
         "turn_path_error.txt", "gps_data_log_error.txt",

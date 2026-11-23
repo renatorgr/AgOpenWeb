@@ -21,6 +21,7 @@ window.RemoteTransport = {
    *           onControlState?:(state:object)=>void,
    *           onSound?:(effectId:number)=>void,
    *           onFrame?:()=>void,
+   *           onHandled?:(ms:number, isTick:boolean)=>void,
    *           onStatus?:(state:string)=>void }} handlers
    */
   create(handlers) {
@@ -169,6 +170,8 @@ window.RemoteTransport = {
           op.nudgeOffset = f32(); // driver-relative line nudge (m, +right) — AB flyout readout (#93)
           op.refNudgeMoved = f32(); // Ref Nudge panel: track moved since it opened (m, +right) — #489
           op.refNudgePending = !!u8(); // ... and it is not saved yet
+          op.smoothOpen = !!u8(); // Smooth Curve panel open on the selected curve (#929)
+          op.smoothCount = u8();  // ... and its amount (0 = the curve as saved)
           const hasGoal = !!u8(); const goalE = f64(), goalN = f64();
           const goal = hasGoal ? { e: goalE, n: goalN } : null; // Pure Pursuit target (#95)
           op.reverse = !!u8(); // #125 — vehicle reversing
@@ -602,10 +605,15 @@ window.RemoteTransport = {
         if (sawTick && gap > 1500) note(`no frame from the host for ${secs(gap)}`);
         lastFrameAt = Date.now();
         if (quietSaid) { quietSaid = false; status('connected'); }
+        const t0 = performance.now();
+        let isTick = false;
         try {
-          if (!sawTick && new DataView(e.data).getUint8(0) === TYPE.TICK) sawTick = true;
+          isTick = new DataView(e.data).getUint8(0) === TYPE.TICK;
+          if (isTick) sawTick = true;
           decode(e.data);
         } catch (err) { /* drop a malformed frame */ }
+        // How long the page took over this frame, for the bug report dump (js/alerts.js).
+        handlers.onHandled && handlers.onHandled(performance.now() - t0, isTick);
         // Every frame, after it is handled: the page is alive and hearing the host. Unlike a
         // timer, this still runs when the window is minimized or the tab is in the background.
         handlers.onFrame && handlers.onFrame();
