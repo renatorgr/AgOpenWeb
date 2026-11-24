@@ -432,10 +432,12 @@ a feeder house to the combine's body); an articulated tractor pulls big implemen
 
 **The vehicle's colour on the map** (Vehicle › *Machine brand*, `VehicleConfig.Color` 0xRRGGBB, `vehicle.color` as hex,
 saved with the vehicle profile, the Config frame's i32 after the IMU offset; fork only): the body picture of every vehicle
-type has its paint drawn in that colour (`vehicleTintPaint` in `js/map-draw.js`: a colour matrix scaling each picture by
-its own paint grey, `VEH_PAINT_GREY`, so the colour picked is the colour the map shows; AgOpenGPS multiplies its body
-texture by `setDisplay_colorVehicle`, which darkens it). White, the default, leaves the picture as it is; the wheels are
-not tinted. The setting is a list of the makers' colours for the vehicle type chosen (`VEHICLE_COLOURS` in
+type has its paint drawn in that colour (`vehicleTinted` in `js/map-draw.js`: the picture recoloured once per colour on a
+canvas, each pixel scaled by the picture's own paint grey, `VEH_TINT`, so the colour picked is the colour the map shows;
+AgOpenGPS multiplies its body texture by `setDisplay_colorVehicle`, which darkens it). The tyres stay black: a pixel darker
+than `VEH_TYRE_MAX` inside one of the picture's tyre boxes is left as drawn, as is any coloured pixel (lights, reflectors);
+the colour matrix used first painted the articulated tractor's tyres too (the tester, 24 Nov 2026). White, the default,
+leaves the picture as it is. The setting is a list of the makers' colours for the vehicle type chosen (`VEHICLE_COLOURS` in
 `js/settings-panels.js`, each with where its value comes from) and a picker for any other. A tester's three tractors are
 red and he asked for the makers' own colours (24 Nov 2026). Tests: `VehicleColorProfileTests`.
 
