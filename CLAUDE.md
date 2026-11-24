@@ -417,7 +417,10 @@ tool's real hitch points: *Seed drill* (a trailing tool: the headstock on the tr
 drawbar pin, Vehicle › Hitch; the drill turning about that pin with the tool's heading, so its working line is where
 the map paints) and *Front sprayer* (a front-fixed tool: the boom at the front hitch plus the working point, its tank
 on the rear lower links, Vehicle › Rear 3-point hitch). A picture is drawn only with the tool type it is made for;
-otherwise, and with *Sections only* (the default), the map is as before. Over a picture the sections are a thin strip
+otherwise, and with *Sections only* (the default), the map is as before. The setting is a list of the pictures made for
+the tool type chosen (`IMPLEMENT_PICTURES` in `js/map-draw.js`, one row per picture: its type, draw function, name and
+note), so a type with several implements lists them all; a new picture is a `ToolPicture` value, its icons, its draw
+function and a row there. Over a picture the sections are a thin strip
 where it works (`implementStrip`). Drawing: `implementPictureSk` in `js/map-draw.js`, the strip in `toolFootprintSk`
 (`js/map-layers.js`); the pictures are `icons/DrillBody.png`, `DrillHeadstock.png`, `SprayerBoom.png` and
 `SprayerTank.png` (200 px per metre, each one's extent in metres in its draw call). Another user's build drew its
