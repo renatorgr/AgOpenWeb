@@ -907,9 +907,8 @@ function implementPictureSk(canvas) {
   implementPictureOn = false;
   const tl = config && config.tool, veh = config && config.vehicle;
   if (!tl || !veh) return false;
-  const pic = tl.picture | 0, type = tl.type | 0; // ToolPicture; type 0 front, 1 rear, 2 TBT, 3 trailing
-  const drawn = pic === 1 && type === 3 ? seedDrillPictureSk(canvas, tl, veh)
-    : pic === 2 && type === 0 ? frontSprayerPictureSk(canvas, tl, veh) : null;
+  const pic = IMPLEMENT_PICTURES.find(q => q.id === (tl.picture | 0));
+  const drawn = pic && pic.type === (tl.type | 0) ? pic.draw(canvas, tl, veh) : null;
   if (!drawn) return false;
   implementStrip = drawn;
   implementPictureOn = true;
@@ -966,3 +965,16 @@ function frontSprayerPictureSk(canvas, tl, veh) {
   canvas.restore();
   return { half: 0.035, ahead: -0.095 };
 }
+
+// The implement pictures, one row each (ToolPicture in ToolConfig.cs): the tool type it is made for (0 front,
+// 1 rear, 2 TBT, 3 trailing), how it is drawn, and its name and note in Tool > Type > Picture on the map, whose
+// list shows the pictures of the tool type chosen. A new picture: a ToolPicture value, its icons, its draw
+// function (returning the section strip) and a row here.
+const IMPLEMENT_PICTURES = [
+  { id: 1, type: 3, draw: seedDrillPictureSk,
+    name: () => tr('Seed drill, semi-mounted (3 m, 19 rows)'),
+    hint: () => tr('The headstock on the lower links, the drill turning about the drawbar pin (Vehicle hitch), drawn to scale.') },
+  { id: 2, type: 0, draw: frontSprayerPictureSk,
+    name: () => tr('Front sprayer boom (8 m) + rear tank (600 L)'),
+    hint: () => tr('The boom at the working point, its tank on the rear lower links (Vehicle rear 3-point hitch), drawn to scale.') },
+];
