@@ -38,6 +38,20 @@ public class VehicleConfig : ObservableObject
         }
     }
 
+    /// <summary>White: the vehicle's picture on the map as it is drawn.</summary>
+    public const uint DefaultColor = 0xFFFFFF;
+    private uint _color = DefaultColor;
+    /// <summary>
+    /// The vehicle's colour on the map (0xRRGGBB), saved with the vehicle profile: the body picture is
+    /// drawn multiplied by it, as AgOpenGPS draws its body texture in setDisplay_colorVehicle (white,
+    /// the default, leaves the picture as it is). Drawing only.
+    /// </summary>
+    public uint Color
+    {
+        get => _color;
+        set => SetProperty(ref _color, value & 0xFFFFFFu);
+    }
+
     // Physical dimensions
     private double _wheelbase = 2.5;
     public double Wheelbase

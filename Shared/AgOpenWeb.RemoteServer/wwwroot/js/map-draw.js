@@ -682,6 +682,27 @@ function drawVehSprite(canvas, sk, cx, cy, hx, hy, rotDeg, paint) {
     CK.LTRBRect(-hx, -hy, hx, hy), CK.FilterMode.Linear, CK.MipmapMode.None, paint || null);
   canvas.restore();
 }
+// Vehicle › Machine brand (VehicleConfig.Color, 0xRRGGBB; fork only): the body picture's paint is
+// drawn in that colour. AgOpenGPS multiplies its body texture by setDisplay_colorVehicle, which darkens
+// it by the picture's grey; here each picture is scaled by its own paint grey (VEH_PAINT_GREY: the
+// tractor's bonnet and roof 209-219, the harvester's body 140, the articulated halves 182), so a
+// maker's colour picked from the list is the colour the map shows. Black stays black. White (the
+// default) draws the picture as it is: null, no paint.
+const VEH_PAINT_GREY = { tractor: 214, harvester: 140, articulated: 182 };
+const vehTint = {};
+function vehicleTintPaint(kind) {
+  const c = config && config.vehicle && typeof config.vehicle.color === 'number' ? config.vehicle.color & 0xFFFFFF : 0xFFFFFF;
+  if (c === 0xFFFFFF) return null;
+  const t = vehTint[kind] || (vehTint[kind] = { paint: new CK.Paint(), rgb: -1 });
+  if (t.rgb !== c) {
+    const g = VEH_PAINT_GREY[kind], r = ((c >> 16) & 255) / g, gr = ((c >> 8) & 255) / g, b = (c & 255) / g;
+    const f = CK.ColorFilter.MakeMatrix([r, 0, 0, 0, 0, 0, gr, 0, 0, 0, 0, 0, b, 0, 0, 0, 0, 0, 1, 0]);
+    t.paint.setColorFilter(f);
+    f.delete(); // the paint keeps its own reference
+    t.rgb = c;
+  }
+  return t.paint;
+}
 // Harvester / articulated bodies (issue #88), laid out as AgOpenGPS CVehicle.DrawVehicle:
 //  harvester  — body 2·tw × 3·wb centred on the pivot; steerable wheels at the REAR axle
 //               (−wb), turned the opposite way to a tractor, tinted HarvesterWheelColor.
@@ -703,13 +724,14 @@ function vehicleBodySk(canvas, p, veh, type) {
       }
       for (const sx of [1, -1]) drawVehSprite(canvas, wheel, sx * tw / 2, -wb, 0.25 * tw, 0.5 * wb, steer, SKP.harvesterWheel);
     }
-    drawVehSprite(canvas, body, 0, 0, tw, 1.5 * wb, 0);
+    drawVehSprite(canvas, body, 0, 0, tw, 1.5 * wb, 0, vehicleTintPaint('harvester'));
   } else {
     const front = skSprite(artFrontSpr), rear = skSprite(artRearSpr);
     if (!front || !rear) return false;
     beginVehicleFrame(canvas, p);
-    drawVehSprite(canvas, rear, 0, -wb / 2, tw, 0.65 * wb, steer / 2);
-    drawVehSprite(canvas, front, 0, wb / 2, tw, 0.65 * wb, -steer / 2);
+    const tint = vehicleTintPaint('articulated');
+    drawVehSprite(canvas, rear, 0, -wb / 2, tw, 0.65 * wb, steer / 2, tint);
+    drawVehSprite(canvas, front, 0, wb / 2, tw, 0.65 * wb, -steer / 2, tint);
   }
   canvas.restore();
   return true;
@@ -758,7 +780,7 @@ function vehicleSk(canvas, p) {
       canvas.drawImageRectOptions(skTractor,
         CK.LTRBRect(0, 0, skTractor.width(), skTractor.height()),
         CK.LTRBRect(-half, -top, half, -bot),
-        CK.FilterMode.Linear, CK.MipmapMode.None, null);
+        CK.FilterMode.Linear, CK.MipmapMode.None, vehicleTintPaint('tractor'));
       canvas.restore();
       // Steerable front wheels: one sprite drawn at both front-axle ends, rotated by the
       // live wheel angle (translate ±trackWidth/2, wheelbase −0.05; rotate −steer;
@@ -901,14 +923,21 @@ function boundaryMenuSelectedRing() {
 // hitch line, as before. Over a picture the section bars shrink to a strip where it works.
 const implPics = {}; // loaded the first time a picture is drawn
 function implSprite(src) { return skSprite(implPics[src] || (implPics[src] = loadSprite(src))); }
-let implementPictureOn = false;
+let implementPictureOn = false, implPicFailed = false;
 let implementStrip = { half: 1.0, ahead: 0 }; // the strip's half depth and its move ahead of the tool point (m)
 function implementPictureSk(canvas) {
   implementPictureOn = false;
   const tl = config && config.tool, veh = config && config.vehicle;
   if (!tl || !veh) return false;
   const pic = IMPLEMENT_PICTURES.find(q => q.id === (tl.picture | 0));
-  const drawn = pic && pic.type === (tl.type | 0) ? pic.draw(canvas, tl, veh) : null;
+  if (!pic || pic.type !== (tl.type | 0) || !pic.vehicles.includes(veh.type | 0)) return false;
+  // A picture that fails is left out (the section bars instead), never the whole map: a throw in the frame's
+  // draw leaves the map blank.
+  const saves = canvas.getSaveCount();
+  let drawn = null;
+  try { drawn = pic.draw(canvas, tl, veh); }
+  catch (e) { if (!implPicFailed) { implPicFailed = true; console.warn('implement picture:', e); } }
+  finally { canvas.restoreToCount(saves); }
   if (!drawn) return false;
   implementStrip = drawn;
   implementPictureOn = true;
@@ -965,16 +994,126 @@ function frontSprayerPictureSk(canvas, tl, veh) {
   canvas.restore();
   return { half: 0.035, ahead: -0.095 };
 }
+// A combine's header at the working point (Vehicle > Front hitch + Tool > Hitch to working point), as wide
+// as the tool, drawn here rather than from a picture: headers come in every width and the dividers and
+// snouts keep their size. Its frame takes the vehicle's colour on the map (grey as drawn), and a feeder
+// house joins it to the combine's body (the harvester picture's front, 1.5 wheelbases ahead of the pivot).
+// Metres, the cutter bar (grain) or the stalk rolls (maize) on y = 0, +y forward.
+const hdrPaints = {};
+function hdrPaint(key, rgb, stroke) {
+  let h = hdrPaints[key];
+  if (!h) {
+    const p = new CK.Paint(); p.setAntiAlias(true);
+    p.setStyle(stroke ? CK.PaintStyle.Stroke : CK.PaintStyle.Fill);
+    if (stroke) { p.setStrokeWidth(stroke); p.setStrokeCap(CK.StrokeCap.Round); }
+    h = hdrPaints[key] = { p, rgb: -1 };
+  }
+  if (h.rgb !== rgb) { h.p.setColor(CK.Color((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255, 1)); h.rgb = rgb; }
+  return h.p;
+}
+function hdrShade(rgb, k) {
+  const c = (v) => Math.max(0, Math.min(255, Math.round(v * k)));
+  return (c((rgb >> 16) & 255) << 16) | (c((rgb >> 8) & 255) << 8) | c(rgb & 255);
+}
+function hdrRect(canvas, l, b, r, t, paint) { canvas.drawRect(CK.LTRBRect(l, b, r, t), paint); }
+// Paths from verbs (CanvasKit 0.41 paths are immutable): segs is a list of [x0, y0, x1, y1, ...] runs.
+function hdrStroke(canvas, segs, paint) {
+  const cmds = [];
+  for (const g of segs) { cmds.push(CK.MOVE_VERB, g[0], g[1]); for (let i = 2; i < g.length; i += 2) cmds.push(CK.LINE_VERB, g[i], g[i + 1]); }
+  const path = cmds.length ? CK.Path.MakeFromCmds(cmds) : null;
+  if (path) { canvas.drawPath(path, paint); path.delete(); }
+}
+function hdrPoly(canvas, pts, fill, line) {
+  const cmds = [CK.MOVE_VERB, pts[0], pts[1]];
+  for (let i = 2; i < pts.length; i += 2) cmds.push(CK.LINE_VERB, pts[i], pts[i + 1]);
+  cmds.push(CK.CLOSE_VERB);
+  const path = CK.Path.MakeFromCmds(cmds);
+  if (!path) return;
+  canvas.drawPath(path, fill);
+  if (line) canvas.drawPath(path, line);
+  path.delete();
+}
+// The header's frame, its auger and the feeder house: shared by both headers. Returns the paints.
+function headerFrameSk(canvas, tl, veh, w, back) {
+  const vc = veh && typeof veh.color === 'number' ? veh.color & 0xFFFFFF : 0xFFFFFF;
+  const frame = vc === 0xFFFFFF ? 0x8C8C8C : vc;
+  const P = {
+    frame: hdrPaint('frame', frame), dark: hdrPaint('dark', hdrShade(frame, 0.55)),
+    lightRgb: hdrShade(frame, 1.3), steel: hdrPaint('steel', 0x4A4A4A),
+    edge: hdrPaint('edge', 0x1E1E1E, 0.03), flight: hdrPaint('flight', 0x9A9A9A, 0.05),
+  };
+  // Feeder house to the combine's body.
+  const bodyFront = 1.5 * (veh.wheelbase || 3) - (Math.abs(veh.frontHitchLength) + tl.workingPointFromHitch);
+  if (bodyFront < back - 0.2) { hdrRect(canvas, -0.7, bodyFront, 0.7, back - 0.2, P.dark); hdrRect(canvas, -0.7, bodyFront, 0.7, back - 0.2, P.edge); }
+  // Back wall and auger trough.
+  hdrRect(canvas, -w / 2, back - 0.25, w / 2, back, P.frame); hdrRect(canvas, -w / 2, back - 0.25, w / 2, back, P.edge);
+  hdrRect(canvas, -w / 2, back, w / 2, back + 0.5, P.steel);
+  const fl = [];
+  for (let x = -w / 2 + 0.15; x < w / 2 - 0.1; x += 0.3) fl.push([x, back + 0.05, x + 0.18, back + 0.45]);
+  hdrStroke(canvas, fl, P.flight);
+  return P;
+}
+function grainHeaderPictureSk(canvas, tl, veh) {
+  const p = renderPose();
+  if (!p) return null;
+  const w = Math.max(2, tl.totalWidth || 6), back = -1.75;
+  beginVehicleFrame(canvas, p);
+  canvas.translate(0, Math.abs(veh.frontHitchLength) + tl.workingPointFromHitch);
+  const P = headerFrameSk(canvas, tl, veh, w, back);
+  hdrRect(canvas, -w / 2, back + 0.5, w / 2, 0, P.dark);                       // the floor
+  for (const s of [-1, 1]) {                                                    // end plates and dividers
+    hdrRect(canvas, s * w / 2, back - 0.25, s * (w / 2 + 0.1), 0.05, P.frame);
+    hdrPoly(canvas, [s * (w / 2 + 0.1), 0.05, s * (w / 2 + 0.06), 0.85, s * (w / 2 - 0.12), 0.05], P.frame, P.edge);
+  }
+  const guards = [];                                                            // the knife's guards
+  for (let x = -w / 2; x < w / 2 - 0.01; x += 0.15) guards.push([x, 0, x + 0.075, 0.12, x + 0.15, 0]);
+  hdrStroke(canvas, guards, P.edge);
+  hdrRect(canvas, -w / 2, -0.04, w / 2, 0.02, P.steel);
+  // The reel seen from above: its bats across, its arms along.
+  const bats = hdrPaint('bat', P.lightRgb, 0.07);
+  const reel = [], arms = [], n = Math.max(2, Math.round(w / 3));
+  for (let y = 0.1; y > -1.0; y -= 0.22) reel.push([-w / 2 + 0.15, y, w / 2 - 0.15, y]);
+  hdrStroke(canvas, reel, bats);
+  for (let k = 0; k <= n; k++) { const x = -w / 2 + 0.15 + k * (w - 0.3) / n; arms.push([x, 0.15, x, -0.95]); }
+  hdrStroke(canvas, arms, P.edge);
+  canvas.restore();
+  return { half: 0.05, ahead: -0.12 };
+}
+function maizeHeaderPictureSk(canvas, tl, veh) {
+  const p = renderPose();
+  if (!p) return null;
+  const w = Math.max(1.5, tl.totalWidth || 6), back = -1.5;
+  const rows = Math.max(2, Math.round(w / 0.75)), s = w / rows, hw = Math.max(0.08, Math.min(0.3, s / 2 - 0.08));
+  beginVehicleFrame(canvas, p);
+  canvas.translate(0, Math.abs(veh.frontHitchLength) + tl.workingPointFromHitch);
+  const P = headerFrameSk(canvas, tl, veh, w, back);
+  hdrRect(canvas, -w / 2, back + 0.5, w / 2, 0.3, P.steel);                    // the row units under the snouts
+  for (let i = 0; i < rows; i++) { const c = -w / 2 + (i + 0.5) * s; hdrRect(canvas, c - 0.05, back + 0.5, c + 0.05, 0.3, P.edge); }
+  for (let i = 0; i <= rows; i++) {                                             // a snout between each two rows
+    const x = -w / 2 + i * s;
+    hdrPoly(canvas, [x - hw, back + 0.5, x - hw, 0.2, x, 1.3, x + hw, 0.2, x + hw, back + 0.5], P.frame, P.edge);
+  }
+  canvas.restore();
+  return { half: 0.05, ahead: -0.1 };
+}
 
 // The implement pictures, one row each (ToolPicture in ToolConfig.cs): the tool type it is made for (0 front,
-// 1 rear, 2 TBT, 3 trailing), how it is drawn, and its name and note in Tool > Type > Picture on the map, whose
-// list shows the pictures of the tool type chosen. A new picture: a ToolPicture value, its icons, its draw
-// function (returning the section strip) and a row here.
+// 1 rear, 2 TBT, 3 trailing), the vehicle types it goes on (0 tractor, 1 harvester, 2 articulated), how it is
+// drawn, and its name and note in Tool > Type > Picture on the map, whose list shows the pictures of the tool
+// and vehicle type chosen. A combine carries only its header; an articulated tractor pulls big implements,
+// none drawn yet (a tester, 24 Nov 2026). A new picture: a ToolPicture value, its icons or draw function
+// (returning the section strip) and a row here.
 const IMPLEMENT_PICTURES = [
-  { id: 1, type: 3, draw: seedDrillPictureSk,
+  { id: 1, type: 3, vehicles: [0], draw: seedDrillPictureSk,
     name: () => tr('Seed drill, semi-mounted (3 m, 19 rows)'),
     hint: () => tr('The headstock on the lower links, the drill turning about the drawbar pin (Vehicle hitch), drawn to scale.') },
-  { id: 2, type: 0, draw: frontSprayerPictureSk,
+  { id: 2, type: 0, vehicles: [0], draw: frontSprayerPictureSk,
     name: () => tr('Front sprayer boom (8 m) + rear tank (600 L)'),
     hint: () => tr('The boom at the working point, its tank on the rear lower links (Vehicle rear 3-point hitch), drawn to scale.') },
+  { id: 3, type: 0, vehicles: [1], draw: grainHeaderPictureSk,
+    name: () => tr('Grain header (reel)'),
+    hint: () => tr('The cutter bar at the working point, as wide as the tool, in the vehicle\'s colour.') },
+  { id: 4, type: 0, vehicles: [1], draw: maizeHeaderPictureSk,
+    name: () => tr('Maize header (a row unit every 75 cm)'),
+    hint: () => tr('The stalk rolls at the working point, as wide as the tool, in the vehicle\'s colour.') },
 ];
