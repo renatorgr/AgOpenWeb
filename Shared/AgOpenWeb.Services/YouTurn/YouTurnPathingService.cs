@@ -33,14 +33,14 @@ namespace AgOpenWeb.Services.YouTurn;
 /// </summary>
 public sealed class YouTurnPathingService
 {
-    private readonly ILogger<YouTurnPathingService> _logger;
+    private readonly ILogger _logger; // holdable: see YouTurnLog
     private readonly ConfigurationStore _configStore;
     private readonly PolygonIndexCache _headlandIndex = new(); // the cultivated-area test of every offset point
     private readonly PolygonIndexCache _cropIndex = new(); // the operator's headland line, for CropCrossed
 
     public YouTurnPathingService(ILogger<YouTurnPathingService> logger, ConfigurationStore configStore)
     {
-        _logger = logger;
+        _logger = YouTurnLog.Holdable(logger);
         _configStore = configStore;
     }
 

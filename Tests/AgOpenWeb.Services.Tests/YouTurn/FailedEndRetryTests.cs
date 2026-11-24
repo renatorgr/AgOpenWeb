@@ -2,22 +2,25 @@
 // Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using AgOpenWeb.Models;
 using AgOpenWeb.Models.Base;
 using AgOpenWeb.Models.Configuration;
 using AgOpenWeb.Models.Pipeline;
 using AgOpenWeb.Services.Geometry;
 using AgOpenWeb.Services.YouTurn;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace AgOpenWeb.Services.Tests.YouTurn;
 
 /// <summary>
-/// The normal and alternative modes: an end where no turn was made is tried again every 1.5 s,
-/// or at once when something that can change the answer does, as the snake order's ends
+/// The normal and alternative modes: an end where no turn was made is tried again every 1.5 s once
+/// the tractor has moved on a little, or at once when something that can change the answer does, as the snake order's ends
 /// (<see cref="SnakeOpenPassTests"/>, #852). Built again on every GPS cycle, a turn that
 /// could not be made filled the 2000 lines of a bug report's log in 13 s (the tractor parked
 /// with AutoSteer on, 95 builds, each moving the turn back 0.5 m at a time up to 30 m).
@@ -87,8 +90,8 @@ public class FailedEndRetryTests
         (new GuidanceWorkingState { HowManyPathsAway = 0, IsHeadingSameWay = false },
             new YouTurnWorkingState { IsEnabled = true });
 
-    [TestCase(false, TestName = "Normal mode: an end where no turn builds is tried again every 1.5 s, not on every cycle")]
-    [TestCase(true, TestName = "Alternative mode: an end where no turn builds is tried again every 1.5 s, not on every cycle")]
+    [TestCase(false, TestName = "Normal mode: an end where no turn builds is tried again after 1.5 s and a few metres, not on every cycle")]
+    [TestCase(true, TestName = "Alternative mode: an end where no turn builds is tried again after 1.5 s and a few metres, not on every cycle")]
     public void Tried_again_every_second_and_a_half(bool alternate)
     {
         var (guidance, turn) = OnPass0();
@@ -102,18 +105,55 @@ public class FailedEndRetryTests
             Assert.That(first.TurnCreationFailedSound, Is.True, "the operator is told once");
         });
 
-        // Fourteen more cycles, parked (the bug report) or creeping on: nothing built.
-        for (int i = 1; i <= 14; i++)
+        // Parked, or creeping (the bug report: a tractor parked with AutoSteer on): 4 s, 0.4 m, nothing
+        // built. It was tried every 1.5 s: nothing that can change the answer changes standing there.
+        for (int i = 1; i <= 40; i++)
             _sm.Tick(Ctx(PassX(0), -18 - 0.01 * i, 180, alternate), guidance, turn);
-        Assert.That(_creation.TurnPathBuilds, Is.EqualTo(builds), "not built again on every cycle");
+        Assert.That(_creation.TurnPathBuilds, Is.EqualTo(builds), "not built again parked");
 
-        // The fifteenth, 1.5 s on: tried again, silently.
-        var retry = _sm.Tick(Ctx(PassX(0), -18.15, 180, alternate), guidance, turn);
+        // Driving on, 0.3 m a cycle: not before the tractor is 2 m on, and by a tenth of the 30 m to the end.
+        int retriedAt = 0;
+        YouTurnEffects? retry = null;
+        for (int i = 1; i <= 12 && retriedAt == 0; i++)
+        {
+            var effects = _sm.Tick(Ctx(PassX(0), -18.4 - 0.3 * i, 180, alternate), guidance, turn);
+            if (_creation.TurnPathBuilds > builds) { retriedAt = i; retry = effects; }
+        }
         Assert.Multiple(() =>
         {
-            Assert.That(_creation.TurnPathBuilds, Is.EqualTo(2 * builds), "tried again after 1.5 s");
-            Assert.That(retry.TurnCreationFailedSound, Is.False, "silently");
-            Assert.That(retry.TellOperator, Is.False, "the operator was told once");
+            Assert.That(retriedAt, Is.GreaterThan(5), "not before the tractor is 2 m on");
+            Assert.That(retriedAt, Is.LessThanOrEqualTo(9), "tried again by the time it is 3 m on");
+            Assert.That(_creation.TurnPathBuilds, Is.EqualTo(2 * builds), "tried again once");
+            Assert.That(retry?.TurnCreationFailedSound, Is.False, "silently");
+            Assert.That(retry?.TellOperator, Is.False, "the operator was told once");
+        });
+    }
+
+    [TestCase(false, TestName = "Normal mode: in the simulator's time-lapse an end with no turn is tried again ten times fewer cycles on")]
+    [TestCase(true, TestName = "Alternative mode: in the simulator's time-lapse an end with no turn is tried again ten times fewer cycles on")]
+    public void In_the_time_lapse_tried_again_as_often_in_real_time(bool alternate)
+    {
+        // 10x: the cycles come ten times as fast, and each try where no turn fits near obstacles took
+        // 0.33 s on the mini PC: tried every 15 cycles, the 10x ran at 2.6x (Couto da Ribeira, 24 Nov 2026).
+        int RetriedAt(double timeLapse)
+        {
+            SetUp();
+            var (guidance, turn) = OnPass0();
+            _sm.Tick(Ctx(PassX(0), -18, 180, alternate) with { TimeLapse = timeLapse }, guidance, turn);
+            Assert.That(turn.TurnPath, Is.Null, "the scenario: no turn fits");
+            int builds = _creation.TurnPathBuilds;
+            for (int i = 1; i <= 160; i++) // 0.12 m a cycle: 18 m in 150, still 12 m before the end
+            {
+                _sm.Tick(Ctx(PassX(0), -18 - 0.12 * i, 180, alternate) with { TimeLapse = timeLapse }, guidance, turn);
+                if (_creation.TurnPathBuilds > builds) return i;
+            }
+            return 0;
+        }
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(RetriedAt(1.0), Is.InRange(15, 25), "at 1x: 15 cycles, and 2.7 m on");
+            Assert.That(RetriedAt(SimulatorTimeLapse.Scale), Is.EqualTo(150), "at 10x: 150 cycles, 1.5 s as at 1x");
         });
     }
 
@@ -169,11 +209,11 @@ public class FailedEndRetryTests
         });
 
         for (int i = 1; i <= 14; i++)
-            _sm.Tick(Ctx(PassX(0), -18 - 0.01 * i, 180, alternate), guidance, turn);
+            _sm.Tick(Ctx(PassX(0), -18 - 0.3 * i, 180, alternate), guidance, turn);
         Assert.That(_creation.TurnPathBuilds, Is.EqualTo(builds), "the scenario: waiting 1.5 s");
 
         // Tried again: the try that made no turn took the arrow, and the retry turned the other way.
-        _sm.Tick(Ctx(PassX(0), -18.15, 180, alternate), guidance, turn);
+        _sm.Tick(Ctx(PassX(0), -22.5, 180, alternate), guidance, turn);
         Assert.Multiple(() =>
         {
             Assert.That(_creation.TurnPathBuilds, Is.GreaterThan(builds), "the scenario: tried again after 1.5 s");
@@ -244,5 +284,102 @@ public class FailedEndRetryTests
         ConfigurationStore.Instance.Guidance.UTurnRadius = 4.0;
         _sm.Tick(Ctx(PassX(0), -18.01, 180, false), guidance, turn);
         Assert.That(turn.TurnPath, Is.Not.Null, "the radius changed: tried again at once, and it fits");
+    }
+
+    // ── The log (fork only) ──────────────────────────────────────────────
+
+    /// <summary>The planner as in <see cref="SetUp"/>, writing its log into <paramref name="lines"/>.</summary>
+    private void LogInto(List<string> lines)
+    {
+        var c = ConfigurationStore.Instance;
+        _creation = new YouTurnCreationService(new CapturedLogger<YouTurnCreationService>(lines), _offset, c);
+        _sm = new YouTurnStateMachine(
+            _creation,
+            new YouTurnPathingService(new CapturedLogger<YouTurnPathingService>(lines), c),
+            new CapturedLogger<YouTurnStateMachine>(lines), c);
+    }
+
+    [TestCase(false, TestName = "Normal mode: a try again that makes no turn writes one line, not all it tried again")]
+    [TestCase(true, TestName = "Alternative mode: a try again that makes no turn writes one line, not all it tried again")]
+    public void A_try_again_with_no_turn_writes_one_line(bool alternate)
+    {
+        // Each try wrote what it tried, line for line: 140 lines a try at a Go around obstacle no turn
+        // clears (Couto da Ribeira, 24 Nov 2026), so the bug report's 2000 lines reached back 11 s.
+        var lines = new List<string>();
+        LogInto(lines);
+        var (guidance, turn) = OnPass0();
+
+        _sm.Tick(Ctx(PassX(0), -18, 180, alternate), guidance, turn);
+        int builds = _creation.TurnPathBuilds;
+        Assert.That(lines.Count(l => l.StartsWith("YouTurnCreationService", StringComparison.Ordinal)), Is.GreaterThan(1),
+            "the scenario: the first try writes what it tried");
+
+        lines.Clear();
+        for (int i = 1; i <= 15; i++)
+            _sm.Tick(Ctx(PassX(0), -18 - 0.3 * i, 180, alternate), guidance, turn);
+        Assert.That(_creation.TurnPathBuilds, Is.GreaterThan(builds), "the scenario: tried again");
+        Assert.Multiple(() =>
+        {
+            Assert.That(lines.Where(l => l.StartsWith("YouTurnCreationService", StringComparison.Ordinal)), Is.Empty,
+                "what the try again built is not written again");
+            Assert.That(lines.Where(l => l.Contains("Trying the end again", StringComparison.Ordinal)), Is.Empty);
+            Assert.That(lines.Count(l => l.Contains("Tried the end again", StringComparison.Ordinal)
+                    && l.Contains("still no turn", StringComparison.Ordinal)), Is.EqualTo(1),
+                "one line says it was tried again: " + string.Join(" | ", lines));
+        });
+    }
+
+    [Test]
+    public void Near_an_end_with_no_turn_the_zone_line_is_written_when_it_changes_or_every_10_m()
+    {
+        // Written on every cycle while no turn was planned within 100 m of the end: 450 of a bug
+        // report's 2000 lines for the last 100 m at 8 km/h.
+        var lines = new List<string>();
+        LogInto(lines);
+        var (guidance, turn) = OnPass0();
+
+        for (int i = 0; i <= 40; i++) // 12 m on, 0.3 m a cycle
+            _sm.Tick(Ctx(PassX(0), -18 - 0.3 * i, 180, false), guidance, turn);
+        Assert.That(lines.Count(l => l.Contains("Zone=", StringComparison.Ordinal)), Is.InRange(1, 3),
+            "at the start and every 10 m, not on each of the 41 cycles");
+    }
+
+    [Test]
+    public void Lines_held_are_written_in_order_to_their_own_logger_and_errors_never_held()
+    {
+        var a = new List<string>();
+        var b = new List<string>();
+        var logA = YouTurnLog.Holdable(new CapturedLogger<YouTurnCreationService>(a));
+        var logB = YouTurnLog.Holdable(new CapturedLogger<YouTurnPathingService>(b));
+        var held = new List<YouTurnLog.Line>();
+        try
+        {
+            YouTurnLog.HoldInto(held);
+            logA.LogDebug("one {N}", 1);
+            logB.LogWarning("two");
+            logA.LogError("now");
+            string? otherThread = null;
+            var t = new Thread(() => { logB.LogDebug("other thread"); otherThread = string.Join(",", b); });
+            t.Start();
+            t.Join();
+            Assert.Multiple(() =>
+            {
+                Assert.That(a, Is.EqualTo(new[] { "YouTurnCreationService: now" }), "an error is written at once");
+                Assert.That(otherThread, Is.EqualTo("YouTurnPathingService: other thread"), "another thread writes as usual");
+                Assert.That(held.Select(l => l.Text), Is.EqualTo(new[] { "one 1", "two" }));
+            });
+        }
+        finally
+        {
+            YouTurnLog.HoldInto(null);
+        }
+
+        logA.LogDebug("not held");
+        YouTurnLog.Write(held);
+        Assert.Multiple(() =>
+        {
+            Assert.That(a, Is.EqualTo(new[] { "YouTurnCreationService: now", "YouTurnCreationService: not held", "YouTurnCreationService: one 1" }));
+            Assert.That(b, Is.EqualTo(new[] { "YouTurnPathingService: other thread", "YouTurnPathingService: two" }));
+        });
     }
 }
