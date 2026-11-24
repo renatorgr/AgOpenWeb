@@ -1227,7 +1227,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
             workHeadland,
             // Fork only: the fork's end-of-pass checks measure from where the crop ends.
             turnField?.HeadlandLine ?? headlandLine,
-            PlanningBudget: _planningBudget);
+            PlanningBudget: _planningBudget,
+            // Fork only: the time-lapse's cycles come ten times as fast; an end with no turn is not
+            // tried again ten times as often.
+            TimeLapse: _simulatorTimeLapse ? SimulatorTimeLapse.Scale : 1.0);
 
         // Manual trigger — runs even when the auto gate would fail (e.g., YouTurn
         // toggle off). TriggerManual enforces its own preconditions (autosteer +

@@ -26,7 +26,7 @@ namespace AgOpenWeb.Services.YouTurn
 
         // Reusable service for Dubins path generation (radius updated per turn)
         private readonly DubinsPathService _dubinsService = new DubinsPathService(1.0);
-        private readonly ILogger<YouTurnCreationService> _logger;
+        private readonly ILogger _logger; // holdable: see YouTurnLog
         private readonly IPolygonOffsetService _polygonOffsetService;
         private readonly AgOpenWeb.Models.Configuration.ConfigurationStore _configStore;
         // The passes bent round Go around obstacles, the same object the pipeline steers by.
@@ -38,7 +38,7 @@ namespace AgOpenWeb.Services.YouTurn
             AgOpenWeb.Models.Configuration.ConfigurationStore configStore,
             Track.GoAroundPasses? goAround = null)
         {
-            _logger = logger;
+            _logger = YouTurnLog.Holdable(logger);
             _polygonOffsetService = polygonOffsetService;
             _configStore = configStore;
             _goAround = goAround ?? new Track.GoAroundPasses(configStore, polygonOffsetService);

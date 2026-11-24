@@ -67,11 +67,14 @@ public sealed class YouTurnStateMachine
     private bool _creationFailSounded, _approachAlarmed, _missedSounded;
     /// <summary>The AB line heading last logged (rad), so its debug line is written when it changes.</summary>
     private double _loggedAbHeading = double.NaN;
+    private (TractorZone Zone, bool Aligned, bool InRange)? _loggedZone; // the zone line last written
+    private double _loggedZoneDistance;
+    private const double ZoneLogStep = 10.0; // m
     // The way along the pass the planned turn was built for (TURNED ROUND in Tick).
     private bool? _plannedSameWay;
     private readonly YouTurnPathingService _pathing;
     private readonly PolygonIndexCache _headlandIndex = new(); // the zone test, every GPS cycle
-    private readonly ILogger<YouTurnStateMachine> _logger;
+    private readonly ILogger _logger; // holdable: see YouTurnLog
     private readonly ConfigurationStore _configStore;
 
     // The snake's worked-pass test samples a pass across the whole field, so each pass is
@@ -127,7 +130,7 @@ public sealed class YouTurnStateMachine
     {
         _creation = creation;
         _pathing = pathing;
-        _logger = logger;
+        _logger = YouTurnLog.Holdable(logger);
         _configStore = configStore;
     }
 
@@ -160,7 +163,11 @@ public sealed class YouTurnStateMachine
         // Fork only: how long the snake's search for a turn may run in this cycle before it stops and
         // goes on in the next (see LiveCyclePlanningBudget); null: no limit, the whole search in one
         // call (tests, the simulator's time-lapse, the scenario harnesses).
-        TimeSpan? PlanningBudget = null)
+        TimeSpan? PlanningBudget = null,
+        // Fork only: how many times faster than real time the GPS cycles come (the simulator's
+        // time-lapse, 10; else 1). An end where no turn was built is tried again after as many
+        // cycles times this (see TriedJustNow), so as often in real time as at 1x.
+        double TimeLapse = 1.0)
     {
         /// <summary>The line the fork's end-of-pass checks measure from (<see cref="PassEndLine"/>).</summary>
         public IReadOnlyList<Vec3>? WorkEndLine => PassEndLine ?? HeadlandLine;
@@ -172,6 +179,21 @@ public sealed class YouTurnStateMachine
     /// invoking Tick.
     /// </summary>
     public YouTurnEffects Tick(in TickContext ctx, GuidanceWorkingState guidance, YouTurnWorkingState turn)
+    {
+        YouTurnEffects? effects = null;
+        try
+        {
+            effects = TickCycle(in ctx, guidance, turn);
+            return effects;
+        }
+        finally
+        {
+            YouTurnLog.HoldInto(null);
+            EndRetryLog(turn, effects);
+        }
+    }
+
+    private YouTurnEffects TickCycle(in TickContext ctx, GuidanceWorkingState guidance, YouTurnWorkingState turn)
     {
         _ticks++;
         var effects = new YouTurnEffects();
@@ -258,10 +280,23 @@ public sealed class YouTurnStateMachine
         bool headlandInRange = turn.DistanceToHeadland > MinDistanceToCreate &&
                                turn.DistanceToHeadland < MaxDistanceToCreate;
 
+        // When the zone, the alignment or the range changes, or every 10 m: written on every cycle, the
+        // last 100 m to an end with no turn (an end of field, a turn that fits nowhere) were 450 of a bug
+        // report's 2000 lines at 8 km/h. Fork only.
         if (turn.TurnPath == null && !turn.IsExecuting && turn.DistanceToHeadland < 100)
         {
-            _logger.LogDebug("[YouTurn] Zone={Zone}, dist={Dist:F1}m, aligned={Aligned}, inRange={InRange}",
-                turn.CurrentZone, turn.DistanceToHeadland, isAlignedWithABLine, headlandInRange);
+            var seen = (turn.CurrentZone, isAlignedWithABLine, headlandInRange);
+            if (seen != _loggedZone || !(Math.Abs(turn.DistanceToHeadland - _loggedZoneDistance) < ZoneLogStep))
+            {
+                _loggedZone = seen;
+                _loggedZoneDistance = turn.DistanceToHeadland;
+                _logger.LogDebug("[YouTurn] Zone={Zone}, dist={Dist:F1}m, aligned={Aligned}, inRange={InRange}",
+                    turn.CurrentZone, turn.DistanceToHeadland, isAlignedWithABLine, headlandInRange);
+            }
+        }
+        else
+        {
+            _loggedZone = null;
         }
 
         // ── TURN CREATION ───────────────────────────────────────────────
@@ -354,8 +389,7 @@ public sealed class YouTurnStateMachine
                 // of a bug report's log in 13 s (95 builds).
                 if (turn.TurnPath == null)
                 {
-                    _failedEnd = EndKey(in ctx, track, guidance, turn, EndFieldStamp(in ctx));
-                    _failedEndCycles = 0;
+                    RememberFailedEnd(in ctx, track, guidance, turn, EndFieldStamp(in ctx));
                 }
             }
         }
@@ -1395,8 +1429,7 @@ public sealed class YouTurnStateMachine
             // Aimed at the order's pass again: the map and the message are about that one.
             AimTurnAt(track, abHeading, guidance, turn, effects, target, "Snake");
             ReportNoTurn(failed, effects);
-            _failedEnd = EndKey(in ctx, track, guidance, turn, fieldStamp);
-            _failedEndCycles = 0;
+            RememberFailedEnd(in ctx, track, guidance, turn, fieldStamp);
             return;
         }
         // No turn, and the order's pass was not one to aim at: a nearest pass tried and not built
@@ -1409,8 +1442,7 @@ public sealed class YouTurnStateMachine
         }
         effects.StatusMessage = SnakeNoRoomMessage(PassesStillToDo(turn, guidance, isWorked));
         SoundCreationFailed(effects);
-        _failedEnd = EndKey(in ctx, track, guidance, turn, fieldStamp);
-        _failedEndCycles = 0;
+        RememberFailedEnd(in ctx, track, guidance, turn, fieldStamp);
     }
 
     /// <summary>
@@ -1454,17 +1486,48 @@ public sealed class YouTurnStateMachine
     // turn setting (the operator lowering the radius to make it fit). Forgotten when a turn is
     // planned or driven, when Tick has not looked for a turn for 1.5 s, the track changes or U-turn
     // is switched off.
+    //
+    // Fork only: tried again only once the tractor has also moved on a tenth of the way to the end
+    // (2 m at least: RetryAfterMoving), and after the 15 cycles times the time-lapse, so as often in
+    // real time at 10x as at 1x. Turns are looked for from 2 km before the end, and a try where no turn
+    // fits near obstacles is long: on the mini PC (Couto da Ribeira, 24 Nov 2026) 0.33 s, every 15
+    // cycles from 300 m before the end, so the simulator's 10x ran at 2.6x; a parked tractor tried the
+    // same end every 1.5 s for nothing. What a try writes in the log is left out when it makes no turn
+    // again (YouTurnLog), as the first try wrote it.
     private EndTried? _failedEnd;
     private int _failedEndCycles;
     private int _failedEndIdle; // cycles in a row not looking for a turn since one did not build
+    private double _failedEndEast, _failedEndNorth; // where the tractor was at the last try
     private const int FailedEndRetryCycles = 15; // GPS cycles at 10 Hz
+    private const double RetryMinMove = 2.0;      // m
+    private const double RetryMoveShare = 0.1;    // of the distance to the end
 
     private readonly record struct EndTried(Models.Track.Track Track, int Pass, bool HeadingSameWay, double Nudge,
         List<int>? Snake, long FieldStamp, int SkipRows, bool? Arrow, int Settings);
 
+    /// <summary>No turn was built at this end: it is not tried again until <see cref="TriedJustNow"/> says.</summary>
+    private void RememberFailedEnd(in TickContext ctx, Models.Track.Track track, GuidanceWorkingState guidance,
+        YouTurnWorkingState turn, long fieldStamp)
+    {
+        _failedEnd = EndKey(in ctx, track, guidance, turn, fieldStamp);
+        _failedEndCycles = 0;
+        _failedEndEast = ctx.CurrentPosition.Easting;
+        _failedEndNorth = ctx.CurrentPosition.Northing;
+    }
+
+    /// <summary>
+    /// How far the tractor goes on before an end where no turn was built is tried again: a tenth of
+    /// the way to it, 2 m at least. Far from the end, moving on changes little of what a turn there
+    /// meets; near it, the end is tried every 2 m. Fork only.
+    /// </summary>
+    internal static double RetryAfterMoving(double distanceToEnd) =>
+        distanceToEnd < MaxDistanceToCreate ? Math.Max(RetryMinMove, RetryMoveShare * distanceToEnd) : RetryMinMove;
+
     /// <summary>
     /// This end was tried a moment ago and no turn was made, so it is not tried again this cycle
-    /// (<see cref="_failedEnd"/>), in every mode. When it is tried, the side the operator picked
+    /// (<see cref="_failedEnd"/>), in every mode: not before <see cref="FailedEndRetryCycles"/> cycles
+    /// (times <see cref="TickContext.TimeLapse"/>) and the tractor <see cref="RetryAfterMoving"/> on.
+    /// When it is tried, the side the operator picked
     /// with the U-turn arrow goes into the try again: the try that made no turn took the arrow
     /// (<see cref="TakeDirectionSwap"/>), so the retry 1.5 s later turned the other way. Kept in
     /// <see cref="YouTurnWorkingState.HeldDirectionLeft"/> until a turn starts, as a planned turn
@@ -1475,14 +1538,64 @@ public sealed class YouTurnStateMachine
     {
         if (_failedEnd is { } failedEnd && failedEnd == EndKey(in ctx, track, guidance, turn, fieldStamp))
         {
-            if (++_failedEndCycles < FailedEndRetryCycles) return true;
-            _logger.LogDebug("[YouTurn] Trying the end again (no turn built here {Seconds:F1} s ago)", FailedEndRetryCycles / 10.0);
+            int cycles = ++_failedEndCycles;
+            double moved = Math.Sqrt(
+                (ctx.CurrentPosition.Easting - _failedEndEast) * (ctx.CurrentPosition.Easting - _failedEndEast)
+                + (ctx.CurrentPosition.Northing - _failedEndNorth) * (ctx.CurrentPosition.Northing - _failedEndNorth));
+            if (cycles < FailedEndRetryCycles * Math.Max(1.0, ctx.TimeLapse)
+                || !(moved >= RetryAfterMoving(turn.DistanceToHeadland)))
+                return true;
+            HoldRetryLog(moved);
+            _logger.LogDebug("[YouTurn] Trying the end again (no turn built here {Cycles} GPS cycles and {Moved:F1} m ago)",
+                cycles, moved);
         }
         _failedEnd = null;
         _failedEndCycles = 0;
         if (turn.HeldDirectionLeft is { } held)
             turn.NextUTurnDirectionLeftOverride ??= held;
         return false;
+    }
+
+    // ── A try again held in the log (fork only) ─────────────────────────
+    private List<YouTurnLog.Line>? _retryLines; // what this try again has written, held
+    private long _retryStartedAt;               // Stopwatch timestamp
+    private int _retryBuildsBefore;
+    private double _retryMoved;
+    private int _retryTick;                     // the Tick it started in
+
+    /// <summary>What the try again of a failed end writes is held from here (<see cref="EndRetryLog"/>).</summary>
+    private void HoldRetryLog(double moved)
+    {
+        if (_retryLines is { } earlier) YouTurnLog.Write(earlier); // never left unresolved; written to be safe
+        _retryLines = new List<YouTurnLog.Line>();
+        _retryStartedAt = Stopwatch.GetTimestamp();
+        _retryBuildsBefore = _creation.TurnPathBuilds;
+        _retryMoved = moved;
+        _retryTick = _ticks;
+        YouTurnLog.HoldInto(_retryLines);
+    }
+
+    /// <summary>
+    /// At the end of a cycle with a try again held: still held while the snake's search goes on in the
+    /// next cycle; written when the try made a turn (or anything but no turn at the same end again);
+    /// left out when it made no turn again, with one line saying so. <paramref name="effects"/> null:
+    /// the cycle failed, and what it wrote is written.
+    /// </summary>
+    private void EndRetryLog(YouTurnWorkingState turn, YouTurnEffects? effects)
+    {
+        if (_retryLines is not { } lines) return;
+        if (effects != null && _searchStopped is { } stopped && stopped.Tick == _ticks) return;
+        _retryLines = null;
+        if (effects != null && turn.TurnPath == null && _failedEnd != null && _failedEndCycles == 0)
+        {
+            _logger.LogDebug(
+                "[YouTurn] Tried the end again {Moved:F0} m on: still no turn ({Builds} built, {Ms:F0} ms; {Lines} lines as the first try's left out){Said}",
+                _retryMoved, _creation.TurnPathBuilds - _retryBuildsBefore,
+                Stopwatch.GetElapsedTime(_retryStartedAt).TotalMilliseconds, lines.Count,
+                string.IsNullOrEmpty(effects.StatusMessage) ? "" : ": " + effects.StatusMessage);
+            return;
+        }
+        YouTurnLog.Write(lines);
     }
 
     /// <summary>
@@ -1572,6 +1685,18 @@ public sealed class YouTurnStateMachine
         {
             _searchNotBuilt.Clear();
             _searchCrossesCrop.Clear();
+            if (_retryLines is { } unfinished && _retryTick != _ticks)
+            {
+                // A try again stopped in the last cycle and not gone on with (another end, or later):
+                // what it wrote is written as it was, and this search writes as usual.
+                _retryLines = null;
+                YouTurnLog.HoldInto(null);
+                YouTurnLog.Write(unfinished);
+            }
+        }
+        else if (_retryLines != null)
+        {
+            YouTurnLog.HoldInto(_retryLines); // a try again of a failed end, gone on with
         }
         _searchStartedAt = Stopwatch.GetTimestamp();
         _searchBudget = ctx.PlanningBudget;

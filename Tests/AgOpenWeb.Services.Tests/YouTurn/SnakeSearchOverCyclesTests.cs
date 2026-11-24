@@ -229,4 +229,47 @@ public class SnakeSearchOverCyclesTests
         Assert.That(YouTurnStateMachine.LiveCyclePlanningBudget + TimeSpan.FromSeconds(0.5),
             Is.LessThan(AutoSteerService.GuidanceStaleLimit));
     }
+
+    [Test]
+    public void A_try_again_spread_over_cycles_writes_one_line_when_it_makes_no_turn_again()
+    {
+        // The try again of an end with no turn is held in the log while its search goes on over the
+        // cycles, and left out as a whole when it makes no turn again (YouTurnLog). Fork only.
+        var lines = new List<string>();
+        var c = ConfigurationStore.Instance;
+        _creation = new YouTurnCreationService(new CapturedLogger<YouTurnCreationService>(lines), new PolygonOffsetService(), c);
+        _sm = new YouTurnStateMachine(_creation,
+            new YouTurnPathingService(new CapturedLogger<YouTurnPathingService>(lines), c),
+            new CapturedLogger<YouTurnStateMachine>(lines), c);
+        var (guidance, turn) = NoTurnAnywhere();
+
+        double n = -18;
+        YouTurnEffects effects;
+        int cycles = 0;
+        do
+        {
+            effects = _sm.Tick(Ctx(n, TimeSpan.Zero), guidance, turn);
+            cycles++;
+            n -= 0.3;
+        } while (!effects.TurnCreationFailedSound && cycles < 10);
+        Assert.That(effects.TurnCreationFailedSound, Is.True, "the scenario: no turn here, told");
+        Assert.That(lines.Count(l => l.StartsWith("YouTurnCreationService", StringComparison.Ordinal)), Is.GreaterThan(1),
+            "the scenario: the first search writes what it tried");
+
+        lines.Clear();
+        int after = _creation.TurnPathBuilds;
+        for (int i = 0; i < 15 + cycles; i++, n -= 0.3)
+            _sm.Tick(Ctx(n, TimeSpan.Zero), guidance, turn);
+        Assert.That(_creation.TurnPathBuilds - after, Is.EqualTo(cycles), "the scenario: tried again, one build a cycle");
+        Assert.Multiple(() =>
+        {
+            Assert.That(lines.Where(l => l.StartsWith("YouTurnCreationService", StringComparison.Ordinal)), Is.Empty,
+                "what the try again built is not written again");
+            Assert.That(lines.Where(l => l.Contains("going on in the next", StringComparison.Ordinal)), Is.Empty,
+                "nor that it went on over the cycles");
+            Assert.That(lines.Count(l => l.Contains("Tried the end again", StringComparison.Ordinal)
+                    && l.Contains("still no turn", StringComparison.Ordinal)), Is.EqualTo(1),
+                "one line says it was tried again: " + string.Join(" | ", lines));
+        });
+    }
 }
