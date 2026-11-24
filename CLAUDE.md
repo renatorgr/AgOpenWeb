@@ -429,10 +429,12 @@ implements over the rear tyres; these two are a tester's own machines, drawn fro
 
 **The vehicle's colour on the map** (Vehicle › *Colour on the map*, `VehicleConfig.Color` 0xRRGGBB, `vehicle.color` as hex,
 saved with the vehicle profile, the Config frame's i32 after the IMU offset; fork only): the body picture of every vehicle
-type is drawn multiplied by it (`vehicleTintPaint` in `js/map-draw.js`, a Modulate colour filter), as AgOpenGPS draws its
-body texture in `setDisplay_colorVehicle`; white, the default, leaves the picture as it is, and the wheels are not
-tinted. Six swatches and a picker (`.vc-swatch`, `#vc-color` in `js/settings-panels.js`). A tester's three tractors are
-red (24 Nov 2026). Tests: `VehicleColorProfileTests`.
+type has its paint drawn in that colour (`vehicleTintPaint` in `js/map-draw.js`: a colour matrix scaling each picture by
+its own paint grey, `VEH_PAINT_GREY`, so the colour picked is the colour the map shows; AgOpenGPS multiplies its body
+texture by `setDisplay_colorVehicle`, which darkens it). White, the default, leaves the picture as it is; the wheels are
+not tinted. The setting is a list of the makers' colours for the vehicle type chosen (`VEHICLE_COLOURS` in
+`js/settings-panels.js`, each with where its value comes from) and a picker for any other. A tester's three tractors are
+red and he asked for the makers' own colours (24 Nov 2026). Tests: `VehicleColorProfileTests`.
 
 ## Technology Stack
 
