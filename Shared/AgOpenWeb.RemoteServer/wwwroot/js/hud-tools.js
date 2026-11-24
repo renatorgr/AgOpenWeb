@@ -543,7 +543,7 @@ function startPolyDraw() {
   polyDraw = true; polyPts = []; polySent = 0; polyLastTap = null;
   lnCloseAll();                           // close the boundary menu
   showAbBar(false, true, true);           // Undo + Finish + Cancel
-  startMapTap({ hint: tr('Tap the corners of the obstacle — double-tap the last one to close it'), onTap: polyTap });
+  startMapTap({ hint: tr('Tap the corners of the obstacle, past the fence where it reaches it — double-tap the last one to close it'), onTap: polyTap });
 }
 // Two map positions this close on the screen are one place for a double tap.
 function polyNear(a, b) {
@@ -571,7 +571,7 @@ function polyTap(e, n, t) {
 }
 function setPolyHint() {
   hintEl.textContent = polyPts.length === 0
-    ? (polySent ? tr('Tap the corners of the next obstacle, or Finish when done') : tr('Tap the corners of the obstacle — double-tap the last one to close it'))
+    ? (polySent ? tr('Tap the corners of the next obstacle, or Finish when done') : tr('Tap the corners of the obstacle, past the fence where it reaches it — double-tap the last one to close it'))
     : polyPts.length === 1 ? tr('Obstacle: 1 corner — double-tap or Finish to close it')
     : tr('Obstacle: {n} corners — double-tap or Finish to close it', { n: polyPts.length });
 }
