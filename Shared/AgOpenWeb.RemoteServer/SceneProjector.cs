@@ -862,7 +862,7 @@ public sealed class SceneProjector : System.IDisposable
                 t.Zones, zones, t.IsMultiColoredSections, colors, (int)t.SingleCoverageColor,
                 t.IsSectionOffWhenOut, t.IsHeadlandSectionControl, t.MinCoverage, t.SlowSpeedCutoff,
                 t.CoverageMargin, t.IsWorkSwitchEnabled, t.IsWorkSwitchActiveLow, t.IsWorkSwitchManualSections,
-                t.IsSteerSwitchEnabled, t.IsSteerSwitchManualSections, _config.ActualToolWidth),
+                t.IsSteerSwitchEnabled, t.IsSteerSwitchManualSections, _config.ActualToolWidth, (int)t.Picture),
             new UturnConfigDto(g.UTurnStyle, g.UTurnExtension, g.UTurnSmoothing, g.UTurnRadius, g.UTurnDistanceFromBoundary,
                 g.GoAroundRadius, g.GoAroundMargin, g.UTurnCrossGap, (int)g.LineEntryMode, g.LineEntryStraight),
             // Line = the field's actual start pass (tram settings live with the field), 1-based.
@@ -963,6 +963,7 @@ public sealed class SceneProjector : System.IDisposable
               + (t.IsSectionOffWhenOut ? 4 : 0) + (t.IsHeadlandSectionControl ? 8 : 0) + t.MinCoverage
               + (t.IsWorkSwitchEnabled ? 16 : 0) + (t.IsWorkSwitchActiveLow ? 32 : 0) + (t.IsWorkSwitchManualSections ? 64 : 0)
               + (t.IsSteerSwitchEnabled ? 128 : 0) + (t.IsSteerSwitchManualSections ? 256 : 0);
+        h = h * 31 + (int)t.Picture; // fork only
         foreach (var d in new[] { t.WorkingPointFromHitch, t.TrailingHitchLength, t.TankTrailingHitchLength, t.Length,
                                   t.LookAheadOnSetting, t.LookAheadOffSetting, t.TurnOffDelay, t.Offset, t.Overlap,
                                   t.TrailingToolToPivotLength, t.DefaultSectionWidth, t.SlowSpeedCutoff, t.CoverageMargin,

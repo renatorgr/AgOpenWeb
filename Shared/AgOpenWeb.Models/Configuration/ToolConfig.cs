@@ -468,6 +468,16 @@ public class ToolConfig : ObservableObject
         set => SetProperty(ref _isSteerSwitchManualSections, value);
     }
 
+    // The implement's picture on the map, drawn at the tool's real hitch points (fork only). None
+    // draws the section bars and the hitch line, as before; a picture is drawn only with the tool
+    // type it is made for (ToolPicture).
+    private ToolPicture _picture = ToolPicture.None;
+    public ToolPicture Picture
+    {
+        get => _picture;
+        set => SetProperty(ref _picture, Enum.IsDefined(value) ? value : ToolPicture.None);
+    }
+
     /// <summary>
     /// Gets the current tool type as a string for display
     /// </summary>
@@ -511,4 +521,18 @@ public class ToolConfig : ObservableObject
 
         OnPropertyChanged(nameof(CurrentToolType));
     }
+}
+
+/// <summary>The implement's picture on the map (fork only). Each one is drawn at the tool's real
+/// hitch points, to scale, and only with the tool type it is made for.</summary>
+public enum ToolPicture
+{
+    /// <summary>The section bars and the hitch line only.</summary>
+    None = 0,
+    /// <summary>A semi-mounted seed drill (trailing tool): the headstock on the tractor's lower links,
+    /// the drill swinging about its drawbar pin (Vehicle hitch), its wheels Trailing hitch behind it.</summary>
+    SeedDrill = 1,
+    /// <summary>A front sprayer boom (front-fixed tool) at the working point, with its tank on the
+    /// rear lower links (Vehicle rear 3-point hitch).</summary>
+    FrontSprayer = 2,
 }

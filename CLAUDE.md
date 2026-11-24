@@ -410,6 +410,20 @@ the Boundary frame's last byte; before that, the button that opened it), where b
 Boundary". Tests: `BoundaryRecorderKindTests`, `BoundaryRecorderPageTests` (Docs/WEB_CLIENT.md, "The screen it is
 made for").
 
+### The implement's picture on the map
+Tool › Type › *Picture on the map* (`ToolConfig.Picture`, `ToolPicture`, `tool.picture`, saved with the tool profile;
+fork only) draws a top view of the implement instead of the 2 m section bars and the hitch line, to scale and at the
+tool's real hitch points: *Seed drill* (a trailing tool: the headstock on the tractor from the lower links to the
+drawbar pin, Vehicle › Hitch; the drill turning about that pin with the tool's heading, so its working line is where
+the map paints) and *Front sprayer* (a front-fixed tool: the boom at the front hitch plus the working point, its tank
+on the rear lower links, Vehicle › Rear 3-point hitch). A picture is drawn only with the tool type it is made for;
+otherwise, and with *Sections only* (the default), the map is as before. Over a picture the sections are a thin strip
+where it works (`implementStrip`). Drawing: `implementPictureSk` in `js/map-draw.js`, the strip in `toolFootprintSk`
+(`js/map-layers.js`); the pictures are `icons/DrillBody.png`, `DrillHeadstock.png`, `SprayerBoom.png` and
+`SprayerTank.png` (200 px per metre, each one's extent in metres in its draw call). Another user's build drew its
+implements over the rear tyres; these two are a tester's own machines, drawn from their measures and photos
+(24 Nov 2026). Tests: `ToolPictureProfileTests`.
+
 ## Technology Stack
 
 - **.NET 10.0** - Target framework

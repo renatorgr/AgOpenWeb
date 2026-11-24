@@ -893,3 +893,76 @@ function boundaryMenuSelectedRing() {
   return boundary && boundary.selectedIndex >= 0 && document.getElementById('boundarymenu').classList.contains('open')
     ? boundary.selectedIndex : -1;
 }
+
+// ---- The implement's picture on the map (Tool > Type > Picture on the map; fork only) ----
+// A top view drawn to scale at the tool's real hitch points: the tool position the host sends and the
+// vehicle's hitches, so the picture sits where AgOpenWeb puts the tool, never on the tractor's wheels.
+// Each picture is drawn only with the tool type it is made for; otherwise the section bars and the
+// hitch line, as before. Over a picture the section bars shrink to a strip where it works.
+const implPics = {}; // loaded the first time a picture is drawn
+function implSprite(src) { return skSprite(implPics[src] || (implPics[src] = loadSprite(src))); }
+let implementPictureOn = false;
+let implementStrip = { half: 1.0, ahead: 0 }; // the strip's half depth and its move ahead of the tool point (m)
+function implementPictureSk(canvas) {
+  implementPictureOn = false;
+  const tl = config && config.tool, veh = config && config.vehicle;
+  if (!tl || !veh) return false;
+  const pic = tl.picture | 0, type = tl.type | 0; // ToolPicture; type 0 front, 1 rear, 2 TBT, 3 trailing
+  const drawn = pic === 1 && type === 3 ? seedDrillPictureSk(canvas, tl, veh)
+    : pic === 2 && type === 0 ? frontSprayerPictureSk(canvas, tl, veh) : null;
+  if (!drawn) return false;
+  implementStrip = drawn;
+  implementPictureOn = true;
+  return true;
+}
+// A picture into the rectangle l..r across, t..b along (m, in the frame set up before; y backwards).
+function drawImplPic(canvas, sk, l, t, r, b) {
+  canvas.drawImageRectOptions(sk, CK.LTRBRect(0, 0, sk.width(), sk.height()), CK.LTRBRect(l, t, r, b),
+    CK.FilterMode.Linear, CK.MipmapMode.Linear, null);
+}
+// A semi-mounted seed drill. The headstock rides on the tractor (its heading), from the lower links to
+// the drawbar pin (Vehicle > Hitch); the drill swings about that pin with the tool's heading (the
+// host's, from the hitch's movement), so the working line (between the coulter banks) is where the
+// map paints. Pictures (DrillBody, DrillHeadstock): metres from the pin, +y backwards.
+function seedDrillPictureSk(canvas, tl, veh) {
+  const t = renderTool(), p = renderPose();
+  if (!t || !p || (!t.e && !t.n)) return null;
+  const body = implSprite('/icons/DrillBody.png'), head = implSprite('/icons/DrillHeadstock.png');
+  if (!body || !head) return null;
+  const back = tl.trailingHitchLength + tl.trailingToolToPivotLength; // the pin to the working line
+  const pe = t.e + Math.sin(t.heading) * back, pn = t.n + Math.cos(t.heading) * back;
+  canvas.save();
+  canvas.concat(perspM);
+  canvas.translate(pe - camE, pn - camN);
+  canvas.rotate(-t.heading * 180 / Math.PI, 0, 0); // the tool's frame: +Y forward
+  canvas.scale(1, -1);
+  drawImplPic(canvas, body, -1.75, -0.25, 1.75, 5.0);
+  canvas.restore();
+  beginVehicleFrame(canvas, p);
+  canvas.translate(0, -Math.abs(veh.hitchLength));
+  canvas.scale(1, -1);
+  drawImplPic(canvas, head, -0.70, -0.60, 0.70, 0.15);
+  canvas.restore();
+  return { half: 0.09, ahead: 0 };
+}
+// A front sprayer boom at the working point (Vehicle > Front hitch + Tool > Hitch to working point,
+// ahead of the rear axle) and its tank on the rear lower links (Vehicle > Rear 3-point hitch). Both
+// ride on the tractor. Pictures: SprayerBoom from the nozzle line, SprayerTank from the lower-link
+// pins, metres, +y backwards. The strip is the ground just behind the nozzles.
+function frontSprayerPictureSk(canvas, tl, veh) {
+  const p = renderPose();
+  if (!p) return null;
+  const boom = implSprite('/icons/SprayerBoom.png'), tank = implSprite('/icons/SprayerTank.png');
+  if (!boom || !tank) return null;
+  beginVehicleFrame(canvas, p);
+  canvas.save();
+  canvas.translate(0, -Math.abs(veh.threePointHitchLength));
+  canvas.scale(1, -1);
+  drawImplPic(canvas, tank, -0.80, -0.12, 0.80, 1.10);
+  canvas.restore();
+  canvas.translate(0, Math.abs(veh.frontHitchLength) + tl.workingPointFromHitch);
+  canvas.scale(1, -1);
+  drawImplPic(canvas, boom, -4.10, -0.40, 4.10, 1.10);
+  canvas.restore();
+  return { half: 0.035, ahead: -0.095 };
+}

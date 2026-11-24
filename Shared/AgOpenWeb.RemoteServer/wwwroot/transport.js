@@ -442,6 +442,7 @@ window.RemoteTransport = {
             slowSpeedCutoff: f64(), coverageMargin: f64(),
             isWorkSwitchEnabled: !!u8(), isWorkSwitchActiveLow: !!u8(), isWorkSwitchManualSections: !!u8(),
             isSteerSwitchEnabled: !!u8(), isSteerSwitchManualSections: !!u8(), totalWidth: f64(),
+            picture: i32(), // the implement's picture on the map: 0 none, 1 seed drill, 2 front sprayer (fork only)
           };
           const uturn = { style: i32(), extension: f64(), smoothing: i32(), radius: f64(), distanceFromBoundary: f64(),
             goAroundRadius: f64(), goAroundMargin: f64(), crossGap: f64(), entryMode: i32(), entryStraight: f64() };
