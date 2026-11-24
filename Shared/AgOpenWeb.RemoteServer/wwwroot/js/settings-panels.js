@@ -95,7 +95,7 @@ const fusionLabel = w => tr('GPS {gps}% · IMU {imu}%', { gps: Math.round(w * 10
 guardSliderTap(vcFw, null); // first: only its thumb moves it, as the other sliders (cfg-controls.js)
 vcFw.addEventListener('input', () => { document.getElementById('vc-hfw').textContent = fusionLabel(+vcFw.value); cfgSend('gps.headingFusionWeight', vcFw.value); });
 document.getElementById('vc-save').addEventListener('pointerdown', e => { e.stopPropagation(); saveProfile(); });
-// Colour on the map (vehicle.color, 0xRRGGBB hex; fork only): the makers' own colours for the vehicle
+// Machine brand (vehicle.color, 0xRRGGBB hex; fork only): the makers' own colours for the vehicle
 // type chosen (a tester asked for the main makers, 24 Nov 2026), or any colour from the picker beside
 // the list. Each is the colour the map shows (vehicleTintPaint in map-draw.js). Where the maker
 // publishes no code the value is the nearest published one, and says so.
@@ -116,9 +116,9 @@ function vcColorOptions(type) {
   if (type === vcColorType) return;
   vcColorType = type; vcColorSel.textContent = '';
   const add = (v, label) => { const o = document.createElement('option'); o.value = v; o.textContent = label; vcColorSel.appendChild(o); };
-  add('ffffff', tr('As drawn (grey)'));
+  add('ffffff', tr('No brand (grey)'));
   for (const m of VEHICLE_COLOURS) if (m.types.includes(type)) add(m.color, m.name);
-  add('', tr('Another colour'));
+  add('', tr('Another brand: pick its colour'));
 }
 vcColorSel.addEventListener('change', () => {
   if (vcColorSel.value) cfgSend('vehicle.color', vcColorSel.value);

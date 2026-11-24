@@ -524,7 +524,7 @@ public class ToolConfig : ObservableObject
 }
 
 /// <summary>The implement's picture on the map (fork only). Each one is drawn at the tool's real
-/// hitch points, to scale, and only with the tool type it is made for.</summary>
+/// hitch points, to scale, and only with the tool type and the vehicle types it is made for.</summary>
 public enum ToolPicture
 {
     /// <summary>The section bars and the hitch line only.</summary>
@@ -535,4 +535,8 @@ public enum ToolPicture
     /// <summary>A front sprayer boom (front-fixed tool) at the working point, with its tank on the
     /// rear lower links (Vehicle rear 3-point hitch).</summary>
     FrontSprayer = 2,
+    /// <summary>A combine's grain header with its reel (front-fixed tool on a harvester), as wide as the tool.</summary>
+    GrainHeader = 3,
+    /// <summary>A combine's maize header, a row unit every 75 cm (front-fixed tool on a harvester), as wide as the tool.</summary>
+    MaizeHeader = 4,
 }

@@ -30,6 +30,8 @@ public class ToolPictureProfileTests
 
     [TestCase(ToolPicture.SeedDrill)]
     [TestCase(ToolPicture.FrontSprayer)]
+    [TestCase(ToolPicture.GrainHeader)]
+    [TestCase(ToolPicture.MaizeHeader)]
     [TestCase(ToolPicture.None)]
     public void The_picture_is_saved_with_the_tool_profile(ToolPicture picture)
     {

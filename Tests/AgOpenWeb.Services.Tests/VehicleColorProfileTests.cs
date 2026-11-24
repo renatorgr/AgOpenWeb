@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AgOpenWeb.Services.Tests;
 
-/// <summary>The vehicle's colour on the map (Vehicle > Colour on the map; fork only) is the vehicle
+/// <summary>The vehicle's colour on the map (Vehicle > Machine brand; fork only) is the vehicle
 /// profile's, as AgOpenGPS's setDisplay_colorVehicle: a red tractor's profile draws it red. A profile
 /// saved before it draws the picture as it is (white).</summary>
 [TestFixture]

@@ -425,9 +425,12 @@ where it works (`implementStrip`). Drawing: `implementPictureSk` in `js/map-draw
 (`js/map-layers.js`); the pictures are `icons/DrillBody.png`, `DrillHeadstock.png`, `SprayerBoom.png` and
 `SprayerTank.png` (200 px per metre, each one's extent in metres in its draw call). Another user's build drew its
 implements over the rear tyres; these two are a tester's own machines, drawn from their measures and photos
-(24 Nov 2026). Tests: `ToolPictureProfileTests`.
+(24 Nov 2026). A picture is also made for vehicle types (`vehicles` in its row): the drill and the sprayer for a
+tractor; a combine carries only its header, *Grain header* or *Maize header* (`grainHeaderPictureSk`,
+`maizeHeaderPictureSk`: drawn, not pictures, as wide as the tool and in the vehicle's colour, a row unit every 75 cm,
+a feeder house to the combine's body); an articulated tractor pulls big implements, none drawn yet. Tests: `ToolPictureProfileTests`.
 
-**The vehicle's colour on the map** (Vehicle › *Colour on the map*, `VehicleConfig.Color` 0xRRGGBB, `vehicle.color` as hex,
+**The vehicle's colour on the map** (Vehicle › *Machine brand*, `VehicleConfig.Color` 0xRRGGBB, `vehicle.color` as hex,
 saved with the vehicle profile, the Config frame's i32 after the IMU offset; fork only): the body picture of every vehicle
 type has its paint drawn in that colour (`vehicleTintPaint` in `js/map-draw.js`: a colour matrix scaling each picture by
 its own paint grey, `VEH_PAINT_GREY`, so the colour picked is the colour the map shows; AgOpenGPS multiplies its body
