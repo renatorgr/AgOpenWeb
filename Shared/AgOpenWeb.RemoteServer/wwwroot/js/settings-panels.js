@@ -95,6 +95,13 @@ const fusionLabel = w => tr('GPS {gps}% · IMU {imu}%', { gps: Math.round(w * 10
 guardSliderTap(vcFw, null); // first: only its thumb moves it, as the other sliders (cfg-controls.js)
 vcFw.addEventListener('input', () => { document.getElementById('vc-hfw').textContent = fusionLabel(+vcFw.value); cfgSend('gps.headingFusionWeight', vcFw.value); });
 document.getElementById('vc-save').addEventListener('pointerdown', e => { e.stopPropagation(); saveProfile(); });
+// Colour on the map (vehicle.color, 0xRRGGBB hex; fork only): a swatch, or any colour from the picker.
+const vcColor = document.getElementById('vc-color');
+for (const b of vcPanel.querySelectorAll('.vc-swatch')) {
+  b.style.background = '#' + b.dataset.color;
+  b.addEventListener('pointerdown', e => { e.stopPropagation(); cfgSend('vehicle.color', b.dataset.color); });
+}
+vcColor.addEventListener('change', () => { cfgSend('vehicle.color', vcColor.value.slice(1)); vcColor.blur(); });
 // Zero Now captures the current roll as the offset, like AgOpenGPS Zero Roll and
 // Tools › Roll Correction; it used to clear the offset (that's Remove Offset, #111).
 document.getElementById('vc-rollzero').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); transport.send('roll.zeroCalibrate'); });
@@ -122,6 +129,14 @@ function populateVehicleCfg(force) {
   setImg('vc-img-antside', ['AntennaTractorTop', 'AntennaHarvesterTop', 'AntennaArticulatedTop']);
   setImg('vc-img-antoffset', ['AntennaTractorOffset', 'AntennaHarvesterOffset', 'AntennaArticulatedOffset']);
   vcHitchSel.value = cfgGet('vehicle.hitchType');
+  const col = typeof cfgGet('vehicle.color') === 'number' ? cfgGet('vehicle.color') & 0xFFFFFF : 0xFFFFFF;
+  let swatch = false;
+  for (const b of vcPanel.querySelectorAll('.vc-swatch')) {
+    const on = parseInt(b.dataset.color, 16) === col;
+    b.classList.toggle('active', on); swatch = swatch || on;
+  }
+  vcColor.classList.toggle('active', !swatch);
+  if (document.activeElement !== vcColor) vcColor.value = hex6(col);
   // The front 3-point hitch is asked for only with a front-mounted tool (type 0).
   const front = cfgGet('tool.type') === 0;
   for (const el of vcPanel.querySelectorAll('[data-vshow="front"]')) el.hidden = !front;

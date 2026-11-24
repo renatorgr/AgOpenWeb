@@ -427,6 +427,13 @@ where it works (`implementStrip`). Drawing: `implementPictureSk` in `js/map-draw
 implements over the rear tyres; these two are a tester's own machines, drawn from their measures and photos
 (24 Nov 2026). Tests: `ToolPictureProfileTests`.
 
+**The vehicle's colour on the map** (Vehicle › *Colour on the map*, `VehicleConfig.Color` 0xRRGGBB, `vehicle.color` as hex,
+saved with the vehicle profile, the Config frame's i32 after the IMU offset; fork only): the body picture of every vehicle
+type is drawn multiplied by it (`vehicleTintPaint` in `js/map-draw.js`, a Modulate colour filter), as AgOpenGPS draws its
+body texture in `setDisplay_colorVehicle`; white, the default, leaves the picture as it is, and the wheels are not
+tinted. Six swatches and a picker (`.vc-swatch`, `#vc-color` in `js/settings-panels.js`). A tester's three tractors are
+red (24 Nov 2026). Tests: `VehicleColorProfileTests`.
+
 ## Technology Stack
 
 - **.NET 10.0** - Target framework
