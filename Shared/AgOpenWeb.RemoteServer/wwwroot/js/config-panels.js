@@ -14,6 +14,8 @@ wireTabStrip(tcPanel, 'tc-top');
 wireTabStrip(tcPanel, 'tc-sub');
 wireTabStrip(tcPanel, 'tc-mac');
 tcHitchSel.addEventListener('change', () => cfgSend('tool.hitchType', tcHitchSel.value));
+// The picture list is rebuilt for the tool type unless it has the focus (open): give it back once picked.
+document.getElementById('tc-picsel').addEventListener('change', e => e.target.blur());
 tcSingleColor.addEventListener('change', () => cfgSend('tool.singleCoverageColor', tcSingleColor.value.slice(1)));
 document.getElementById('tc-resetpins').addEventListener('pointerdown', e => { e.stopPropagation(); cfgSend('machine.resetPins', '1'); });
 document.getElementById('tc-save').addEventListener('pointerdown', e => { e.stopPropagation(); saveProfile(); });
@@ -57,13 +59,21 @@ function populateToolCfg(force) {
   // Conditional visibility by tool type (0 front, 1 rear, 2 TBT, 3 trailing).
   const trailing = t.type === 3, tbt = t.type === 2, trailtbt = trailing || tbt;
   tcShow('rigid', !trailtbt); tcShow('trailtbt', trailtbt); tcShow('tbt', tbt); tcShow('notrailtbt', !trailtbt);
-  // The implement's picture on the map (fork only): each one is made for one tool type.
-  tcShow('pic-drill', trailing); tcShow('pic-sprayer', t.type === 0);
-  document.getElementById('tc-pichint').textContent = trailing
-    ? tr('Seed drill: the headstock on the lower links, the drill turning about the drawbar pin (Vehicle hitch), drawn to scale.')
-    : t.type === 0
-      ? tr('Front sprayer: the boom at the working point, its tank on the rear lower links (Vehicle rear 3-point hitch), drawn to scale.')
-      : tr('No picture for this tool type yet: the map shows the section bars.');
+  // The implement's picture on the map (fork only): the list holds the pictures made for this tool type.
+  const picSel = document.getElementById('tc-picsel');
+  if (document.activeElement !== picSel) {
+    const pics = IMPLEMENT_PICTURES.filter(q => q.type === t.type), picNow = t.picture | 0;
+    picSel.replaceChildren(...[{ id: 0, name: () => tr('Sections only') }].concat(pics).map(q => {
+      const o = document.createElement('option'); o.value = q.id; o.textContent = q.name(); return o;
+    }));
+    picSel.value = String(picNow);
+    const cur = IMPLEMENT_PICTURES.find(q => q.id === picNow);
+    document.getElementById('tc-pichint').textContent = cur && cur.type !== t.type
+      ? tr('The picture chosen is for another tool type: the map shows the section bars.')
+      : !pics.length ? tr('No picture for this tool type yet: the map shows the section bars.')
+      : cur ? cur.hint()
+      : tr('Pick the implement to see it on the map, drawn to scale at its hitch points.');
+  }
   // A fixed tool hangs on the tractor's 3-point hitch (the vehicle's): the sum says where its
   // working point is from the rear axle (#547).
   if (!trailtbt) {
