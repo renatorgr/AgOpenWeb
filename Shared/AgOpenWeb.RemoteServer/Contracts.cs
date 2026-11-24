@@ -513,7 +513,9 @@ public record ToolConfigDto(
     double SlowSpeedCutoff, double CoverageMargin,
     bool IsWorkSwitchEnabled, bool IsWorkSwitchActiveLow, bool IsWorkSwitchManualSections,
     bool IsSteerSwitchEnabled, bool IsSteerSwitchManualSections,
-    double TotalWidth);
+    double TotalWidth,
+    // The implement's picture on the map (ToolPicture: 0 none, 1 seed drill, 2 front sprayer); fork only.
+    int Picture = 0);
 
 /// <summary>U-Turn tab (ConfigStore.Guidance). Style: 0 Omega, 1 Sagitta.</summary>
 /// <param name="GoAroundRadius">The tightest a pass bends round a Go around obstacle, m.</param>

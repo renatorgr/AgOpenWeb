@@ -57,6 +57,13 @@ function populateToolCfg(force) {
   // Conditional visibility by tool type (0 front, 1 rear, 2 TBT, 3 trailing).
   const trailing = t.type === 3, tbt = t.type === 2, trailtbt = trailing || tbt;
   tcShow('rigid', !trailtbt); tcShow('trailtbt', trailtbt); tcShow('tbt', tbt); tcShow('notrailtbt', !trailtbt);
+  // The implement's picture on the map (fork only): each one is made for one tool type.
+  tcShow('pic-drill', trailing); tcShow('pic-sprayer', t.type === 0);
+  document.getElementById('tc-pichint').textContent = trailing
+    ? tr('Seed drill: the headstock on the lower links, the drill turning about the drawbar pin (Vehicle hitch), drawn to scale.')
+    : t.type === 0
+      ? tr('Front sprayer: the boom at the working point, its tank on the rear lower links (Vehicle rear 3-point hitch), drawn to scale.')
+      : tr('No picture for this tool type yet: the map shows the section bars.');
   // A fixed tool hangs on the tractor's 3-point hitch (the vehicle's): the sum says where its
   // working point is from the rear axle (#547).
   if (!trailtbt) {
