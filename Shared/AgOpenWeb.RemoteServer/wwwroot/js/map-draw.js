@@ -1752,7 +1752,8 @@ function rakeTwinCentrePictureSk(canvas, tl, veh) {
 // A trailed rotary rake with two rotors one behind the other, side delivery: from the pin (Vehicle hitch) a beam
 // back and out to the right, the front rotor on the left of the tool's width and the rear one on the right, each
 // half of it, both turning anticlockwise: the front one hands its hay to the rear one, which lays the swath on its
-// right behind the curtain. The two rotors' middle on the working line, the transport wheels between them.
+// right behind the curtain. The two rotors' middle on the working line, the wheels on the beam at Trailing hitch,
+// held between the rotors.
 function rakeTwinSidePictureSk(canvas, tl, veh) {
   const p = renderPose();
   if (!p || !implToolPose()) return null;
@@ -1760,8 +1761,9 @@ function rakeTwinSidePictureSk(canvas, tl, veh) {
   if (!implTrailFrame(canvas, tl)) return null;
   const W = Math.max(3, tl.totalWidth || 6.5), r = W / 4 + 0.15, cx = implSectionsMiddle(tl), d = r * 0.85;
   const yc = tl.trailingHitchLength + tl.trailingToolToPivotLength;
-  const f = [cx - W / 2 + r, yc - d], b = [cx + W / 2 - r, yc + d], m = [(f[0] + b[0]) / 2, yc];
-  for (const s of [-1, 1]) iTyre(canvas, m[0] + s * 0.45, m[1], 0.26, 0.66, IC.rim);              // the transport wheels
+  const f = [cx - W / 2 + r, yc - d], b = [cx + W / 2 - r, yc + d];
+  const my = Math.max(f[1] + 0.4, Math.min(b[1] - 0.4, tl.trailingHitchLength)), m = [f[0] + (b[0] - f[0]) * (my - f[1]) / (b[1] - f[1]), my];
+  for (const s of [-1, 1]) iTyre(canvas, m[0] + s * 0.45, m[1], 0.26, 0.66, IC.rim);              // the wheels
   iRakeRotor(canvas, f[0], f[1], r, -1);
   iRakeRotor(canvas, b[0], b[1], r, -1);
   iRakeGuard(canvas, f[0], f[1], r, 0.6 * Math.PI, 1.45 * Math.PI);
