@@ -138,7 +138,7 @@ Most of these have been offered to the official project too. When one is merged 
 
 - 4.5 m ahead: 0.2 m on a 50 m bend, 0.5 m on a 20 m bend, 1.3 m on an 8 m bend. That left gaps on the inside and overlaps on the outside.
 - Now, with a front-fixed implement, the tractor steers a little inside each bend so the implement runs on the line. Never tighter than the tractor can turn.
-- Checked by replaying a simulator drive, then used in the field on a tractor with an 8 m front boom.
+- Checked by replaying a simulator drive, then used in the field on a tractor with an 8 m front boom. It can still be improved.
 
 ### Fields
 
@@ -175,13 +175,13 @@ Flags, recorded paths and the worked area stay where the GPS put them.
 - When RTK is back, the line goes back to the true position slowly, with no pull on the steering.
 - The fix label shows how much is held ("GPS Fix, held 0.9 m").
 - Vehicle › GPS › "Hold the line when RTK is lost", on by default.
-- Not tried on a tractor yet.
+- Tried on a tractor with RTK cut on purpose (18 Nov 2026): the tractor stayed on its pass.
 
 **Steer Wizard: tuning the wheels.** A new step after the Ackermann circle finds Minimum To Move, Max Limit and Proportional Gain by itself.
 
 - It first checks that the stop works, then moves the wheels a few degrees while the tractor stands still.
 - Nothing changes until "Use these values" is pressed.
-- So far it has only been tested on a simulated steering: not on a tractor yet.
+- Run on a tractor on 17 and 18 Nov 2026, standing still and at walking pace. The Max Limit rules came from those runs.
 
 **Tuning on the line.** AutoSteer page › Full › "Tune on Line".
 
