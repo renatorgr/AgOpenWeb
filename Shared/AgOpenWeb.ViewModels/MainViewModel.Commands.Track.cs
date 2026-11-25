@@ -1805,9 +1805,9 @@ public partial class MainViewModel
     /// Cycle Lines forward (+1) or back (−1), as AgOpenGPS btnCycleLines / btnCycleLinesBk:
     /// the next visible track, auto track off (a track picked by hand wins), and AutoSteer
     /// and auto U-turn off when the track changes, so the vehicle doesn't swing onto the
-    /// new line by itself (#336). Onto a closed track the closed track itself turns U-turns off
-    /// and remembers them, so an open track after it gives them back, as when it is picked from
-    /// the list (<see cref="TurnYouTurnsBackOnAfterClosedTrack"/>; fork only).
+    /// new line by itself (#336). Onto a closed track U-turns go off as the closed track turns
+    /// them off, remembered, so an open track after it gives them back, as when it is picked from
+    /// the list (<see cref="TurnYouTurnsOffForClosedTrack"/>, <see cref="TurnYouTurnsBackOnAfterClosedTrack"/>; fork only).
     /// </summary>
     private void CycleTrack(int step)
     {
@@ -1837,11 +1837,14 @@ public partial class MainViewModel
             LogAutoSteerOff("track changed");
             ReportFailure("Guidance stopped: track changed");
         }
-        // A closed track turns U-turns off itself and remembers they were on, so the next open
-        // track gives them back (#319). Turned off here first, the closed track found them off
-        // and they stayed off: Eucaliptal in the simulator (25 Nov 2026), the AB line, the
-        // Boundary Curve and the AB line again by this button, U-turns off at the end.
-        if (!next.IsClosed)
+        // Onto a closed track U-turns go off as the closed track turns them off, remembering
+        // they were on, so the next open track gives them back (#319). Turned off here as a
+        // plain track change, the closed track found them off and they stayed off: Eucaliptal
+        // in the simulator (25 Nov 2026), the AB line, the Boundary Curve and the AB line again
+        // by this button, U-turns off at the end. Done before the track changes, as before.
+        if (next.IsClosed)
+            TurnYouTurnsOffForClosedTrack();
+        else
             SwitchYouTurn(false, "track changed");
 
         SelectedTrack = next;

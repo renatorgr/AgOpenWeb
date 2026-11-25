@@ -2588,10 +2588,7 @@ public partial class MainViewModel : ObservableObject
                 // No U-turns on a closed/polygon track — turn the toggle off and
                 // refresh the dependent UI (button visibility) (#421).
                 if (IsActiveTrackClosed)
-                {
-                    if (IsYouTurnEnabled) _youTurnsOnBeforeClosedTrack = true;
-                    SwitchYouTurn(false, "closed track chosen");
-                }
+                    TurnYouTurnsOffForClosedTrack();
                 else
                     TurnYouTurnsBackOnAfterClosedTrack(value);
                 OnPropertyChanged(nameof(IsActiveTrackClosed));

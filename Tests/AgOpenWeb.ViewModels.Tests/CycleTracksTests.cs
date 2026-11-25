@@ -116,7 +116,10 @@ public class CycleTracksTests
 
         // Back and forth again, as in the test: every time back on the AB line they are on.
         vm.CycleABLinesBackCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("Boundary Curve"));
+        Assert.That(vm.IsYouTurnEnabled, Is.False);
         vm.CycleABLinesBackCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("A+ 15:45"));
         Assert.That(vm.IsYouTurnEnabled, Is.True);
     }
 
@@ -127,7 +130,9 @@ public class CycleTracksTests
         vm.ActivateTrackAt(0);
 
         vm.CycleABLinesCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("Boundary Curve"));
         vm.CycleABLinesCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("A"));
 
         Assert.That(vm.IsYouTurnEnabled, Is.False);
     }
@@ -139,12 +144,15 @@ public class CycleTracksTests
         vm.ActivateTrackAt(0);
         vm.IsYouTurnEnabled = true;
 
-        vm.CycleABLinesCommand!.Execute(null); // the closed track
-        vm.CycleABLinesCommand!.Execute(null); // B: U-turns back, as after a pick from the list
-        Assert.That(vm.IsYouTurnEnabled, Is.True);
+        vm.CycleABLinesCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("Boundary Curve"));
+        vm.CycleABLinesCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("B"));
+        Assert.That(vm.IsYouTurnEnabled, Is.True, "back, as after a pick from the list");
 
-        vm.CycleABLinesCommand!.Execute(null); // A, open to open: off, as AgOpenGPS
-        Assert.That(vm.IsYouTurnEnabled, Is.False);
+        vm.CycleABLinesCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("A"));
+        Assert.That(vm.IsYouTurnEnabled, Is.False, "open to open: off, as AgOpenGPS");
     }
 
     [Test]

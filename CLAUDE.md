@@ -883,9 +883,10 @@ turns from the on-screen buttons) with paths built by `YouTurnCreationService`:
   line in the log, and four AutoSteer stops read as no room to turn. A closed track turns them off (#421); an open track
   chosen after it turns them back on, with a toast, when they were on before it (`TurnYouTurnsBackOnAfterClosedTrack`),
   unless the U-turn button was pressed or guidance stopped (no track) in between; the cycle button still turns them off
-  when they are on and it goes to another open track, as AgOpenGPS, and going to a closed track leaves that to the
-  closed track, so the way back by the same button gives them back too (it turned them off first, the closed track
-  found them off, and they stayed off: hand test 55, 25 Nov 2026). They stayed off: on Eucaliptal (22 Nov 2026) the AB
+  when they are on and it goes to another open track, as AgOpenGPS, and going to a closed track turns them off as the
+  closed track does, remembered (`TurnYouTurnsOffForClosedTrack`), so the way back by the same button gives them back
+  too (it turned them off as a plain track change, the closed track found them off, and they stayed off: hand test 55,
+  25 Nov 2026). They stayed off: on Eucaliptal (22 Nov 2026) the AB
   line chosen again after the Boundary Curve stopped AutoSteer twice at the end of the pass. Tests:
   `YouTurnSwitchLogTests`, `CycleTracksTests`. Fork only.
 - A turn planned for the end the tractor was heading to is dropped when the tractor turns round on the pass (by hand, or the simulator's turn-around), and the turn at the end ahead is planned (TURNED ROUND in `YouTurnStateMachine.Tick`, `_plannedSameWay`; AgOpenGPS drops a created turn once the pivot leaves the turn area without it, `ResetCreatedYouTurn`). Kept, the headland stop and the fence guard below took it for a turn planned at the other end and left AutoSteer on (Tapada da Casa, simulator). Fork only.
