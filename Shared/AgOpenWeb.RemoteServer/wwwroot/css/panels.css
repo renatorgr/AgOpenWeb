@@ -595,6 +595,10 @@ input.as-valbox { width: 80px; box-sizing: content-box; }
    half: the eighth box lay over the labels of the column beside it. */
 #tc-sectionwidths, #tc-zoneends, #tc-sectioncolors { grid-template-columns: repeat(8, minmax(0, 58px)); justify-content: start; }
 #tc-sectionwidths input, #tc-zoneends input { width: 52px; }
+/* The implement's colour: the button stays level with the list's first line, open or not (the list is 34 px high, the
+   button 32 px: 1 px down, as when centred). */
+#tc-piccolrow .vc-colourrow { align-items: flex-start; }
+#tc-piccolrow .vc-colourrow .cfg-color { margin-top: 1px; }
 .cfg-color { width: 60px; height: 32px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-input); padding: 1px; }
 .tc-pingrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .tc-pingrid .tc-cell { display: flex; flex-direction: column; gap: 2px; }
