@@ -764,6 +764,40 @@ function bodyDualsSk(canvas, spec, hx, yTop, hy) {
   dualTyreSk(canvas, x0, x1, yBack, yFront, true);
   dualTyreSk(canvas, -x1, -x0, yBack, yFront, false);
 }
+// The spacer that joins a pair of dual wheels on their axle, seen from above: a steel bar DUAL_HUB long, at the
+// wheels' middle (y), across the gap and DUAL_HUB_IN into each tyre (x0, x1: the two tyres' facing edges). Drawn
+// over the tyres, so the pair reads as one wheel.
+const DUAL_HUB = 0.24, DUAL_HUB_IN = 0.05;
+function dualHubSk(canvas, x0, x1, y) {
+  if (!SKP.dualHub) {
+    SKP.dualHub = new CK.Paint(); SKP.dualHub.setAntiAlias(true); SKP.dualHub.setColor(CK.Color(138, 143, 150, 1));
+    SKP.dualHubEdge = new CK.Paint(); SKP.dualHubEdge.setAntiAlias(true); SKP.dualHubEdge.setStyle(CK.PaintStyle.Stroke);
+    SKP.dualHubEdge.setStrokeWidth(0.02); SKP.dualHubEdge.setColor(CK.Color(40, 42, 45, 1));
+  }
+  const lo = Math.min(x0, x1) - DUAL_HUB_IN, hi = Math.max(x0, x1) + DUAL_HUB_IN;
+  const r = CK.LTRBRect(lo, y - DUAL_HUB / 2, hi, y + DUAL_HUB / 2);
+  canvas.drawRect(r, SKP.dualHub);
+  canvas.drawRect(r, SKP.dualHubEdge);
+}
+// The spacers of the duals bodyDualsSk draws, after the body picture (its tyre is the inner one).
+function bodyDualHubsSk(canvas, spec, hx, yTop, hy) {
+  const mx = hx / 128, my = hy / 128;
+  const edge = -hx + spec.edge * mx, y = yTop - (spec.y0 + spec.y1) / 2 * my;
+  dualHubSk(canvas, edge - DUAL_GAP, edge, y);
+  dualHubSk(canvas, -edge, -edge + DUAL_GAP, y);
+}
+// The spacers of the articulated pictures' duals: on the line between the two tyres (ART_SINGLE), at their
+// middle row (127 of 256), in the half's own frame as drawVehSprite places it.
+function artDualHubsSk(canvas, cx, cy, hx, hy, rotDeg) {
+  canvas.save();
+  canvas.translate(cx, cy);
+  if (rotDeg) canvas.rotate(rotDeg, 0, 0);
+  const seam = -hx + ART_SINGLE[0] * hx / 128, y = hy - 127 * hy / 128;
+  // Its tyres touch: the spacer as wide as the gap drawn elsewhere, about the line between them.
+  dualHubSk(canvas, seam - DUAL_GAP / 2, seam + DUAL_GAP / 2, y);
+  dualHubSk(canvas, -seam - DUAL_GAP / 2, -seam + DUAL_GAP / 2, y);
+  canvas.restore();
+}
 // drawVehSprite with only the picture's columns c0 to c1 (of 256) drawn, where they are in the whole picture.
 function drawVehSpriteCols(canvas, sk, cx, cy, hx, hy, rotDeg, c0, c1) {
   canvas.save();
@@ -798,6 +832,7 @@ function vehicleBodySk(canvas, p, veh, type) {
     }
     if (vehDualWheels(veh)) bodyDualsSk(canvas, VEH_DUAL.harvester, tw, 1.5 * wb, 1.5 * wb);
     drawVehSprite(canvas, vehicleTinted(harvesterSpr.img, 'harvester') || body, 0, 0, tw, 1.5 * wb, 0);
+    if (vehDualWheels(veh)) bodyDualHubsSk(canvas, VEH_DUAL.harvester, tw, 1.5 * wb, 1.5 * wb);
   } else {
     const front = skSprite(artFrontSpr), rear = skSprite(artRearSpr);
     if (!front || !rear) return false;
@@ -807,6 +842,8 @@ function vehicleBodySk(canvas, p, veh, type) {
     if (vehDualWheels(veh)) {
       drawVehSprite(canvas, rearImg, 0, -wb / 2, tw, 0.65 * wb, steer / 2);
       drawVehSprite(canvas, frontImg, 0, wb / 2, tw, 0.65 * wb, -steer / 2);
+      artDualHubsSk(canvas, 0, -wb / 2, tw, 0.65 * wb, steer / 2);
+      artDualHubsSk(canvas, 0, wb / 2, tw, 0.65 * wb, -steer / 2);
     } else {
       drawVehSpriteCols(canvas, rearImg, 0, -wb / 2, tw, 0.65 * wb, steer / 2, ART_SINGLE[0], ART_SINGLE[1]);
       drawVehSpriteCols(canvas, frontImg, 0, wb / 2, tw, 0.65 * wb, -steer / 2, ART_SINGLE[0], ART_SINGLE[1]);
@@ -864,6 +901,7 @@ function vehicleSk(canvas, p) {
         CK.LTRBRect(-half, -top, half, -bot),
         CK.FilterMode.Linear, CK.MipmapMode.None, null);
       canvas.restore();
+      if (duals) bodyDualHubsSk(canvas, VEH_DUAL.tractor, half, top, bH / 2);
       // Steerable front wheels: one sprite drawn at both front-axle ends, rotated by the
       // live wheel angle (translate ±trackWidth/2, wheelbase −0.05; rotate −steer;
       // scale 1,-1; centred dst).
@@ -882,6 +920,13 @@ function vehicleSk(canvas, p) {
           if (Math.abs(sx) === 2) canvas.translate(Math.sign(sx) * (0.378 + DUAL_GAP), 0);
           canvas.scale(1, -1);
           canvas.drawImageRectOptions(skFrontWheel, wsrc, wdst, CK.FilterMode.Linear, CK.MipmapMode.None, null);
+          canvas.restore();
+        }
+        if (duals === 2) for (const sx of [1, -1]) {
+          canvas.save();
+          canvas.translate(sx * woX, woY);
+          canvas.rotate(steerDeg, 0, 0);
+          dualHubSk(canvas, sx * 0.189, sx * (0.189 + DUAL_GAP), 0); // half FrontTireWidth out, then the gap
           canvas.restore();
         }
       }
