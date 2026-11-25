@@ -110,6 +110,20 @@ function populateToolCfg(force) {
     tcPicColSel.value = IMPLEMENT_COLOURS.some(([v]) => parseInt(v, 16) === pcol) ? hex6(pcol).slice(1) : '';
   }
   if (document.activeElement !== tcPicCol) tcPicCol.value = hex6(pcol);
+  // How the painted area looks (fork only): the list is filled by populateCfgControls (tool.paintedArea); the note
+  // names the work, or says why the painted area keeps the plain colour (as coverageWork decides), the list hidden
+  // when it can't change anything.
+  const picFits = !!picRow && picRow.type === t.type && picRow.vehicles.includes(cfgGet('vehicle.type') | 0);
+  const work = picFits && picRow.work, look = t.paintedArea | 0;
+  document.getElementById('tc-paintsel').hidden = !work;
+  document.getElementById('tc-painthint').textContent = picRow && !picFits
+    ? tr('The picture chosen is for another tool or vehicle type: the painted area keeps the plain colour.')
+    : !work ? tr('No texture for this implement yet: the painted area keeps the plain colour.')
+    : look === 2 ? tr('The colour chosen under Sections, as without a picture.')
+    : drawnByCpu() ? tr('This screen draws the map without a graphics card: the painted area keeps the plain colour here.')
+    : covWorkFx === null ? tr('This screen could not make the texture: the painted area keeps the plain colour here.')
+    : look === 1 ? tr('The colour chosen under Sections, with the pattern of the work ({work}) over it.', { work: workName(work) })
+    : tr('Texture: {work}. It lies along the passes of the line in use (on a curve, along its general direction).', { work: workName(work) });
   // A fixed tool hangs on the tractor's 3-point hitch (the vehicle's): the sum says where its
   // working point is from the rear axle (#547).
   if (!trailtbt) {

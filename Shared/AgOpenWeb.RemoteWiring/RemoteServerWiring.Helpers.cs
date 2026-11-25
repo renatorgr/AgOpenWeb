@@ -174,6 +174,10 @@ public static partial class RemoteServerWiring
             case "tool.pictureColor":
                 if (int.TryParse(val, System.Globalization.NumberStyles.HexNumber, inv, out var pcol) && val.Length <= 6) tool.PictureColor = pcol;
                 return;
+            // How the painted area looks with a picture: 0 the work's texture, 1 the colour with its pattern, 2 the plain
+            // colour (PaintedAreaLook; fork only).
+            case "tool.paintedArea": if (I(out var look) && System.Enum.IsDefined(typeof(AgOpenWeb.Models.Configuration.PaintedAreaLook), look))
+                    tool.PaintedArea = (AgOpenWeb.Models.Configuration.PaintedAreaLook)look; return;
             case "tool.workingPointFromHitch": if (D(out var t1)) tool.WorkingPointFromHitch = t1; return;
             case "tool.trailingHitchLength": if (D(out var t2)) tool.TrailingHitchLength = t2; return;
             case "tool.tankTrailingHitchLength": if (D(out var t3)) tool.TankTrailingHitchLength = t3; return;

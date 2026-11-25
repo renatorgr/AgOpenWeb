@@ -111,6 +111,7 @@ public class ToolProfileService : IToolProfileService
         store.Tool.Offset = 0.0;
         store.Tool.Picture = Models.Configuration.ToolPicture.None;
         store.Tool.PictureColor = Models.Configuration.ToolConfig.DefaultPictureColor;
+        store.Tool.PaintedArea = Models.Configuration.PaintedAreaLook.WorkTexture;
         store.Tool.WorkingPointFromHitch = 0.0;
         store.Tool.TrailingHitchLength = 2.5;
         store.Tool.TankTrailingHitchLength = 3.0;

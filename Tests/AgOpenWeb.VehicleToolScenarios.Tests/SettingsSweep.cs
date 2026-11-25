@@ -226,6 +226,7 @@ public static class SettingsSweep
         new("vehicle.hitchType", "", "", Probe.None, Effect.None, "ISOBUS connector type (the ISOBUS harness)"),
         new("tool.picture", "", "", Probe.None, Effect.None, "the implement's picture on the map: drawing only"),
         new("tool.pictureColor", "", "", Probe.None, Effect.None, "the implement's colour on the map: drawing only"),
+        new("tool.paintedArea", "", "", Probe.None, Effect.None, "the painted area's texture on the map: drawing only"),
         new("vehicle.color", "", "", Probe.None, Effect.None, "the vehicle's colour on the map: drawing only"),
         new("vehicle.dualWheels", "", "", Probe.None, Effect.None, "dual wheels on the map: drawing only"),
     };

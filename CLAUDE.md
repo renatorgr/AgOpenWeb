@@ -530,6 +530,25 @@ the list. The list is plain colours by name, no maker's name (`IMPLEMENT_COLOURS
 for any other. A new tool profile, one saved without a colour and one saved with the old "own colours" (-1) have red: no
 "own colours", as implements are not one colour (a tester, 25 Nov 2026). Tests: `ToolPictureProfileTests`.
 
+**The painted area's texture** (Tool › Type › *Painted area*, shown with a picture chosen; `ToolConfig.PaintedArea`,
+`PaintedAreaLook`: the work's texture (the default), the coverage colour with the work's pattern, or the plain colour;
+`tool.paintedArea`, saved with the tool profile, the Config frame's i32 after the picture's colour; fork only): each
+picture's row names the work it does (`work` in `IMPLEMENT_PICTURES`: ploughed, harrowed, rolled, seeded, planted,
+sprayed, fertiliser, manure, mown, raked; none for a combine's header), and the painted area is drawn with that work's
+texture. `js/work-textures.js` makes the tile on a canvas once per work and pass width (the tool's width less the
+overlap): a pass wide (two for rolled) and 4 m along, its furrows, rows, tramline and swath fitted to the pass so tiles
+meet without a seam. `drawCoverageWorkSk` (`js/map-layers.js`) draws the coverage image through an SkSL RuntimeEffect
+with two children, the coverage (its alpha; its colour for the pattern) and the tile (Repeat, mipmapped: zoomed out the
+field fades to the work's mean colour), laid along the passes of the line in use (`scene.toolPass`; on a curve from its
+first point to its furthest, so the pattern keeps one direction), its edge on a pass edge. The crisp edge stroked along
+each side of a pass (`drawCoverageEdgeSk`, 0.6 m) carries the same tile, taken to the screen by the ground's projection
+(perspM's x, y and w rows): in a plain colour it hid the texture on more than half of a 2 m pass. A screen that draws the
+map on the CPU (`drawnByCpu` in `js/alerts.js`: no WebGL context, or llvmpipe, SwiftShader...) keeps the plain colour:
+on SwiftShader the texture cost a fifth of the frame rate with the painted area filling the screen (20 to 16 fps on
+Tapada da Casa, the whole field the same), on a GPU it is two lookups a pixel. The texture is the tool's now, for the
+whole job (a job is one work). Asked by the tester (25 Nov 2026) after the ploughs' pictures. Tests:
+`ToolPictureProfileTests`, `ImplementPictureListTests` (every work a texture, every texture a work).
+
 ## Technology Stack
 
 - **.NET 10.0** - Target framework

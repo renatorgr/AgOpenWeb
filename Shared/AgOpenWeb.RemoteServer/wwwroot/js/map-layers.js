@@ -216,6 +216,7 @@ function reanchorCoverage(init) {
 }
 
 function drawCoverageSk(canvas) {
+  covEdgeWork = null;
   if (!cov) return;
   // Only rasterize batches that have aged past RENDER_DELAY, so coverage lands on the same
   // playback timeline as the render-delayed tool (see onCoverageCells). pending is FIFO in
@@ -288,10 +289,119 @@ function drawCoverageSk(canvas) {
   const cs = cov.cellSize;
   const minE = cov.originE, minN = cov.originN;
   const maxE = cov.originE + cov.width * cs, maxN = cov.originN + cov.height * cs;
+  if (drawCoverageWorkSk(canvas, minE, minN, maxE, maxN)) return;
   // Bilinear (Linear), mip-free: smooths the cell-grid stair-step at the worked-area edge
   // without the per-update mip-regen cost. The surface is cleared to premultiplied
   // TRANSPARENT, so the boundary fades cleanly to transparent (no dark fringe).
   drawImageWorldSk(canvas, cov.skImg, minE, minN, maxE, maxN, CK.FilterMode.Linear, CK.MipmapMode.None);
+}
+
+// ---- The painted area's texture (Tool > Type > Painted area; fork only) ----
+// With an implement's picture chosen, the painted area is drawn with the texture of its work (js/work-textures.js:
+// furrows, seed rows, the swath...) instead of one plain colour, or with the coverage colour and the work's pattern
+// over it. One draw as before: a shader reads the coverage image for where it is painted (and its colour) and the
+// work's tile, repeated over the field, for what it looks like. The tile lies along the passes of the line in use,
+// one pass wide, its left edge on a pass's edge, so the swath or the windrow sits in each pass. On a curve the passes
+// bend and the tile does not: it lies along the curve's general direction (its first point to its furthest).
+// Zoomed out the tile's mipmaps take it to its mean colour.
+const PAINTED_AREA = { work: 0, colourWithPattern: 1, plain: 2 }; // ToolConfig.PaintedArea (PaintedAreaLook)
+let covWorkFx, covWorkPaint = null, covWorkFrame = null, _covWorkPass = null, _covWorkTrack;
+const COV_WORK_SKSL = `
+uniform shader cov;
+uniform shader tex;
+uniform float mode;
+uniform float luma;
+half4 main(float2 p) {
+  half4 c = cov.eval(p);
+  if (c.a <= 0.0) { return half4(0.0); }
+  half4 t = tex.eval(p);
+  if (mode < 0.5) { return half4(t.rgb * c.a, c.a); }
+  half l = dot(t.rgb, half3(0.3, 0.59, 0.11)) / half(luma);
+  return half4(clamp(c.rgb / c.a * (0.35 + 0.65 * l), 0.0, 1.0) * c.a, c.a);
+}`;
+// The work the painted area shows and how, or null for the plain colour: { tex (the tile), mode }.
+function coverageWork() {
+  const tl = config && config.tool, veh = config && config.vehicle;
+  if (!tl || !veh || (tl.paintedArea | 0) === PAINTED_AREA.plain || drawnByCpu()) return null;
+  // As the picture: only with the tool and vehicle type it is made for.
+  const pic = IMPLEMENT_PICTURES.find(q => q.id === (tl.picture | 0));
+  if (!pic || !pic.work || pic.type !== (tl.type | 0) || !pic.vehicles.includes(veh.type | 0)) return null;
+  const tex = workTile(pic.work, toolWidthM() - (tl.overlap || 0));
+  return tex ? { tex, mode: (tl.paintedArea | 0) === PAINTED_AREA.colourWithPattern ? 1 : 0 } : null;
+}
+// Where the passes lie: a point on a pass's centre line and their direction (a unit vector), from the pass the tool
+// runs on (the Scene's toolPass); the last one kept while no line is in use. The direction is always the one
+// pointing north (or east), so a pass driven either way gives the same tile. The point is moved a whole number of
+// passes to the pass nearest the line's reference (the active track's first point), so it is the same whatever pass
+// is in use: a tile two passes wide (rolled) swapped the shades of every pass painted when the line moved a pass over.
+function coverageWorkFrame() {
+  const tp = scene && scene.toolPass, name = tick && tick.activeTrackName;
+  if (tp && tp.length >= 2 && (tp !== _covWorkPass || name !== _covWorkTrack)) {
+    _covWorkPass = tp; _covWorkTrack = name;
+    const a = tp[0];
+    let b = tp[tp.length - 1];
+    if (tp.length > 2) { let far = -1; for (const q of tp) { const d = (q.e - a.e) ** 2 + (q.n - a.n) ** 2; if (d > far) { far = d; b = q; } } }
+    let dE = b.e - a.e, dN = b.n - a.n;
+    const L = Math.hypot(dE, dN);
+    if (L > 0.5) {
+      dE /= L; dN /= L;
+      if (dN < -1e-9 || (Math.abs(dN) <= 1e-9 && dE < 0)) { dE = -dE; dN = -dN; }
+      let e = a.e, n = a.n;
+      const ref = name && scene.tracks && scene.tracks.find(t => t.name === name);
+      const pw = toolWidthM() - ((config && config.tool && config.tool.overlap) || 0);
+      if (ref && ref.points.length && pw > 0.05) {
+        const r = ref.points[0], k = Math.round(((r.e - e) * dN - (r.n - n) * dE) / pw);
+        if (Number.isFinite(k)) { e += k * pw * dN; n -= k * pw * dE; }
+      }
+      covWorkFrame = { e, n, dE, dN };
+    }
+  }
+  return covWorkFrame || { e: 0, n: 0, dE: 0, dN: 1 };
+}
+// The crisp edge over a texture (drawCoverageEdgeSk): the tile laid on the ground as the painted area's (world
+// coordinates less the camera's), the look and the tile; null with the plain colour. Its 0.6 m stroke along each side
+// of a pass was a flat colour and hid the texture on more than half of a 2 m pass.
+let covEdgeWork = null;
+function drawCoverageWorkSk(canvas, minE, minN, maxE, maxN) {
+  covEdgeWork = null;
+  const look = coverageWork();
+  if (!look) return false;
+  if (covWorkFx === undefined) {
+    try { covWorkFx = CK.RuntimeEffect.Make(COV_WORK_SKSL); } catch (e) { covWorkFx = null; }
+    if (!covWorkFx) console.warn('painted area texture: no shader, plain colour');
+  }
+  if (!covWorkFx) return false;
+  const t = look.tex;
+  if (!t.skImg) t.skImg = CK.MakeImageFromCanvasImageSource(t.canvas);
+  if (!t.skImg) return false;
+  const img = cov.skImg, w = img.width(), h = img.height(), cs = cov.cellSize;
+  // The tile in the coverage image's pixels (x east, y south from its top-left corner): tile pixel (i, j) is i/ppm m
+  // across the passes (n, to the right of the direction d) from a pass's left edge, j/ppm m along them.
+  const f = coverageWorkFrame(), W = t.width, H = WORK_TILE_M, ppm = t.canvas.width / W;
+  const nE = f.dN, nN = -f.dE;                       // right of the direction
+  const pw = toolWidthM() - (config.tool.overlap || 0);
+  // The tile's corner nearest the camera (whole tiles from the pass's left edge), so the numbers stay small.
+  const e0 = f.e - nE * pw / 2, n0 = f.n - nN * pw / 2;
+  const across = (camE - e0) * nE + (camN - n0) * nN, along = (camE - e0) * f.dE + (camN - n0) * f.dN;
+  const k = Math.floor(across / W), j = Math.floor(along / H);
+  const oE = e0 + k * W * nE + j * H * f.dE, oN = n0 + k * W * nN + j * H * f.dN;
+  const s = 1 / (ppm * cs);
+  const lm = [nE * s, f.dE * s, (oE - minE) / cs, -nN * s, -f.dN * s, (maxN - oN) / cs, 0, 0, 1];
+  const covSh = img.makeShaderOptions(CK.TileMode.Decal, CK.TileMode.Decal, CK.FilterMode.Linear, CK.MipmapMode.None);
+  const texSh = t.skImg.makeShaderOptions(CK.TileMode.Repeat, CK.TileMode.Repeat, CK.FilterMode.Linear, CK.MipmapMode.Linear, lm);
+  const sh = covWorkFx.makeShaderWithChildren([look.mode, t.luma], [covSh, texSh]);
+  covSh.delete(); texSh.delete();
+  if (!covWorkPaint) { covWorkPaint = new CK.Paint(); covWorkPaint.setAntiAlias(false); }
+  covWorkPaint.setShader(sh);
+  canvas.save();
+  canvas.concat(perspM);
+  canvas.concat([(maxE - minE) / w, 0, minE - camE, 0, -(maxN - minN) / h, maxN - camN, 0, 0, 1]);
+  canvas.drawRect(CK.LTRBRect(0, 0, w, h), covWorkPaint);
+  canvas.restore();
+  covWorkPaint.setShader(null); sh.delete();
+  covEdgeWork = { mode: look.mode, luma: t.luma, img: t.skImg,
+                  lm: [nE / ppm, f.dE / ppm, oE - camE, nN / ppm, f.dN / ppm, oN - camN, 0, 0, 1] };
+  return true;
 }
 // Crisp worked-area edge — the server-fed vector perimeter (only segments that don't adjoin
 // another pass), stroked in the coverage colour over the raster so the soft alpha-AA feather
@@ -309,6 +419,19 @@ function drawCoverageEdgeSk(canvas) {
   })());
   const c = covEdgeRgb;
   p.setColor(CK.Color((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, 1));
+  // Over a texture the stroke is the same texture (fork only): the tile's place on the ground taken to the screen by
+  // the ground's projection (perspM's x, y and w rows on a point of the ground), as the painted area under it.
+  let edgeSh = null;
+  if (covEdgeWork && covWorkFx) {
+    const M = perspM, w = covEdgeWork.lm, H = [M[0], M[1], M[3], M[4], M[5], M[7], M[12], M[13], M[15]];
+    const lm = new Array(9);
+    for (let r = 0; r < 3; r++) for (let k = 0; k < 3; k++) lm[r * 3 + k] = H[r * 3] * w[k] + H[r * 3 + 1] * w[3 + k] + H[r * 3 + 2] * w[6 + k];
+    const tex = covEdgeWork.img.makeShaderOptions(CK.TileMode.Repeat, CK.TileMode.Repeat, CK.FilterMode.Linear, CK.MipmapMode.Linear, lm);
+    const col = CK.Shader.MakeColor(CK.Color((c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, 1), CK.ColorSpace.SRGB);
+    edgeSh = covWorkFx.makeShaderWithChildren([covEdgeWork.mode, covEdgeWork.luma], [col, tex]);
+    tex.delete(); col.delete();
+    p.setShader(edgeSh);
+  }
   p.setStrokeWidth(Math.max(1, 0.6 * pxPerM));
   // Per-vertex near-plane gate: a vertex at/behind the near plane (homogeneous w ≤ NEAR)
   // projects through w2s to a huge/flipped coord, so a polyline crossing behind the camera
@@ -329,6 +452,7 @@ function drawCoverageEdgeSk(canvas) {
     }
     flush(cmds);
   }
+  if (edgeSh) { p.setShader(null); edgeSh.delete(); }
 }
 // Tool/section footprint — section bars perpendicular to the (dead-reckoned) tool
 // heading, coloured by ColorCode. Same geometry as the 2D toolFootprint().
