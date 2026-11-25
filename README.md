@@ -68,6 +68,7 @@ Most of these have been offered to the official project too. When one is merged 
   - Where a bay cuts the passes, doing the short piece no longer marks the whole pass done, and the long piece gets its turn from the other end.
 - With the headland on and its sections off, a pass lying only in the headland band is left to the headland laps. It no longer hides the passes still to do (that gave "End of field reached" with crop left).
 - A manual U-turn and AutoSteer joining a pass from the headland count done passes the same way.
+- The number of rows skipped now counts in this mode too: with 3 rows the turn goes four passes over, and the passes left are done on the way back. Before, it always skipped 1 row, so changing the number did nothing.
 - (The turn onto the nearest pass with room is official since #807.)
 
 **Manual U-turn beside a hard boundary.** With the implement already nearer a hard boundary than the U-turn distance (a pass along the fence), the manual U-turn button did nothing, even to turn away from the fence.
