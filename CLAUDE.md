@@ -331,11 +331,15 @@ for 13.24 (Couto da Ribeira, 21 Nov 2026). Tests: `WebSocketHubTests`.
 
 ### A recorded path played back, on the map
 The way from the tractor to a recorded path being played (the Dubins approach, `State.RecordedPath.DubinsApproachPath`
-while `IsFollowingDubinsToPath`) is the Scene's `UTurnPath` (no U-turn is planned while a path plays), and the path in
-use (`RecordedPoints`: picked in the Playback list, reversed, just recorded, played) is the last of its `RecordedPaths`,
-whatever *Rec paths* shows, as AgOpenGPS draws them (`CRecordedPath.DrawDubins`, `DrawRecordedLine`; the same green and
-yellow). The VM gave them only to `IMapService`, which is `NullMapService` on every head, so AutoSteer followed lines
-the map did not show. `SceneProjector`; tests: `RecordedPathOnMapTests` (RemoteServer), `RecordedPathMapStateTests`.
+while `IsFollowingDubinsToPath`) is the Scene's `UTurnPath` (while a path plays no U-turn is planned, and a turn left
+from before Play is not drawn), and the path in use (`RecordedPoints`: picked in the Playback list, reversed, just
+recorded, played) is the last of its `RecordedPaths`, whatever *Rec paths* shows, as AgOpenGPS draws them
+(`CRecordedPath.DrawDubins`, `DrawRecordedLine`; the same green and yellow). The VM gave them only to `IMapService`,
+which is `NullMapService` on every head, so AutoSteer followed lines the map did not show. While a path plays it is the
+route the pipeline was given at Play, so it is not replaced until playback stops: picking another path and starting a
+recording are refused ("Stop the recorded path first", `RefusedWhilePlaying`), and opening the panel no longer reloads
+it from the file (which lost a Reverse), as AgOpenGPS disables Pick and Record while it drives a path
+(`btnPathGoStop_Click`). `SceneProjector`; tests: `RecordedPathOnMapTests` (RemoteServer), `RecordedPathMapStateTests`.
 Fork first, proposed to the official repo (25 Nov 2026).
 
 ### MainViewModel is the control brain
