@@ -761,8 +761,9 @@ function vehTyreBoxes(spec, key) {
   if (!b) return [];
   return spec.one ? [b] : [b, [256 - b[2], b[1], 256 - b[0], b[3]]];
 }
+// The big tyres' tread is needed by every vehicle; the front wheels roll only once their own (treadPaint(TREADS.f)).
 function vehRolling() {
-  return !!(config && config.display && config.display.rollingWheels) && treadPaints();
+  return !!(config && config.display && config.display.rollingWheels) && treadPaint(TREADS.l) && treadPaint(TREADS.r);
 }
 // The treads the rolling tyres are drawn with, each one period (p rows) of a picture's tyre, repeating along the
 // tyre (src: its first column, first row and last column in the picture's own pixels; w = its width): the
@@ -774,22 +775,19 @@ const TREADS = {
   r: { key: 'treadR', spr: () => artRearSpr.ready && artRearSpr.img, src: [215, 100, 254], w: 39, p: 15, ky: 1 },
   f: { key: 'treadF', spr: () => frontWheelReady && frontWheelImg, src: [49, 45, 80], w: 31, p: 5, ky: FW_H / FW_W },
 };
-function treadPaints() {
-  if (SKP.treadF) return true;
-  for (const t of Object.values(TREADS)) {
-    const img = t.spr();
-    if (!img || !img.naturalWidth) return false;
-  }
-  for (const t of Object.values(TREADS)) {
-    const img = t.spr(), cv = document.createElement('canvas');
-    cv.width = t.w; cv.height = t.p;
-    cv.getContext('2d').drawImage(img, t.src[0], t.src[1], t.w, t.p, 0, 0, t.w, t.p);
-    const sk = CK.MakeImageFromCanvasImageSource(cv);
-    const paint = new CK.Paint();
-    paint.setAntiAlias(true);
-    paint.setShader(sk.makeShaderOptions(CK.TileMode.Clamp, CK.TileMode.Repeat, CK.FilterMode.Linear, CK.MipmapMode.None));
-    SKP[t.key] = paint;
-  }
+// The paint of one tread, made once its picture is loaded (false until then).
+function treadPaint(t) {
+  if (SKP[t.key]) return true;
+  const img = t.spr();
+  if (!img || !img.naturalWidth) return false;
+  const cv = document.createElement('canvas');
+  cv.width = t.w; cv.height = t.p;
+  cv.getContext('2d').drawImage(img, t.src[0], t.src[1], t.w, t.p, 0, 0, t.w, t.p);
+  const sk = CK.MakeImageFromCanvasImageSource(cv);
+  const paint = new CK.Paint();
+  paint.setAntiAlias(true);
+  paint.setShader(sk.makeShaderOptions(CK.TileMode.Clamp, CK.TileMode.Repeat, CK.FilterMode.Linear, CK.MipmapMode.None));
+  SKP[t.key] = paint;
   return true;
 }
 // How far each wheel has rolled, in metres (rollDist, by a name per wheel): every frame the vehicle's move since the
@@ -813,6 +811,12 @@ function rollDist(id, x, y, dirDeg) {
   const d = dirDeg * Math.PI / 180, m = rollMove;
   const roll = (m.l + y * m.th) * Math.sin(d) + (m.f - x * m.th) * Math.cos(d);
   return (rollDistance[id] = (rollDistance[id] || 0) + roll);
+}
+// The wheel at (x, y) in a part of the vehicle drawn at at.cx, at.cy and turned at.dir degrees (+right): an
+// articulated half, a steered front wheel; { cx: 0, cy: 0, dir: 0 } is the vehicle frame itself.
+function rollAt(id, x, y, at) {
+  const a = at.dir * Math.PI / 180, s = Math.sin(a), c = Math.cos(a);
+  return rollDist(id, at.cx + x * c + y * s, at.cy - x * s + y * c, at.dir);
 }
 // A rolling tyre from x0 to x1 and from yBack to yFront, a cylinder seen from above: the tread (TREADS) is wrapped
 // round it at the tyre's width (so a bigger tyre has bigger lugs and they pass slower), the part on top moving
@@ -842,13 +846,13 @@ function rollingTyreSk(canvas, x0, x1, yBack, yFront, dist, tread) {
   verts.delete();
 }
 // The rolling tyres under a body picture drawn from x = -hx to hx and from y = yTop (row 0) down to yTop - 2 hy,
-// both sides; the wheels named id + 'l' and id + 'r', at cy + their own y in the vehicle frame, heading dirDeg.
-function bodyTyresSk(canvas, kind, hx, yTop, hy, id, cy, dirDeg) {
+// both sides, in the part at (rollAt: { id, cx, cy, dir }); the wheels named at.id + 'l' and at.id + 'r'.
+function bodyTyresSk(canvas, kind, hx, yTop, hy, at) {
   const t = VEH_TYRES[kind].tyre, mx = hx / 128, my = hy / 128;
   const x0 = -hx + t[0] * mx, x1 = -hx + t[2] * mx, yFront = yTop - t[1] * my, yBack = yTop - t[3] * my;
-  const y = cy + (yFront + yBack) / 2, xc = (x0 + x1) / 2;
-  rollingTyreSk(canvas, x0, x1, yBack, yFront, rollDist(id + 'l', xc, y, dirDeg), TREADS.l);
-  rollingTyreSk(canvas, -x1, -x0, yBack, yFront, rollDist(id + 'r', -xc, y, dirDeg), TREADS.r);
+  const y = (yFront + yBack) / 2, xc = (x0 + x1) / 2;
+  rollingTyreSk(canvas, x0, x1, yBack, yFront, rollAt(at.id + 'l', xc, y, at), TREADS.l);
+  rollingTyreSk(canvas, -x1, -x0, yBack, yFront, rollAt(at.id + 'r', -xc, y, at), TREADS.r);
 }
 // Vehicle > Wheels (vehicle.dualWheels: 0 single, 1 dual on the drive axle, 2 dual on both axles of a tractor;
 // fork only). A second tyre is drawn outside each tyre of the axle, a gap of DUAL_GAP metres out, the soil showing
@@ -895,7 +899,7 @@ function dualSpacerSk(canvas, xa, xb, y) {
 }
 // The dual tyres and their spacers beside a body picture drawn from x = -hx to hx and from y = yTop (row 0) down to
 // yTop - 2 hy. Drawn before the picture, whose tyre is the inner one and covers the spacer's inner end. roll (rolling
-// wheels): { id, cy, dir } as bodyTyresSk, the duals named id + 'l2' and id + 'r2'.
+// wheels): { id, cx, cy, dir } as bodyTyresSk, the duals named id + 'l2' and id + 'r2'.
 function bodyDualsSk(canvas, spec, hx, yTop, hy, roll) {
   const mx = hx / 128, my = hy / 128;
   const edge = -hx + spec.edge * mx, x1 = edge - DUAL_GAP, x0 = x1 - spec.w * mx;
@@ -904,8 +908,8 @@ function bodyDualsSk(canvas, spec, hx, yTop, hy, roll) {
   dualSpacerSk(canvas, -edge, -x1, y);
   if (roll) {
     const xc = (x0 + x1) / 2;
-    rollingTyreSk(canvas, x0, x1, yBack, yFront, rollDist(roll.id + 'l2', xc, roll.cy + y, roll.dir), TREADS.l);
-    rollingTyreSk(canvas, -x1, -x0, yBack, yFront, rollDist(roll.id + 'r2', -xc, roll.cy + y, roll.dir), TREADS.r);
+    rollingTyreSk(canvas, x0, x1, yBack, yFront, rollAt(roll.id + 'l2', xc, y, roll), TREADS.l);
+    rollingTyreSk(canvas, -x1, -x0, yBack, yFront, rollAt(roll.id + 'r2', -xc, y, roll), TREADS.r);
     return;
   }
   dualTyreSk(canvas, x0, x1, yBack, yFront, true);
@@ -918,8 +922,9 @@ function artHalfSk(canvas, img, cx, cy, hx, hy, rotDeg, duals, roll, kind, id) {
     canvas.save();
     canvas.translate(cx, cy);
     if (rotDeg) canvas.rotate(rotDeg, 0, 0);
-    if (duals) bodyDualsSk(canvas, VEH_DUAL.articulated, hx, hy, hy, roll && { id, cy, dir: -rotDeg });
-    if (roll) bodyTyresSk(canvas, kind, hx, hy, hy, id, cy, -rotDeg);
+    const at = roll && { id, cx, cy, dir: -rotDeg }; // canvas.rotate turns it left by rotDeg
+    if (duals) bodyDualsSk(canvas, VEH_DUAL.articulated, hx, hy, hy, at);
+    if (roll) bodyTyresSk(canvas, kind, hx, hy, hy, at);
     canvas.restore();
   }
   drawVehSpriteCols(canvas, img, cx, cy, hx, hy, rotDeg, ART_SINGLE[0], ART_SINGLE[1]);
@@ -957,8 +962,9 @@ function vehicleBodySk(canvas, p, veh, type) {
       for (const sx of [1, -1]) drawVehSprite(canvas, wheel, sx * tw / 2, -wb, 0.25 * tw, 0.5 * wb, steer, SKP.harvesterWheel);
     }
     const roll = vehRolling();
-    if (vehDualWheels(veh)) bodyDualsSk(canvas, VEH_DUAL.harvester, tw, 1.5 * wb, 1.5 * wb, roll && { id: 'h', cy: 0, dir: 0 });
-    if (roll) bodyTyresSk(canvas, 'harvester', tw, 1.5 * wb, 1.5 * wb, 'h', 0, 0);
+    const at = roll && { id: 'h', cx: 0, cy: 0, dir: 0 };
+    if (vehDualWheels(veh)) bodyDualsSk(canvas, VEH_DUAL.harvester, tw, 1.5 * wb, 1.5 * wb, at);
+    if (roll) bodyTyresSk(canvas, 'harvester', tw, 1.5 * wb, 1.5 * wb, at);
     drawVehSprite(canvas, vehicleTinted(harvesterSpr.img, 'harvester', roll) || body, 0, 0, tw, 1.5 * wb, 0);
   } else {
     const front = skSprite(artFrontSpr), rear = skSprite(artRearSpr);
@@ -1014,8 +1020,9 @@ function vehicleSk(canvas, p) {
       const half = bW / 2, top = (1 - SPR_REAR) * bH, bot = -SPR_REAR * bH;
       beginVehicleFrame(canvas, p);
       const duals = vehDualWheels(veh), roll = vehRolling();
-      if (duals) bodyDualsSk(canvas, VEH_DUAL.tractor, half, top, bH / 2, roll && { id: 't', cy: 0, dir: 0 });
-      if (roll) bodyTyresSk(canvas, 'tractor', half, top, bH / 2, 't', 0, 0);
+      const at = roll && { id: 't', cx: 0, cy: 0, dir: 0 };
+      if (duals) bodyDualsSk(canvas, VEH_DUAL.tractor, half, top, bH / 2, at);
+      if (roll) bodyTyresSk(canvas, 'tractor', half, top, bH / 2, at);
       // Body sprite (scale 1,-1 = bitmap rows top-down → world N up).
       canvas.save();
       canvas.scale(1, -1);
@@ -1044,7 +1051,8 @@ function vehicleSk(canvas, p) {
           canvas.restore();
         }
         // Rolling: the tyre (VEH_TYRES.frontWheel, in the picture's 256 units) rolls under the picture without it.
-        const wheel = (roll && vehicleTinted(frontWheelImg, 'frontWheel', true)) || skFrontWheel;
+        const wheelRoll = roll && treadPaint(TREADS.f);
+        const wheel = (wheelRoll && vehicleTinted(frontWheelImg, 'frontWheel', true)) || skFrontWheel;
         const ft = VEH_TYRES.frontWheel.tyre;
         for (const sx of duals === 2 ? [1, -1, 2, -2] : [1, -1]) {
           canvas.save();
@@ -1052,8 +1060,8 @@ function vehicleSk(canvas, p) {
           canvas.rotate(steerDeg, 0, 0);
           const out = Math.abs(sx) === 2 ? Math.sign(sx) * (0.378 + DUAL_GAP) : 0;
           if (out) canvas.translate(out, 0);
-          if (roll) {
-            const dist = rollDist('f' + sx, Math.sign(sx) * woX + out, woY, -steerDeg);
+          if (wheelRoll) {
+            const dist = rollAt('f' + sx, out, 0, { cx: Math.sign(sx) * woX, cy: woY, dir: -steerDeg });
             rollingTyreSk(canvas, -ww / 2 + ft[0] / 256 * ww, -ww / 2 + ft[2] / 256 * ww,
               wh / 2 - ft[3] / 256 * wh, wh / 2 - ft[1] / 256 * wh, dist, TREADS.f);
           }

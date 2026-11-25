@@ -142,6 +142,20 @@ public class ConfigurationServiceMappingTests
     }
 
     [Test]
+    public void RollingWheels_LoadAndSave_MapTheSetting()
+    {
+        // The round trip above reads back the store it saved from (the service keeps its own store), so the
+        // load and the save are checked here on their own, each against the default (on).
+        _settings.RollingWheels = false;
+        _service.LoadAppSettings();
+        Assert.That(_service.Store.Display.RollingWheels, Is.False, "load");
+
+        _settings.RollingWheels = true;
+        _service.SaveAppSettings();
+        Assert.That(_settings.RollingWheels, Is.False, "save");
+    }
+
+    [Test]
     public void RoundTrip_Connections_Preserved()
     {
         var c = _service.Store.Connections;
