@@ -9,7 +9,9 @@
 // a second and the draw time each costs on this screen. Only this page is touched: the look is set here (the tool
 // profile is not changed), the camera is put back at the end, and nothing goes to the host but the result lines, for
 // its log (diag.page, which an observer may send too). While it runs the frame cap is off (frame.js: 30 a second),
-// so the numbers say how far this screen can go.
+// so the numbers say how fast the app can draw on this screen (a slow frame is still followed by as long again
+// for touches, as in the app). Nothing it does may stop the map's frame loop: an error ends the test and puts
+// everything back.
 
 function startFpsTest() {
   const SETTLE_S = 1, MEASURE_S = 5, SLOW_MS = 50;
@@ -36,10 +38,11 @@ function startFpsTest() {
   show(bSave, false);
   document.body.appendChild(panel);
 
-  let run = null, report = '';
+  let run = null, report = '', stopped = false;   // stopped: the message says why the last run ended early
 
   function ready() {
-    if (!CK || !skSurface) return tr('Waiting for the map to load...');
+    if (!CK || !skSurface || !config || !config.tool) return tr('Waiting for the map to load...');
+    if (CardPane.coversMap) return tr('Close the card drawer over the map first.');
     return '';
   }
   function idleText() {
@@ -51,16 +54,18 @@ function startFpsTest() {
   }
   const idle = setInterval(() => {
     if (run) return;
-    if (!report) msg.textContent = idleText();
+    if (!report && !stopped) msg.textContent = idleText();
     bStart.disabled = !!ready();
   }, 500);
   msg.style.whiteSpace = 'pre-wrap';
 
   // ---- where the painted area is ----
-  // The coverage image drawn down to at most 128 px a side and read back: the painted spots' places.
+  // The coverage image drawn down to at most 512 px a side and read back: the painted spots' places. At that size a
+  // sample is a few display cells, so a single pass is not stepped over.
+  const SAMPLE_PX = 512;
   function paintedSamples() {
     if (!cov || !cov.skImg) return null;
-    const w = cov.width, h = cov.height, cs = cov.cellSize, k = 128 / Math.max(w, h);
+    const w = cov.width, h = cov.height, cs = cov.cellSize, k = Math.min(1, SAMPLE_PX / Math.max(w, h));
     const tw = Math.max(1, Math.round(w * k)), th = Math.max(1, Math.round(h * k));
     let px = null;
     try {
@@ -84,7 +89,7 @@ function startFpsTest() {
     } catch (e) { px = null; }
     if (!px) return null;
     const on = new Uint8Array(tw * th);
-    for (let i = 0; i < tw * th; i++) on[i] = px[i * 4 + 3] > 60 ? 1 : 0;
+    for (let i = 0; i < tw * th; i++) on[i] = px[i * 4 + 3] > 0 ? 1 : 0;   // any paint: a narrow pass is faint here
     return { on, tw, th, at: (i, j) => ({ e: cov.originE + (i + 0.5) / k * cs, n: cov.originN + (h - (j + 0.5) / k) * cs }) };
   }
   // The middle of the largest painted stretch (the spot with the most painted spots round it) and the painted area's
@@ -93,14 +98,16 @@ function startFpsTest() {
     const s = paintedSamples();
     let best = null, bestN = -1, minE = Infinity, minN = Infinity, maxE = -Infinity, maxN = -Infinity;
     if (s) {
-      const R = 3;
+      const W = s.tw + 1, R = Math.max(1, Math.round(Math.max(s.tw, s.th) / 40));
+      const sum = new Int32Array(W * (s.th + 1));   // painted samples above and left of each corner
+      for (let j = 0; j < s.th; j++) for (let i = 0; i < s.tw; i++)
+        sum[(j + 1) * W + i + 1] = s.on[j * s.tw + i] + sum[j * W + i + 1] + sum[(j + 1) * W + i] - sum[j * W + i];
       for (let j = 0; j < s.th; j++) for (let i = 0; i < s.tw; i++) {
         if (!s.on[j * s.tw + i]) continue;
         const p = s.at(i, j);
         minE = Math.min(minE, p.e); maxE = Math.max(maxE, p.e); minN = Math.min(minN, p.n); maxN = Math.max(maxN, p.n);
-        let n = 0;
-        for (let b = Math.max(0, j - R); b <= Math.min(s.th - 1, j + R); b++)
-          for (let a = Math.max(0, i - R); a <= Math.min(s.tw - 1, i + R); a++) n += s.on[b * s.tw + a];
+        const a0 = Math.max(0, i - R), a1 = Math.min(s.tw, i + R + 1), b0 = Math.max(0, j - R), b1 = Math.min(s.th, j + R + 1);
+        const n = sum[b1 * W + a1] - sum[b0 * W + a1] - sum[b1 * W + a0] + sum[b0 * W + a0];
         if (n > bestN) { bestN = n; best = p; }
       }
     }
@@ -125,7 +132,8 @@ function startFpsTest() {
   // ---- the views: the camera at a fraction f (0 to 1) of the step ----
   function views(at) {
     const P = at.p, B = at.b, R = mapRotation;
-    const fitZ = Math.max(0.2, Math.min(vw / ((B.maxE - B.minE) * 1.15 + 1), vh / ((B.maxN - B.minN) * 1.15 + 1)));
+    // The whole painted area turns a quarter round in its view: fitted by its diagonal, it stays on the screen.
+    const fitZ = Math.max(0.2, Math.min(vw, vh) / (Math.hypot(B.maxE - B.minE, B.maxN - B.minN) * 1.05 + 1));
     const C = { e: (B.minE + B.maxE) / 2, n: (B.minN + B.maxN) / 2 };
     const circle = (r, f) => ({ e: P.e + r * Math.cos(TAU * f), n: P.n + r * Math.sin(TAU * f) });
     const tri = f => 1 - Math.abs(2 * f - 1);
@@ -142,14 +150,17 @@ function startFpsTest() {
 
   // ---- the run, a step a frame: frame.js calls updateCamera once each frame ----
   const _updateCamera = updateCamera, _noteDrawMs = noteDrawMs;
-  updateCamera = function () { if (run) runFrame(performance.now()); return _updateCamera.apply(this, arguments); };
+  updateCamera = function () {
+    if (run) { try { runFrame(performance.now()); } catch (e) { fail(e); } }
+    return _updateCamera.apply(this, arguments);
+  };
   noteDrawMs = function (ms) {
     if (run && run.m) { const m = run.m; m.draws++; m.ms += ms; if (ms > m.max) m.max = ms; }
     return _noteDrawMs(ms);
   };
 
   // The look on this page only: a copy of the host's config with the tool's picture and look changed. A Config frame
-  // from the host in the meantime is copied again.
+  // from the host in the meantime (it replaces config) is copied again on the next frame, and kept to put back.
   function applyLook(look) {
     if (config !== run.mine) {
       run.host = config;
@@ -163,7 +174,10 @@ function startFpsTest() {
     const st = run.steps[run.i];
     _fullRateUntil = now + 1000;   // no frame cap while the test runs
     _viewSaveT = now;              // the moving camera is not saved as the view (maybeSaveView)
+    // A full card drawer over the map: the map is not drawn, so the step starts again once it is seen.
+    if (CardPane.coversMap) { st.t0 = 0; run.m = null; return; }
     if (!st.t0) { st.t0 = now; applyLook(st.look); }
+    else if (config !== run.mine) applyLook(st.look);
     const T = SETTLE_S + MEASURE_S, t = (now - st.t0) / 1000;
     const c = st.view.cam(Math.min(1, t / T));
     cameraMode = 2; camE = c.e; camN = c.n; pxPerM = c.z; pitch = c.pitch; mapRotation = c.rot;
@@ -172,6 +186,7 @@ function startFpsTest() {
       if (now - run.m.last > SLOW_MS) run.m.slow++;
       run.m.last = now;
     }
+    if (run.hidden || (t >= T && run.m.t0 === now)) { run.hidden = false; st.t0 = now; run.m = null; return; } // a tab hidden: again
     if (t >= T) {
       const m = run.m, s = (now - m.t0) / 1000;
       st.r = { fps: m.draws / s, ms: m.ms / Math.max(1, m.draws), max: m.max, slow: m.slow };
@@ -195,10 +210,12 @@ function startFpsTest() {
       const t0 = performance.now(); workTile(pic.work, w + 0.0003); tileMs = performance.now() - t0; // a fresh tile, timed
       workTile(pic.work, w);
     }
-    const looks = at.painted && pic ? LOOKS : [[PAINTED_AREA.plain, 'plain']];
+    // A screen that draws the map on the CPU shows the plain colour in every look (drawCoverageWorkSk): plain only.
+    const looks = at.painted && pic && !drawnByCpu() ? LOOKS : [[PAINTED_AREA.plain, 'plain']];
     const steps = [];
     for (const view of views(at)) for (const [look, lookName] of looks) steps.push({ view, look, lookName });
     run = { steps, i: 0, m: null, pic, saved, at, tileMs, host: config, mine: null, looks, shown: -1 };
+    stopped = false;
     out.textContent = ''; report = ''; show(bSave, false);
     show(bStart, false); bClose.textContent = tr('Stop');
     panel.style.maxWidth = '360px';
@@ -223,7 +240,7 @@ function startFpsTest() {
     lines.push('Browser: ' + navigator.userAgent);
     if (r.pic) lines.push('Texture: ' + r.pic.work + ' (picture ' + r.pic.id + '), tile made in ' + (r.tileMs != null ? r.tileMs.toFixed(0) + ' ms' : '?'));
     if (!r.at.painted) lines.push('No painted area on the map: plain colour only.');
-    lines.push('Frame cap off for the test (the app draws at most 30 a second).');
+    lines.push('Frame cap off for the test (the app draws at most 30 a second); a frame over 17 ms is still followed by as long again for touches, as in the app.');
     lines.push('');
     const head = pad('view', 30) + r.looks.map(([, n]) => lpad(n, 16)).join('');
     lines.push(head);
@@ -254,6 +271,18 @@ function startFpsTest() {
   }
   const pct = x => (x >= 1 ? '+' : '') + ((x - 1) * 100).toFixed(0) + ' %';
 
+  // An error in the test ends it, with everything put back; the map's frame loop goes on (updateCamera above).
+  function fail(e) {
+    if (run) { try { restore(); } catch (_) { /* as much as could be put back */ } }
+    run = null; report = ''; out.textContent = ''; stopped = true;
+    msg.textContent = tr('The test stopped: {error}', { error: String((e && e.message) || e) });
+    show(bStart, true); bStart.textContent = tr('Run again'); show(bSave, false); bClose.textContent = tr('Close');
+    panel.style.maxWidth = 'min(620px,94vw)';
+    console.error('[fps-test]', e);
+  }
+
+  // The page hidden (another tab, the tablet asleep) draws nothing: the step it was in is measured again.
+  document.addEventListener('visibilitychange', () => { if (run && document.hidden) run.hidden = true; });
   bStart.addEventListener('click', start);
   bClose.addEventListener('click', () => {
     if (run) { restore(); run = null; report = ''; out.textContent = ''; show(bStart, true); bClose.textContent = tr('Close'); panel.style.maxWidth = 'min(620px,94vw)'; return; }
