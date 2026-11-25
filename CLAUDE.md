@@ -329,6 +329,15 @@ logged). It read into 1024 bytes and took each piece as a command of its own, so
 commands: an outer boundary of 325 points sent as *Draw on map* sends it became 68 points, 1.36 ha
 for 13.24 (Couto da Ribeira, 21 Nov 2026). Tests: `WebSocketHubTests`.
 
+### A recorded path played back, on the map
+The way from the tractor to a recorded path being played (the Dubins approach, `State.RecordedPath.DubinsApproachPath`
+while `IsFollowingDubinsToPath`) is the Scene's `UTurnPath` (no U-turn is planned while a path plays), and the path in
+use (`RecordedPoints`: picked in the Playback list, reversed, just recorded, played) is the last of its `RecordedPaths`,
+whatever *Rec paths* shows, as AgOpenGPS draws them (`CRecordedPath.DrawDubins`, `DrawRecordedLine`; the same green and
+yellow). The VM gave them only to `IMapService`, which is `NullMapService` on every head, so AutoSteer followed lines
+the map did not show. `SceneProjector`; tests: `RecordedPathOnMapTests` (RemoteServer), `RecordedPathMapStateTests`.
+Fork first, proposed to the official repo (25 Nov 2026).
+
 ### MainViewModel is the control brain
 `MainViewModel` has no view. It runs on the single `HostLoopDispatcher` thread (the "UI
 thread" stand-in, `IUiDispatcher`), coordinates services, and is driven only through
