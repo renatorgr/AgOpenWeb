@@ -172,6 +172,7 @@ function renderBugReport() {
     : '';
   brIssueUrl = issueUrl || null;
   document.getElementById('br-openissue').style.display = brIssueUrl ? '' : 'none';
+  brSendKind = kind;
   brSendBusy = ['sending', 'queued', 'sent', 'accepted'].includes(kind);
   if (brFile !== brFilesFor) { brFiles = []; brFilesFor = brFile; renderBrFiles(); }
   document.getElementById('br-attach').disabled = brSendBusy || brAttaching;
@@ -270,7 +271,7 @@ document.getElementById('br-screenshot').addEventListener('click', async e => {
   brAttaching = false;
   for (const id of ['br-attach', 'br-screenshot']) document.getElementById(id).disabled = brSendBusy;
 });
-let brIssueUrl = null, brSendBusy = false;
+let brIssueUrl = null, brSendBusy = false, brSendKind = '';
 // Send needs what the bug report service checks too (Tools/bugreport-worker reports.js):
 // a title and description long enough to act on, and a GitHub username or an email to reply
 // to. Create needs nothing: it captures the moment.
@@ -326,7 +327,7 @@ document.getElementById('br-download').addEventListener('pointerdown', e => {
 // panel asks, Renato first: his report is saved to the device, the title and description typed
 // now written into it (/bugreports/notes, BugReportNotes), and sent by hand in a Telegram chat
 // with him. The choice is this browser's.
-const FORK_AUTHOR_TELEGRAM = 'RENATO_TELEGRAM_USERNAME';
+const FORK_AUTHOR_TELEGRAM = 'renato_rgr';
 let brTo = 'fork';
 try { if (localStorage.getItem('agopenweb.bugReportTo') === 'official') brTo = 'official'; } catch (_) { }
 function brAttachHint() {
@@ -346,22 +347,39 @@ for (const b of document.querySelectorAll('#br-to .ln-segbtn'))
     brShowTo();
   });
 brShowTo();
+// What was last written into the report's notes. Pressed again with nothing changed, Save opens
+// the download in the press itself: after waiting for the host, a browser outside the app may
+// refuse to open it, and "press again" then always works.
+let brNotesWritten = null;
 document.getElementById('br-forksave').addEventListener('pointerdown', async e => {
   e.stopPropagation();
   if (!brFile) return;
   const file = brFile, st = document.getElementById('br-forkstatus');
+  // One change to the zip at a time: an attachment being added, or this report on its way to
+  // the official maintainers (read from the disk as it goes), is let finish first.
+  if (brAttaching) { st.textContent = tr('An attachment is being added: press again in a moment.'); return; }
+  if (brSendKind === 'sending' || brSendKind === 'queued') {
+    st.textContent = tr('This report is being sent to the official maintainers. Wait until it is sent, or create a new report for Renato.');
+    return;
+  }
   const title = brOne('br-title'), desc = document.getElementById('br-desc').value.trim();
+  const notes = [file, title, desc].join('\n');
   let written = true;
-  if (title || desc) {
+  if ((title || desc) && notes !== brNotesWritten) {
+    brAttaching = true;
+    for (const id of ['br-attach', 'br-screenshot']) document.getElementById(id).disabled = true;
     try {
       const q = new URLSearchParams({ zip: file, title, client: myClientId || '' });
       const res = await fetch('/bugreports/notes?' + q, { method: 'POST', body: desc });
       written = res.ok && (await res.json()).written === true;
     } catch (_) { written = false; }
+    brAttaching = false;
+    for (const id of ['br-attach', 'br-screenshot']) document.getElementById(id).disabled = brSendBusy;
+    if (written) brNotesWritten = notes;
   }
   openExternal(location.origin + '/bugreports/' + encodeURIComponent(file));
   st.textContent = (written ? '' : tr('The title and description could not be put in the zip: write them in the chat.') + ' ')
-    + tr('The zip is saved in the Downloads folder of this device. Now open the Telegram chat with Renato and send it there.');
+    + tr('The zip opens in the browser to be saved on this device (it may ask where to save it). If nothing opened, press Save the Report again. Then open the Telegram chat with Renato and send the zip there.');
 });
 document.getElementById('br-forkchat').addEventListener('pointerdown', e => {
   e.stopPropagation();
