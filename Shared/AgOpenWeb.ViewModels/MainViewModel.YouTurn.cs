@@ -65,7 +65,9 @@ public partial class MainViewModel
     /// Curve, chose the AB line again, and AutoSteer went off twice at the end of the pass with
     /// U-turns off, which he had not switched off. No track (guidance stopped) forgets it, and so
     /// does the U-turn button. The track cycle button still turns U-turns off when they are on
-    /// (AgOpenGPS Controls.Designer.cs btnCycleLines). Fork only.
+    /// and it goes to another open track (AgOpenGPS Controls.Designer.cs btnCycleLines); going to
+    /// a closed track it leaves that to the closed track, so the way back by the same button
+    /// gives them back too. Fork only.
     /// </summary>
     private void TurnYouTurnsBackOnAfterClosedTrack(Track? chosen)
     {
