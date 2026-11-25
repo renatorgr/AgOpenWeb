@@ -57,6 +57,10 @@ public static class AgOpenGpsSettings
         // Vehicle config
         store.Vehicle.Name = profileName;
         store.Vehicle.Type = (VehicleType)GetInt(settings, "setVehicle_vehicleType", 0);
+        // AgOpenGPS has no dual wheels, and its body colour is not read (fork only): the picture as drawn
+        // and single wheels, not the ones of the vehicle open before.
+        store.Vehicle.Color = VehicleConfig.DefaultColor;
+        store.Vehicle.DualWheels = 0;
         store.Vehicle.AntennaHeight = GetDouble(settings, "setVehicle_antennaHeight", 3.0);
         store.Vehicle.AntennaPivot = GetDouble(settings, "setVehicle_antennaPivot", 0.0);
         // AgOpenGPS measures the antenna offset to the left (ConfigVehicle: "Left" is checked when

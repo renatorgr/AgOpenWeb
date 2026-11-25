@@ -220,6 +220,10 @@ public static class ProfileJsonServiceV1
         store.Vehicle.Wheelbase = dto.Vehicle?.Wheelbase ?? 2.5;
         store.Vehicle.TrackWidth = dto.Vehicle?.TrackWidth ?? 1.8;
         store.Vehicle.Type = (VehicleType)(dto.Vehicle?.Type ?? 0);
+        // This format is older than the vehicle's colour and wheels on the map (fork only): the picture as
+        // drawn and single wheels, not the ones of the vehicle open before.
+        store.Vehicle.Color = VehicleConfig.DefaultColor;
+        store.Vehicle.DualWheels = 0;
         store.Vehicle.MaxSteerAngle = dto.Vehicle?.MaxSteerAngle ?? 35.0;
         store.Vehicle.MaxAngularVelocity = dto.Vehicle?.MaxAngularVelocity ?? 35.0;
 

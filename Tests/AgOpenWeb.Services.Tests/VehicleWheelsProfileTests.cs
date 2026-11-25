@@ -70,6 +70,34 @@ public class VehicleWheelsProfileTests
         store.Vehicle.DualWheels = 2;
         new TestVehicleProfileService(_dir).CreateDefaultProfile("New", store);
         Assert.That(store.Vehicle.DualWheels, Is.EqualTo(0));
+
+        var saved = new ConfigurationStore();
+        saved.Vehicle.DualWheels = 2;
+        Assert.That(VehicleProfileJsonService.Load(_dir, "New", saved), Is.True, "the new profile is saved");
+        Assert.That(saved.Vehicle.DualWheels, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void A_profile_in_the_older_format_has_single_wheels_and_the_picture_as_drawn()
+    {
+        ProfileJsonServiceV1.Save(_dir, "Older", new ConfigurationStore());
+        var dst = new ConfigurationStore();
+        dst.Vehicle.DualWheels = 2; // the vehicle that was active before
+        dst.Vehicle.Color = 0xA6192E;
+        Assert.That(ProfileJsonServiceV1.Load(_dir, "Older", dst), Is.True);
+        Assert.That(dst.Vehicle.DualWheels, Is.EqualTo(0));
+        Assert.That(dst.Vehicle.Color, Is.EqualTo(VehicleConfig.DefaultColor));
+    }
+
+    [Test]
+    public void An_AgOpenGPS_vehicle_has_single_wheels_and_the_picture_as_drawn()
+    {
+        var dst = new ConfigurationStore();
+        dst.Vehicle.DualWheels = 2; // the vehicle that was active before
+        dst.Vehicle.Color = 0xA6192E;
+        AgOpenGpsSettings.ApplyToStore(new System.Collections.Generic.Dictionary<string, string>(), "Imported", "Imported.xml", dst);
+        Assert.That(dst.Vehicle.DualWheels, Is.EqualTo(0));
+        Assert.That(dst.Vehicle.Color, Is.EqualTo(VehicleConfig.DefaultColor));
     }
 
     private sealed class TestVehicleProfileService : VehicleProfileService
