@@ -563,8 +563,10 @@ input.as-valbox { width: 80px; box-sizing: content-box; }
   color: var(--text-2); cursor: pointer; font: 600 12px system-ui, sans-serif; }
 .vc-typecard img { width: 100%; height: 56px; object-fit: contain; background: #fff; border-radius: 4px; }
 .vc-typecard.active { border-color: #4A90D9; background: var(--sel); color: var(--text); }
-.vc-colourrow { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.vc-colourrow { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px; }
 .vc-colourrow .cfg-sel { flex: 0 1 280px; min-width: 0; }
+/* The colour button stays level with the list's first line, open or not: the list is 34 px high, the button 32 px. */
+.vc-colourrow .cfg-color { margin-top: 1px; }
 .vc-diagrow { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
 .vc-diag { width: 150px; height: 96px; object-fit: contain; background: #fff; border-radius: 6px; flex: none; }
 .vc-fieldcol { flex: 1; min-width: 0; display: grid; grid-template-columns: auto max-content; gap: 6px 10px; align-items: center; }
@@ -595,10 +597,6 @@ input.as-valbox { width: 80px; box-sizing: content-box; }
    half: the eighth box lay over the labels of the column beside it. */
 #tc-sectionwidths, #tc-zoneends, #tc-sectioncolors { grid-template-columns: repeat(8, minmax(0, 58px)); justify-content: start; }
 #tc-sectionwidths input, #tc-zoneends input { width: 52px; }
-/* The implement's colour: the button stays level with the list's first line, open or not (the list is 34 px high, the
-   button 32 px: 1 px down, as when centred). */
-#tc-piccolrow .vc-colourrow { align-items: flex-start; }
-#tc-piccolrow .vc-colourrow .cfg-color { margin-top: 1px; }
 .cfg-color { width: 60px; height: 32px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-input); padding: 1px; }
 .tc-pingrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .tc-pingrid .tc-cell { display: flex; flex-direction: column; gap: 2px; }
