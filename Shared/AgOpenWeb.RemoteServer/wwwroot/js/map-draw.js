@@ -1037,7 +1037,7 @@ function frontSprayerPictureSk(canvas, tl, veh) {
 }
 // A combine's header at the working point (Vehicle > Front hitch + Tool > Hitch to working point), as wide
 // as the tool, drawn here rather than from a picture: headers come in every width and the dividers and
-// snouts keep their size. Its frame takes the vehicle's colour on the map (grey as drawn), and a feeder
+// snouts keep their size. Its frame takes the implement's colour (implColour), and a feeder
 // house joins it to the combine's body (the harvester picture's front, 1.5 wheelbases ahead of the pivot).
 // Metres, the cutter bar (grain) or the stalk rolls (maize) on y = 0, +y forward.
 const hdrPaints = {};
@@ -2086,10 +2086,10 @@ const IMPLEMENT_PICTURES = [
     hint: () => tr('The boom at the working point, its tank on the rear lower links (Vehicle rear 3-point hitch), drawn to scale.') },
   { id: 3, type: 0, vehicles: [1], draw: grainHeaderPictureSk,
     name: () => tr('Grain header (reel)'),
-    hint: () => tr('The cutter bar at the working point, as wide as the tool, in the vehicle\'s colour.') },
+    hint: () => tr('The cutter bar at the working point, as wide as the tool, in the implement\'s colour.') },
   { id: 4, type: 0, vehicles: [1], draw: maizeHeaderPictureSk,
     name: () => tr('Maize header (a row unit every 75 cm)'),
-    hint: () => tr('The stalk rolls at the working point, as wide as the tool, in the vehicle\'s colour.') },
+    hint: () => tr('The stalk rolls at the working point, as wide as the tool, in the implement\'s colour.') },
   { id: 5, type: 3, vehicles: [0], draw: manureSpreaderPictureSk,
     name: () => tr('Manure spreader, one axle'),
     hint: () => tr('On the drawbar pin (Vehicle hitch), its axle Trailing hitch behind it, the beaters on the working line; spreads as wide as the tool.') },

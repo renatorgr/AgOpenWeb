@@ -466,7 +466,7 @@ where it works (`implementStrip`). Drawing: `implementPictureSk` in `js/map-draw
 implements over the rear tyres; these two are a tester's own machines, drawn from their measures and photos
 (24 Nov 2026). A picture is also made for vehicle types (`vehicles` in its row): the drill and the sprayer for a
 tractor; a combine carries only its header, *Grain header* or *Maize header* (`grainHeaderPictureSk`,
-`maizeHeaderPictureSk`: drawn, not pictures, as wide as the tool and in the vehicle's colour, a row unit every 75 cm,
+`maizeHeaderPictureSk`: drawn, not pictures, as wide as the tool and in the implement's colour, a row unit every 75 cm,
 a feeder house to the combine's body); an articulated tractor pulls big implements, the trailed disc harrow, the
 ploughs, the four-rotor rake, the air seeders and the trailed planter only so far.
 Tests: `ToolPictureProfileTests`, `ImplementPictureListTests` (one row per `ToolPicture` value, RemoteServer).
