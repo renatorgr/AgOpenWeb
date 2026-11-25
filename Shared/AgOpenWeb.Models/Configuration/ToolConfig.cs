@@ -572,4 +572,15 @@ public enum ToolPicture
     /// <summary>A reversible disc plough on the rear 3-point hitch, 2 to 6 discs (one every 30 cm or so of the
     /// tool's width), its beam swung across at every U-turn; on a tractor or an articulated tractor.</summary>
     DiscPlough = 15,
+    /// <summary>A rotary rake with one rotor on the rear 3-point hitch, as wide as the tool, the swath on its left.</summary>
+    RakeOneRotor = 16,
+    /// <summary>A trailed rotary rake with two rotors side by side (trailing tool), the swath between them.</summary>
+    RakeTwinCentre = 17,
+    /// <summary>A trailed rotary rake with two rotors one behind the other (trailing tool), the swath on the right.</summary>
+    RakeTwinSide = 18,
+    /// <summary>A trailed rotary rake with four rotors (trailing tool), the swath in the middle; on a tractor or an
+    /// articulated tractor.</summary>
+    RakeFour = 19,
+    /// <summary>A trailed finger-wheel rake in a V (trailing tool), the swath at its point.</summary>
+    WheelRake = 20,
 }
