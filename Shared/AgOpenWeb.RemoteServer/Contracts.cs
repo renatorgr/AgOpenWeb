@@ -528,8 +528,9 @@ public record ToolConfigDto(
     bool IsWorkSwitchEnabled, bool IsWorkSwitchActiveLow, bool IsWorkSwitchManualSections,
     bool IsSteerSwitchEnabled, bool IsSteerSwitchManualSections,
     double TotalWidth,
-    // The implement's picture on the map (ToolPicture: 0 none, then one value per picture); fork only.
-    int Picture = 0);
+    // The implement's picture on the map (ToolPicture: 0 none, then one value per picture) and its colour (0xRRGGBB,
+    // -1 the picture's own colours); fork only.
+    int Picture = 0, int PictureColor = -1);
 
 /// <summary>U-Turn tab (ConfigStore.Guidance). Style: 0 Omega, 1 Sagitta.</summary>
 /// <param name="GoAroundRadius">The tightest a pass bends round a Go around obstacle, m.</param>
