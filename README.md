@@ -222,6 +222,13 @@ Flags, recorded paths and the worked area stay where the GPS put them.
 
 ### Bug reports and the log
 
+**Who a bug report goes to.** "Send Report" goes to the official AgOpenWeb maintainers (an issue on AgOpenGPS-Official/AgOpenWeb), not to Renato, and only they can download the report.
+
+- So after "Create Bug Report" the panel asks who it is for: **Renato (this version)**, the first choice, or **Official maintainers**.
+- For Renato: "1. Save the Report" puts the zip in the device's Downloads, with the title and description typed in the panel. "2. Open a Telegram Chat with Renato" opens the chat to send it in.
+- For the official maintainers, the panel says that is not Renato, then works as before.
+- Screenshots and files added in the panel go into the zip either way.
+
 **Screenshot in a bug report.** After "Create Bug Report", "Take Screenshot" adds a picture of the whole AgOpenWeb screen as it is at that moment to the report as a JPEG, without the Bug Report panel over it.
 
 **Smaller bug reports.** The Bug Report panel leaves the field's background photo out of the report unless "Include the field's background image" is ticked.

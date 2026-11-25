@@ -395,6 +395,9 @@ input.as-valbox { width: 80px; box-sizing: content-box; }
   font: 14px system-ui, sans-serif; }
 .br-filerow .br-fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .br-filerow .br-fsize { opacity: 0.7; font-size: 12px; }
+/* Fork only: who a bug report goes to (app-menu.js brShowTo). Download is Save the Report there. */
+#br-to .ln-segbtn { flex: 1; }
+#bugreport.br-tofork .br-official, #bugreport:not(.br-tofork) .br-fork { display: none !important; }
 .fm-wide { width: 560px; }
 /* View All Settings fills the tablet viewport so every setting shows for a screenshot. */
 .fm-full { width: calc(100 * var(--vw) - 110px); height: calc(100 * var(--vh) - 84px); box-sizing: border-box; }

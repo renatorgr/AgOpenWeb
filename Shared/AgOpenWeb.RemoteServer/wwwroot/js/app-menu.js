@@ -213,7 +213,7 @@ async function brChangeFiles(op, name, body) {
     Busy: tr('The report is being sent; try again in a moment'),
   }[reply.refusal];
   if (reply.refusal !== 'Busy') { brFiles = reply.files; renderBrFiles(); }
-  st.textContent = why || tr('Like the rest of the report, attachments go only to the maintainers.');
+  st.textContent = why || brAttachHint();
   return !why;
 }
 document.getElementById('br-attach').addEventListener('click', e => {
@@ -319,6 +319,53 @@ document.getElementById('br-openissue').addEventListener('pointerdown', e => {
 document.getElementById('br-download').addEventListener('pointerdown', e => {
   e.stopPropagation();
   if (brFile) openExternal(location.origin + '/bugreports/' + encodeURIComponent(brFile));
+});
+// Who the report goes to (fork only). This build is Renato's version, with changes the
+// official one does not have, and Send Report goes to the official maintainers' service (an
+// issue on AgOpenGPS-Official/AgOpenWeb that only they can download the dump from). So the
+// panel asks, Renato first: his report is saved to the device, the title and description typed
+// now written into it (/bugreports/notes, BugReportNotes), and sent by hand in a Telegram chat
+// with him. The choice is this browser's.
+const FORK_AUTHOR_TELEGRAM = 'RENATO_TELEGRAM_USERNAME';
+let brTo = 'fork';
+try { if (localStorage.getItem('agopenweb.bugReportTo') === 'official') brTo = 'official'; } catch (_) { }
+function brAttachHint() {
+  return brTo === 'fork' ? tr('Attachments go into the zip with the rest of the report.')
+    : tr('Like the rest of the report, attachments go only to the maintainers.');
+}
+function brShowTo() {
+  document.getElementById('bugreport').classList.toggle('br-tofork', brTo === 'fork');
+  for (const b of document.querySelectorAll('#br-to .ln-segbtn')) b.classList.toggle('active', b.dataset.to === brTo);
+  document.getElementById('br-attachstatus').textContent = brAttachHint();
+}
+for (const b of document.querySelectorAll('#br-to .ln-segbtn'))
+  b.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    brTo = b.dataset.to;
+    try { localStorage.setItem('agopenweb.bugReportTo', brTo); } catch (_) { }
+    brShowTo();
+  });
+brShowTo();
+document.getElementById('br-forksave').addEventListener('pointerdown', async e => {
+  e.stopPropagation();
+  if (!brFile) return;
+  const file = brFile, st = document.getElementById('br-forkstatus');
+  const title = brOne('br-title'), desc = document.getElementById('br-desc').value.trim();
+  let written = true;
+  if (title || desc) {
+    try {
+      const q = new URLSearchParams({ zip: file, title, client: myClientId || '' });
+      const res = await fetch('/bugreports/notes?' + q, { method: 'POST', body: desc });
+      written = res.ok && (await res.json()).written === true;
+    } catch (_) { written = false; }
+  }
+  openExternal(location.origin + '/bugreports/' + encodeURIComponent(file));
+  st.textContent = (written ? '' : tr('The title and description could not be put in the zip: write them in the chat.') + ' ')
+    + tr('The zip is saved in the Downloads folder of this device. Now open the Telegram chat with Renato and send it there.');
+});
+document.getElementById('br-forkchat').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  openExternal('https://t.me/' + FORK_AUTHOR_TELEGRAM);
 });
 document.getElementById('br-submit').addEventListener('pointerdown', e => {
   e.stopPropagation();
