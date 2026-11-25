@@ -4,8 +4,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
+using System.Threading;
 using AgOpenWeb.Models;
+using AgOpenWeb.Services.DataQuality;
 using AgOpenWeb.Services.Interfaces;
 
 namespace AgOpenWeb.Services.Tests;
@@ -69,6 +72,36 @@ public class MachineModulePresenceTests
 
         Assert.That(udp.IsModuleHelloOk(ModuleType.Machine), Is.True);
         Assert.That(udp.GetModuleIpAddress(ModuleType.Machine), Is.EqualTo("192.168.5.123"));
+    }
+
+    /// <summary>System Data's "Machine module data (PGN 237)" line.</summary>
+    private static StreamQualityMonitor MachineStream(UdpCommunicationService udp)
+        => udp.DataSensors.OfType<StreamQualityMonitor>().Single(s => s.Name == "Machine module data (PGN 237)");
+
+    [Test]
+    public void Only_PGN_237_counts_in_the_machine_module_data_line()
+    {
+        // The sprayer's 160 and 161 share the presence case with 237 and come at rates of
+        // their own: counted in, the line's rate and gaps were not PGN 237's.
+        using var udp = new UdpCommunicationService(new NoNetwork());
+
+        for (int i = 0; i < 5; i++)
+        {
+            udp.UpdateModuleConnection(FromModule(PgnNumbers.SPRAYER_DATA, 11), Sprayer);
+            udp.UpdateModuleConnection(FromModule(PgnNumbers.SPRAYER_PROCESS_DATA, 16), Sprayer);
+            Thread.Sleep(1);
+        }
+
+        Assert.That(udp.IsModuleDataOk(ModuleType.Machine), Is.True, "160 and 161 still say the module is there");
+        Assert.That(MachineStream(udp).Evaluate().RateHz, Is.Zero, "no PGN 237 has arrived");
+
+        for (int i = 0; i < 5; i++)
+        {
+            udp.UpdateModuleConnection(FromModule(PgnNumbers.FROM_MACHINE, 8), Sprayer);
+            Thread.Sleep(1);
+        }
+
+        Assert.That(MachineStream(udp).Evaluate().RateHz, Is.GreaterThan(0), "PGN 237 is counted");
     }
 
     [Test]
