@@ -1953,8 +1953,9 @@ function airSeederCartBetweenPictureSk(canvas, tl, veh) {
   return { half: 0.05, ahead: 0 };
 }
 // The cart pulled behind an air seeder's bar, its axles 4.6 m behind the bar's rear hitch, following it as a
-// trailer does (the page's own: the host knows the bar only).
-const implCart = { e: 0, n: 0, set: false };
+// trailer does (the page's own: the host knows the bar only). Put straight behind the bar again when it was not
+// drawn in the last half second (another picture, the page hidden) or the bar jumped.
+const implCart = { e: 0, n: 0, t: -1e9 };
 function airSeederCartBehindPictureSk(canvas, tl, veh) {
   const p = renderPose(), t = implToolPose();
   if (!p || !t) return null;
@@ -1964,11 +1965,12 @@ function airSeederCartBehindPictureSk(canvas, tl, veh) {
   const rear = iAirDrill(canvas, tl, W, cx, back);
   iBar(canvas, 0, back + 1.2, 0, rear, IC.red, 0.12);                                               // the rear hitch
   canvas.restore();
-  const Lc = 4.6, ahead = rear - back;                                                               // behind the working point
-  const re = t.e - Math.sin(t.heading) * ahead, rn = t.n - Math.cos(t.heading) * ahead;
+  const Lc = 4.6, behind = rear - back;                                                              // the rear hitch, behind the working point
+  const re = t.e - Math.sin(t.heading) * behind, rn = t.n - Math.cos(t.heading) * behind;
   let dx = implCart.e - re, dy = implCart.n - rn, d = Math.hypot(dx, dy);
-  if (!implCart.set || Math.abs(d - Lc) > 3) { dx = -Math.sin(t.heading); dy = -Math.cos(t.heading); d = 1; implCart.set = true; }
-  implCart.e = re + dx / d * Lc; implCart.n = rn + dy / d * Lc;
+  const now = performance.now();
+  if (now - implCart.t > 500 || Math.abs(d - Lc) > 3) { dx = -Math.sin(t.heading); dy = -Math.cos(t.heading); d = 1; }
+  implCart.e = re + dx / d * Lc; implCart.n = rn + dy / d * Lc; implCart.t = now;
   implFrameAt(canvas, re, rn, Math.atan2(re - implCart.e, rn - implCart.n));
   iAirCart(canvas, 0, Lc);
   canvas.restore();
@@ -2046,7 +2048,8 @@ function planterTrailedPictureSk(canvas, tl, veh) {
   iRect(canvas, cx - W / 2, ytb - 0.09, cx + W / 2, ytb + 0.09, ip(IC.green), ip(IC.greenD, 1, 0.025)); // the toolbar
   iRowUnits(canvas, iPlanterRows(tl, W, cx, 0.75), ytb, yc, IC.green);
   for (const sx of [-1, 1]) {
-    iRRect(canvas, cx + sx * 0.05, f, cx + sx * 1.2, ytb - 0.12, 0.3, ip(0xDCDFE2), ip(0x7E8489, 1, 0.03)); // the tanks
+    const a = cx + sx * 0.05, b = cx + sx * 1.2;
+    iRRect(canvas, Math.min(a, b), f, Math.max(a, b), ytb - 0.12, 0.3, ip(0xDCDFE2), ip(0x7E8489, 1, 0.03)); // the tanks
     iCircle(canvas, cx + sx * 0.62, (f + ytb) / 2, 0.24, ip(0x2E3033));
   }
   canvas.restore();
