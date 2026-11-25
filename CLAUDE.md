@@ -544,7 +544,10 @@ with two children, the coverage (its alpha; its colour for the pattern) and the 
 field fades to the work's mean colour), laid along the passes of the line in use (`scene.toolPass`; on a curve from its
 first point to its furthest, so the pattern keeps one direction), its edge on a pass edge. The crisp edge stroked along
 each side of a pass (`drawCoverageEdgeSk`, 0.6 m) carries the same tile, taken to the screen by the ground's projection
-(perspM's x, y and w rows): in a plain colour it hid the texture on more than half of a 2 m pass. A screen that draws the
+(perspM's x, y and w rows): in a plain colour it hid the texture on more than half of a 2 m pass. Tilted, the edge
+is drawn under perspM in metres, 0.6 m on the ground everywhere (from above, in screen pixels as before: the same there,
+and quicker): drawn 0.6 m times pxPerM in pixels, far from the camera it covered metres past the painted area and the
+field's edge (a tester's Android tablet, the fps test's 3D views, 25 Nov 2026). A screen that draws the
 map on the CPU (`drawnByCpu` in `js/alerts.js`: no WebGL context, or llvmpipe, SwiftShader...) keeps the plain colour:
 on SwiftShader the texture cost a fifth of the frame rate with the painted area filling the screen (20 to 16 fps on
 Tapada da Casa, the whole field the same), on a GPU it is two lookups a pixel. The texture is the tool's now, for the
