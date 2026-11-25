@@ -535,6 +535,17 @@ always drawn without their outer tyres (`ART_SINGLE`, the columns kept) and get 
 The list offers what each type carries (tractor: rear, front and rear; combine: front; articulated: dual). Drawing only:
 the track width stays as set. A tester asked for it (25 Nov 2026). Tests: `VehicleWheelsProfileTests`.
 
+**Rolling wheels on the map** (Screen & Alerts › *Rolling Wheels*, `DisplayConfig.RollingWheels`, `display.rollingWheels`,
+in AppSettings, on by default; the Display part of the Config frame ends with it; fork only): the tyres' tread moves as
+the wheels roll (`js/map-draw.js`). Each tyre is drawn under its picture as a cylinder seen from above
+(`rollingTyreSk`: one `drawVertices` mesh of 12 bands, the tread repeating along it, bunched and darker towards its
+ends) and the picture leaves its own tyres out (`vehicleTinted` with roll: the dark pixels in `VEH_TYRES` holes, the
+tractor's tail lights kept). The top of a tyre moves forward by the distance its wheel rolled (`rollDist`: each frame's
+move taken at the wheel, so outer and steered wheels roll further in a turn, a jump of 5 m or 0.5 rad not rolled), and
+the tread is drawn at the tyre's width, so a big rear tyre's lugs pass slower than a front's. The big tyres use the
+articulated outer tyre's tread, the front wheels their own (`TREADS`); the combine's rear wheels stay as they are.
+A tester asked for it (25 Nov 2026). Tests: `RollingWheels_OnByDefault_AndForSettingsSavedBeforeIt`.
+
 **The implement's colour on the map** (Tool › Type › *Colour on the map*, shown with a picture chosen; `ToolConfig.PictureColor`
 0xRRGGBB, red by default (`ToolConfig.DefaultPictureColor`), `tool.pictureColor` as hex, saved with the tool profile, the
 Config frame's i32 after the picture; fork only): every picture drawn from shapes is drawn in it, its paint (`IC.red`,

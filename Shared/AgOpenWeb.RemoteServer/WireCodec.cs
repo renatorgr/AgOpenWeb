@@ -473,6 +473,7 @@ public static class WireCodec
         DB(d.IsDayMode); // day/night theme — web switches its full palette + map colours
         w.Write(d.UiScale); // i32 — UI size, percent
         DB(d.ImageryVisible); // the field's aerial imagery on the map (#500)
+        DB(d.RollingWheels); // the tyres' tread turns as the wheels roll (fork only)
 
         // AutoSteer config tab (full 9-tab surface). Append-only; field order mirrors
         // AutoSteerConfigDto exactly so transport.js decodes it positionally.

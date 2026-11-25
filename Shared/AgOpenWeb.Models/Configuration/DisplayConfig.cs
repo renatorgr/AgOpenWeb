@@ -126,6 +126,14 @@ public class DisplayConfig : ObservableObject
         set => SetProperty(ref _imageryVisible, value);
     }
 
+    // Rolling wheels on the map (fork only): the tyres' tread turns with the distance each wheel rolls.
+    private bool _rollingWheels = true;
+    public bool RollingWheels
+    {
+        get => _rollingWheels;
+        set => SetProperty(ref _rollingWheels, value);
+    }
+
     private bool _startFullscreen;
     public bool StartFullscreen
     {

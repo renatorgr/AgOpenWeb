@@ -17,6 +17,7 @@ namespace AgOpenWeb.Models
         // (appstate.json), not here.
         public bool StartFullscreen { get; set; } = false;
         public bool ImageryVisible { get; set; } = true;
+        public bool RollingWheels { get; set; } = true;
         public bool SvennArrowVisible { get; set; } = false;
         public bool KeyboardEnabled { get; set; } = false;
         public bool HeadlandDistanceVisible { get; set; } = true;

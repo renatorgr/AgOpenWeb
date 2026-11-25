@@ -506,6 +506,7 @@ public class ConfigurationService(
         // STATE moved to PersistentAppState).
         store.Display.StartFullscreen = settings.StartFullscreen;
         store.Display.ImageryVisible = settings.ImageryVisible;
+        store.Display.RollingWheels = settings.RollingWheels;
         store.Display.SvennArrowVisible = settings.SvennArrowVisible;
         store.Display.KeyboardEnabled = settings.KeyboardEnabled;
         store.Display.HeadlandDistanceVisible = settings.HeadlandDistanceVisible;
@@ -588,6 +589,7 @@ public class ConfigurationService(
         // STATE is persisted by PersistentStateService).
         settings.StartFullscreen = store.Display.StartFullscreen;
         settings.ImageryVisible = store.Display.ImageryVisible;
+        settings.RollingWheels = store.Display.RollingWheels;
         settings.SvennArrowVisible = store.Display.SvennArrowVisible;
         settings.KeyboardEnabled = store.Display.KeyboardEnabled;
         settings.HeadlandDistanceVisible = store.Display.HeadlandDistanceVisible;
