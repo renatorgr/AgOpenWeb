@@ -28,11 +28,7 @@ public class ToolPictureProfileTests
     [TearDown]
     public void TearDown() { try { Directory.Delete(_dir, true); } catch { } }
 
-    [TestCase(ToolPicture.SeedDrill)]
-    [TestCase(ToolPicture.FrontSprayer)]
-    [TestCase(ToolPicture.GrainHeader)]
-    [TestCase(ToolPicture.MaizeHeader)]
-    [TestCase(ToolPicture.None)]
+    [TestCaseSource(nameof(EveryPicture))]
     public void The_picture_is_saved_with_the_tool_profile(ToolPicture picture)
     {
         var src = new ConfigurationStore();
@@ -45,8 +41,10 @@ public class ToolPictureProfileTests
         Assert.That(dst.Tool.Picture, Is.EqualTo(picture));
     }
 
+    private static ToolPicture[] EveryPicture() => Enum.GetValues<ToolPicture>();
+
     [TestCase(null, Description = "saved before the setting")]
-    [TestCase(7, Description = "a picture this build does not have")]
+    [TestCase(99, Description = "a picture this build does not have")]
     [TestCase(-1)]
     public void A_profile_without_a_known_picture_shows_the_section_bars(int? stored)
     {
@@ -69,7 +67,7 @@ public class ToolPictureProfileTests
     public void An_unknown_value_set_in_code_is_none()
     {
         var t = new ToolConfig { Picture = ToolPicture.FrontSprayer };
-        t.Picture = (ToolPicture)9;
+        t.Picture = (ToolPicture)99;
         Assert.That(t.Picture, Is.EqualTo(ToolPicture.None));
     }
 
