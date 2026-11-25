@@ -881,7 +881,9 @@ public class UdpCommunicationService : IUdpCommunicationService, IDisposable
                 _lastDataFromMachine = now;
                 _machineIp = remoteIp;
                 _lastModuleResponse = DateTime.UtcNow;
-                _machineStream.Record();
+                // System Data's line is PGN 237's own stream: the sprayer's 160 and 161 come at
+                // their own rates, and counted in they made its rate and gaps wrong.
+                if (pgn == PgnNumbers.FROM_MACHINE) _machineStream.Record();
                 break;
 
             default:
