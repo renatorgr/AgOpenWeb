@@ -466,7 +466,7 @@ where it works (`implementStrip`). Drawing: `implementPictureSk` in `js/map-draw
 implements over the rear tyres; these two are a tester's own machines, drawn from their measures and photos
 (24 Nov 2026). A picture is also made for vehicle types (`vehicles` in its row): the drill and the sprayer for a
 tractor; a combine carries only its header, *Grain header* or *Maize header* (`grainHeaderPictureSk`,
-`maizeHeaderPictureSk`: drawn, not pictures, as wide as the tool and in the vehicle's colour, a row unit every 75 cm,
+`maizeHeaderPictureSk`: drawn, not pictures, as wide as the tool and in the implement's colour, a row unit every 75 cm,
 a feeder house to the combine's body); an articulated tractor pulls big implements, the trailed disc harrow, the
 ploughs, the four-rotor rake, the air seeders and the trailed planter only so far.
 Tests: `ToolPictureProfileTests`, `ImplementPictureListTests` (one row per `ToolPicture` value, RemoteServer).
@@ -507,13 +507,14 @@ leaves the picture as it is. The setting is a list of the makers' colours for th
 red and he asked for the makers' own colours (24 Nov 2026). Tests: `VehicleColorProfileTests`.
 
 **The implement's colour on the map** (Tool › Type › *Colour on the map*, shown with a picture chosen; `ToolConfig.PictureColor`
-0xRRGGBB or `ToolConfig.OwnColors` -1, `tool.pictureColor` as hex or `own`, saved with the tool profile, the Config frame's
-i32 after the picture; fork only): while a picture drawn from shapes is drawn, its paint (`IC.red`, `IC.green`, `IC.yellow`)
-is drawn in that colour and its darker parts (`IC.redD`, ...) in a shade of it (`implRecolour`, applied in `ip`); tyres,
-discs, tines and grey frames and tanks keep theirs. A combine's header takes it instead of the vehicle's colour. The seed
-drill and the front sprayer are pictures from photos and keep theirs. The list is plain colours by name, no maker's name
-(`IMPLEMENT_COLOURS` in `js/config-panels.js`), and a picker for any other; a new tool profile has the pictures' own colours.
-A tester asked for it as the vehicle has (25 Nov 2026). Tests: `ToolPictureProfileTests`.
+0xRRGGBB, red by default (`ToolConfig.DefaultPictureColor`), `tool.pictureColor` as hex, saved with the tool profile, the
+Config frame's i32 after the picture; fork only): every picture drawn from shapes is drawn in it, its paint (`IC.red`,
+`IC.green`, `IC.yellow`, the rake's tines, the finger wheels) in that colour and its darker parts (`IC.redD`, ...) in a shade
+of it (`implRecolour`, applied in `ip`); tyres, discs and grey frames and tanks keep theirs. A combine's header takes it
+too. The seed drill and the front sprayer are pictures from photos and keep theirs: the panel shows a note in place of
+the list. The list is plain colours by name, no maker's name (`IMPLEMENT_COLOURS` in `js/config-panels.js`), and a picker
+for any other. A new tool profile, one saved without a colour and one saved with the old "own colours" (-1) have red: no
+"own colours", as implements are not one colour (a tester, 25 Nov 2026). Tests: `ToolPictureProfileTests`.
 
 ## Technology Stack
 
