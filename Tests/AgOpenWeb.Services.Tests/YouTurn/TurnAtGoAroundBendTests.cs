@@ -174,17 +174,94 @@ public class TurnAtGoAroundBendTests
         Assert.That(r.ArcStart!.Value.Easting, Is.GreaterThan(4.5), "the arc starts on the bend");
     }
 
-    [Test]
-    public void No_room_after_the_tree_says_it_is_the_obstacle_not_the_fence()
+    // A Go around tree near the end of the pass beside it (skip 0, the next pass at x = -4, the tree
+    // 1.5 m beside it): a turn at the fence lands on the bend round the tree or runs into its room, and
+    // is seated back past the tree. 30 m back was the most: with the tree 28 m or more before the turn
+    // line there was no turn, "No room for a U-turn before the obstacle", and the job stopped at every
+    // pass beside it (a tester's field, the farm job harness: a tree 47 m from a hard fence, 9.5 % sprayed).
+    // Up to 60 m back the turn is made before the tree, and the operator is told how much of the
+    // pass is left to do at that end. Fork only.
+    [TestCase(28.0)]
+    [TestCase(36.0)]
+    [TestCase(44.0)]
+    public void A_tree_near_the_end_of_the_next_pass_seats_the_turn_before_it(double gap)
     {
-        // Onto the pass beside it (skip 0), the next pass goes round the tree as well and has no straight
-        // stretch to land on after it: no turn, and the operator is told it is the obstacle. It was
-        // "implement would swing into a hard boundary", which sent the operator to the fence.
-        var r = Turn(NewCreation(4.5), Field(1.5, 70, 0), skip: 0, left: true);
+        double treeN = 98 - gap;
+        var r = Turn(NewCreation(4.5), Field(1.5, treeN, 0), skip: 0, left: true, y: -120);
+
+        Assert.That(r.Path, Is.Not.Null, $"no turn (blocked {r.ClearanceBlocked}, at an obstacle {r.AtObstacle})");
+        Assert.That(r.ObstacleSetback, Is.GreaterThan(30), "seated back further than 30 m");
+        Assert.That(r.ObstacleSetback, Is.LessThanOrEqualTo(60));
+        Assert.That(r.SetbackObstacleIndex, Is.EqualTo(0), "the tree seated it back");
+        Assert.That(r.ArcStart!.Value.Northing, Is.LessThan(treeN - 1.6), "the turn starts before the tree");
+        var (across, headingOff) = Landing(r.Path!, -4);
+        Assert.That(across, Is.EqualTo(0).Within(0.3), "the turn ends beside the next pass");
+        Assert.That(headingOff, Is.EqualTo(0).Within(3), "the turn ends at the next pass's heading");
+        double room = NewCreation(4.5).GoAroundRoom(ConfigurationStore.Instance);
+        Assert.That(NearestToTree(FromArc(r), 1.5, treeN), Is.GreaterThan(1.6 + room - OutlineSlack), "the turn runs into the tree's room");
+    }
+
+    [Test]
+    public void A_turn_seated_back_for_a_tree_never_starts_behind_the_tractor()
+    {
+        // The same tree 36 m before the turn line, a soft fence, the tractor already 10 m past where the
+        // turn before the tree would start: no turn, and the operator is told it is the obstacle.
+        var field = Field(1.5, 62, 0);
+        field.OuterBoundary!.IsHard = false;
+        var r = Turn(NewCreation(4.5), field, skip: 0, left: true, y: 35);
 
         Assert.That(r.Path, Is.Null);
         Assert.That(r.AtObstacle, Is.True);
         Assert.That(r.ClearanceBlocked, Is.False);
+    }
+
+    [Test]
+    public void The_operator_is_told_how_much_of_the_pass_is_left()
+    {
+        Assert.That(YouTurnStateMachine.PassEndLeftMessage(33.6, 85),
+            Is.EqualTo("U-turn made early to keep clear of Inner 86: about 34 m of this pass is left to do at this end"));
+        Assert.That(YouTurnStateMachine.PassEndLeftMessage(12, -1),
+            Is.EqualTo("U-turn made early to keep clear of an obstacle: about 12 m of this pass is left to do at this end"));
+    }
+
+    [Test]
+    public void The_pass_left_is_measured_along_the_pass_not_to_the_nearest_side()
+    {
+        // A headland line 100 m wide, its north end slanted 45°; a turn starting 5 m from the west
+        // side, driving north: the nearest edge is the side, 5 m; the pass runs on to the slanted end.
+        var line = new List<Vec3>
+        {
+            new(0, 0, 0), new(100, 0, 0), new(100, 150, 0), new(0, 50, 0),
+        };
+        var start = new Vec3(5, 40, 0);
+        Assert.That(YouTurnStateMachine.TurnStartInsideHeadlandLine(start, line), Is.EqualTo(5).Within(1e-9));
+        Assert.That(YouTurnStateMachine.PassLeftAhead(start, 0, line), Is.EqualTo(15).Within(1e-9));
+        Assert.That(YouTurnStateMachine.PassLeftAhead(new Vec3(5, 60, 0), 0, line), Is.Zero, "outside the line: nothing left");
+    }
+
+    [Test]
+    public void The_pass_end_note_reaches_the_toast_while_its_turn_is_planned()
+    {
+        var turn = new List<Vec3> { new(0, 0, 0), new(0, 1, 0) };
+        var effects = new YouTurnEffects
+        {
+            PassEndNotice = YouTurnStateMachine.PassEndLeftMessage(34, 85),
+            PassEndNoticeFor = turn,
+        };
+        Assert.That(AgOpenWeb.Services.Pipeline.GpsPipelineService.YouTurnNoticeOf(effects, turn), Is.EqualTo(effects.PassEndNotice));
+        Assert.That(AgOpenWeb.Services.Pipeline.GpsPipelineService.YouTurnNoticeOf(effects, new List<Vec3>(turn)), Is.Null,
+            "another turn planned since: the note is not told");
+
+        // Something to tell in the same cycle: both are told, neither hides the other.
+        effects.TellOperator = true;
+        effects.StatusMessage = "U-turn missed";
+        Assert.That(AgOpenWeb.Services.Pipeline.GpsPipelineService.YouTurnNoticeOf(effects, turn),
+            Is.EqualTo("U-turn missed. " + effects.PassEndNotice));
+
+        // A status line not for the operator ("YouTurn triggered!") never takes the note's place.
+        effects.TellOperator = false;
+        effects.StatusMessage = "YouTurn triggered!";
+        Assert.That(AgOpenWeb.Services.Pipeline.GpsPipelineService.YouTurnNoticeOf(effects, turn), Is.EqualTo(effects.PassEndNotice));
     }
 
     [TestCase(-60.0)]

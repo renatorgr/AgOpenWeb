@@ -2292,7 +2292,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             GoAroundSpeedNotice = Interlocked.Exchange(ref _goAroundSpeedNotice, null),
             RtkHoldNotice = rtkHoldNotice,
             RtkHoldM = _rtkHold.OffsetM,
-            YouTurnNotice = youTurnTickEffects is { TellOperator: true } ? youTurnTickEffects.StatusMessage : null,
+            YouTurnNotice = YouTurnNoticeOf(youTurnTickEffects, _youTurn.TurnPath),
             LineEntryPath = _lineEntryPath ?? _lineEntryOffer ?? _sideStepPath,
             LineEntryOfferPass = _lineEntryPath == null && _lineEntryOffer != null ? PassName(_lineEntryOfferPass) : null,
             LineEntryNotice = TakeLineEntryNotice(),
@@ -2377,6 +2377,22 @@ public sealed class GpsPipelineService : IGpsPipelineService
     }
 
     /// <summary>The pass as its label names it: pass 0 is 1R, pass −1 is 1L.</summary>
+    /// <summary>
+    /// The U-turn toast of a cycle: what the state machine must tell the operator, and the note
+    /// that a turn seated back for an obstacle leaves the end of the pass to do, while that turn
+    /// is still the one planned; both when a cycle has both, so neither hides the other. Fork only.
+    /// </summary>
+    internal static string? YouTurnNoticeOf(YouTurnEffects? effects, List<Vec3>? plannedTurn)
+    {
+        if (effects == null) return null;
+        string? told = effects.TellOperator ? effects.StatusMessage : null;
+        string? passEnd = effects.PassEndNoticeFor is { } noticeFor && ReferenceEquals(noticeFor, plannedTurn)
+            ? effects.PassEndNotice : null;
+        if (string.IsNullOrEmpty(told)) return passEnd;
+        if (string.IsNullOrEmpty(passEnd)) return told;
+        return told + ". " + passEnd;
+    }
+
     private static string PassName(int pass) => pass >= 0 ? $"{pass + 1}R" : $"{-pass}L";
 
     private static GuidanceSnapshot BuildGuidanceSnapshot(
