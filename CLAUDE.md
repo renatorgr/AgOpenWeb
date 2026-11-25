@@ -485,7 +485,7 @@ plough a disc every 30 cm), within what is made: 2 to 7 bodies mounted, 5 to 12 
 behind the rear tyre in the open furrow (`iPloughBodyPlaces`), so the work is 15 to 20 cm off the tractor's middle towards
 the ground still to plough on a four-body plough, as on the ground. **The plough and the mower change side by themselves** (`implWorkLeft`): the
 side of the ground still to work, from the pass label (↑ A to B, ↓ B to A) and the way the passes last changed (a pass
-counts after 10 m on it within a quarter of the tool's width of its line, so a turn by hand that loops over a pass does not,
+counts after 10 m on it without leaving a quarter of the tool's width of its line, so a turn by hand that loops over a pass does not,
 or at once when a U-turn lands on it; before any change on the track, the U-turn arrow's side; followed on every Tick, a
 picture shown or not, and started again on another track or field).
 During a U-turn the label names the pass it lands on, driven the other way, so the ploughs turn over (the disc plough's
