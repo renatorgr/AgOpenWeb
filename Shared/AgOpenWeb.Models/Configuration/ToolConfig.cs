@@ -551,8 +551,9 @@ public enum ToolPicture
     /// <summary>A semi-mounted roller (trailing tool): its pivot on a bar on the lower links (Vehicle
     /// hitch), a row of spring tines ahead of the roller, as wide as the tool.</summary>
     Roller = 8,
-    /// <summary>A reversible plough on the rear 3-point hitch, a body every 40 cm or so of the tool's
-    /// width, turned over at every U-turn: the bodies throw the soil towards the land ploughed before.</summary>
+    /// <summary>A mounted reversible plough on the rear 3-point hitch, 2 to 7 bodies (one every 40 cm or so of
+    /// the tool's width), turned over at every U-turn: the bodies throw the soil towards the land ploughed
+    /// before; on a tractor or an articulated tractor.</summary>
     ReversiblePlough = 9,
     /// <summary>A trailed disc harrow on the drawbar pin (trailing tool), four gangs in an X and its
     /// wheels between them, as wide as the tool; on a tractor or an articulated tractor.</summary>
@@ -564,4 +565,11 @@ public enum ToolPicture
     DiscHarrowMounted = 12,
     /// <summary>A twin-disc fertiliser spreader on the rear 3-point hitch, its spread as wide as the tool.</summary>
     FertiliserSpreader = 13,
+    /// <summary>A semi-mounted reversible plough (trailing tool): its swivel behind the lower links (Vehicle
+    /// hitch), 5 to 12 bodies on a long beam, turned over at every U-turn; on a tractor or an articulated
+    /// tractor.</summary>
+    SemiMountedPlough = 14,
+    /// <summary>A reversible disc plough on the rear 3-point hitch, 2 to 6 discs (one every 30 cm or so of the
+    /// tool's width), its beam swung across at every U-turn; on a tractor or an articulated tractor.</summary>
+    DiscPlough = 15,
 }

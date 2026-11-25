@@ -467,24 +467,28 @@ implements over the rear tyres; these two are a tester's own machines, drawn fro
 (24 Nov 2026). A picture is also made for vehicle types (`vehicles` in its row): the drill and the sprayer for a
 tractor; a combine carries only its header, *Grain header* or *Maize header* (`grainHeaderPictureSk`,
 `maizeHeaderPictureSk`: drawn, not pictures, as wide as the tool and in the vehicle's colour, a row unit every 75 cm,
-a feeder house to the combine's body); an articulated tractor pulls big implements, the trailed disc harrow only so far.
+a feeder house to the combine's body); an articulated tractor pulls big implements, the trailed disc harrow and the
+ploughs only so far.
 Tests: `ToolPictureProfileTests`, `ImplementPictureListTests` (one row per `ToolPicture` value, RemoteServer).
 
 **Implements drawn from shapes** (fork only, 25 Nov 2026): a manure spreader, a centre-pivot mower conditioner, a quick
-disc harrow, a semi-mounted roller, a reversible plough, a trailed and a 3-point disc harrow, a rear side disc mower and a
-twin-disc fertiliser spreader (`ToolPicture` 5 to 13), drawn in `js/map-draw.js` from rectangles, bars and paths like the
+disc harrow, a semi-mounted roller, a reversible plough, a trailed and a 3-point disc harrow, a rear side disc mower, a
+twin-disc fertiliser spreader, a semi-mounted reversible plough and a reversible disc plough (`ToolPicture` 5 to 15), drawn in `js/map-draw.js` from rectangles, bars and paths like the
 headers, sized from the tool's width and hitch lengths, in metres with y backwards (`implTractorFrame`: what rides on the
 tractor, from the rear axle; `implTrailFrame`: a trailing tool from its pin). The part that works (bodies, discs, cutter
 bar, beaters) is always on the line the map paints, frames, arms and wheels fitting round it: clamped to look right, the
 plough and the mower conditioner were drawn 0.5 m behind the strip at a tester's settings. Colours from the tester's own machines where
 he sent photos, else generic; never a maker's name (the mower conditioner's above all). The rear side mower is drawn where
-the tool offset puts it (`implSectionsMiddle`). **The plough and the mower change side by themselves** (`implWorkLeft`): the
+the tool offset puts it (`implSectionsMiddle`). A plough has as many bodies as its width takes at about 40 cm each (a disc
+plough a disc every 30 cm), within what is made: 2 to 7 bodies mounted, 5 to 12 semi-mounted, 2 to 6 discs; the front one
+behind the rear tyre in the open furrow (`iPloughBodyPlaces`), so the work is 15 to 20 cm off the tractor's middle towards
+the ground still to plough on a four-body plough, as on the ground. **The plough and the mower change side by themselves** (`implWorkLeft`): the
 side of the ground still to work, from the pass label (↑ A to B, ↓ B to A) and the way the passes last changed (a pass
 counts after 10 m on it within a quarter of the tool's width of its line, so a turn by hand that loops over a pass does not,
 or at once when a U-turn lands on it; before any change on the track, the U-turn arrow's side; followed on every Tick, a
 picture shown or not, and started again on another track or field).
-During a U-turn the label names the pass it lands on, driven the other way, so the plough turns over and the mower swings
-across as the turn starts (`implSideNow`, eased over about 3 s). Only the picture changes side: the painted strip stays
+During a U-turn the label names the pass it lands on, driven the other way, so the ploughs turn over (the disc plough's
+beam swings across) and the mower swings across as the turn starts (`implSideNow`, eased over about 3 s). Only the picture changes side: the painted strip stays
 where the tool settings put it.
 
 **The vehicle's colour on the map** (Vehicle › *Machine brand*, `VehicleConfig.Color` 0xRRGGBB, `vehicle.color` as hex,
