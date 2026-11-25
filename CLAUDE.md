@@ -506,6 +506,15 @@ leaves the picture as it is. The setting is a list of the makers' colours for th
 `js/settings-panels.js`, each with where its value comes from) and a picker for any other. A tester's three tractors are
 red and he asked for the makers' own colours (24 Nov 2026). Tests: `VehicleColorProfileTests`.
 
+**The implement's colour on the map** (Tool › Type › *Colour on the map*, shown with a picture chosen; `ToolConfig.PictureColor`
+0xRRGGBB or `ToolConfig.OwnColors` -1, `tool.pictureColor` as hex or `own`, saved with the tool profile, the Config frame's
+i32 after the picture; fork only): while a picture drawn from shapes is drawn, its paint (`IC.red`, `IC.green`, `IC.yellow`)
+is drawn in that colour and its darker parts (`IC.redD`, ...) in a shade of it (`implRecolour`, applied in `ip`); tyres,
+discs, tines and grey frames and tanks keep theirs. A combine's header takes it instead of the vehicle's colour. The seed
+drill and the front sprayer are pictures from photos and keep theirs. The list is plain colours by name, no maker's name
+(`IMPLEMENT_COLOURS` in `js/config-panels.js`), and a picker for any other; a new tool profile has the pictures' own colours.
+A tester asked for it as the vehicle has (25 Nov 2026). Tests: `ToolPictureProfileTests`.
+
 ## Technology Stack
 
 - **.NET 10.0** - Target framework
