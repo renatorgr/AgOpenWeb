@@ -100,7 +100,9 @@ public static class SwathOrderingService
     public static List<int> SkipAndFillFrom(int minPath, int maxPath, int current, int step)
     {
         if (maxPath < minPath) return new List<int> { current };
-        step = Math.Max(1, step);
+        // A step as long as the range or longer puts each pass in a lane of its own: the same
+        // order with the step held to the range, and no lane looked at that has no pass.
+        step = Math.Clamp(step, 1, maxPath - minPath + 1);
         if (current < minPath || current > maxPath)
         {
             var fromStart = SkipAndFill(minPath, maxPath, minPath, +1, step);

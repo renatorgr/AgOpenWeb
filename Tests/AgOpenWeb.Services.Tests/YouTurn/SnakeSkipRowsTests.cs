@@ -70,6 +70,16 @@ public class SnakeSkipRowsTests
     }
 
     [Test]
+    public void AStepLongerThanTheField_IsTheSameOrderAsOneAsLongAsIt()
+    {
+        // Every pass a lane of its own either way; int.MaxValue must not walk int.MaxValue lanes.
+        for (int n = 1; n <= 12; n++)
+            for (int current = -1; current <= n; current++)
+                Assert.That(SwathOrderingService.SkipAndFillFrom(0, n - 1, current, int.MaxValue),
+                    Is.EqualTo(SwathOrderingService.SkipAndFillFrom(0, n - 1, current, n)), $"{n} passes, from {current}");
+    }
+
+    [Test]
     public void FromAnEdge_NoMoveIsLongerThanTheStep()
     {
         // The rows skipped from one pass to the next, a lane at a time; between lanes, at the
