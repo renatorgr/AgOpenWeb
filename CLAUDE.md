@@ -467,7 +467,21 @@ implements over the rear tyres; these two are a tester's own machines, drawn fro
 (24 Nov 2026). A picture is also made for vehicle types (`vehicles` in its row): the drill and the sprayer for a
 tractor; a combine carries only its header, *Grain header* or *Maize header* (`grainHeaderPictureSk`,
 `maizeHeaderPictureSk`: drawn, not pictures, as wide as the tool and in the vehicle's colour, a row unit every 75 cm,
-a feeder house to the combine's body); an articulated tractor pulls big implements, none drawn yet. Tests: `ToolPictureProfileTests`.
+a feeder house to the combine's body); an articulated tractor pulls big implements, the trailed disc harrow only so far.
+Tests: `ToolPictureProfileTests`, `ImplementPictureListTests` (one row per `ToolPicture` value, RemoteServer).
+
+**Implements drawn from shapes** (fork only, 25 Nov 2026): a manure spreader, a centre-pivot mower conditioner, a quick
+disc harrow, a semi-mounted roller, a reversible plough, a trailed and a 3-point disc harrow, a rear side disc mower and a
+twin-disc fertiliser spreader (`ToolPicture` 5 to 13), drawn in `js/map-draw.js` from rectangles, bars and paths like the
+headers, sized from the tool's width and hitch lengths, in metres with y backwards (`implTractorFrame`: what rides on the
+tractor, from the rear axle; `implTrailFrame`: a trailing tool from its pin). Colours from the tester's own machines where
+he sent photos, else generic; never a maker's name (the mower conditioner's above all). The rear side mower is drawn where
+the tool offset puts it (`implSectionsMiddle`). **The plough and the mower change side by themselves** (`implWorkLeft`): the
+side of the ground still to work, from the pass label (↑ A to B, ↓ B to A) and the way the passes last changed (a pass
+counts after 10 m on it, or at once when a U-turn lands on it; before any change on the track, the U-turn arrow's side).
+During a U-turn the label names the pass it lands on, driven the other way, so the plough turns over and the mower swings
+across as the turn starts (`implSideNow`, eased over about 3 s). Only the picture changes side: the painted strip stays
+where the tool settings put it.
 
 **The vehicle's colour on the map** (Vehicle › *Machine brand*, `VehicleConfig.Color` 0xRRGGBB, `vehicle.color` as hex,
 saved with the vehicle profile, the Config frame's i32 after the IMU offset; fork only): the body picture of every vehicle

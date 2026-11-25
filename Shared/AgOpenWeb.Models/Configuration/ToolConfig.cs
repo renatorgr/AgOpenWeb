@@ -539,4 +539,29 @@ public enum ToolPicture
     GrainHeader = 3,
     /// <summary>A combine's maize header, a row unit every 75 cm (front-fixed tool on a harvester), as wide as the tool.</summary>
     MaizeHeader = 4,
+    /// <summary>A one-axle manure spreader on the drawbar pin (trailing tool), its beaters at the working
+    /// line, spreading as wide as the tool.</summary>
+    ManureSpreader = 5,
+    /// <summary>A centre-pivot mower conditioner (trailing tool): the swivel on the lower links (Vehicle
+    /// hitch), the machine swung to the side still standing, the other side every pass.</summary>
+    MowerConditioner = 6,
+    /// <summary>A quick disc harrow on the rear 3-point hitch: two rows of discs, spring tines and a
+    /// packer roller, as wide as the tool.</summary>
+    QuickDiscHarrow = 7,
+    /// <summary>A semi-mounted roller (trailing tool): its pivot on a bar on the lower links (Vehicle
+    /// hitch), a row of spring tines ahead of the roller, as wide as the tool.</summary>
+    Roller = 8,
+    /// <summary>A reversible plough on the rear 3-point hitch, a body every 40 cm or so of the tool's
+    /// width, turned over at every U-turn: the bodies throw the soil towards the land ploughed before.</summary>
+    ReversiblePlough = 9,
+    /// <summary>A trailed disc harrow on the drawbar pin (trailing tool), four gangs in an X and its
+    /// wheels between them, as wide as the tool; on a tractor or an articulated tractor.</summary>
+    DiscHarrowTrailed = 10,
+    /// <summary>A disc mower on the rear 3-point hitch, its cutter bar where the tool offset puts it
+    /// (beside the tractor), as wide as the tool.</summary>
+    RearSideMower = 11,
+    /// <summary>A disc harrow on the rear 3-point hitch, four gangs in an X, as wide as the tool.</summary>
+    DiscHarrowMounted = 12,
+    /// <summary>A twin-disc fertiliser spreader on the rear 3-point hitch, its spread as wide as the tool.</summary>
+    FertiliserSpreader = 13,
 }
