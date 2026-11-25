@@ -64,6 +64,7 @@ Boundary frame's last byte). Test: `BoundaryRecorderPageTests`.
 | `js/web-cards.js` | Web cards |
 | `js/map-draw.js` | Skia map layers: lines and tracks, previews, flags, grid, hitch, vehicle, ground, imagery |
 | `js/work-textures.js` | The painted area's textures, one per kind of work (fork only) |
+| `js/fps-test.js` | The frame rate test, loaded only with `?fpstest` in the address (frame.js): views and looks of the painted area, fps and draw time (fork only) |
 | `js/map-layers.js` | Satellite tiles, coverage (plain or with its work's texture), tool footprint, light bar and steer bar |
 | `js/frame.js` | `renderSkia`, the frame loop and its DOM updates; the start |
 
