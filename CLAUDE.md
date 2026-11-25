@@ -511,12 +511,14 @@ red and he asked for the makers' own colours (24 Nov 2026). Tests: `VehicleColor
 
 **Dual wheels on the map** (Vehicle › *Wheels*, `VehicleConfig.DualWheels` 0 single, 1 dual on the drive axle, 2 dual on
 both axles of a tractor; `vehicle.dualWheels`, saved with the vehicle profile, the Config frame's i32 after the colour;
-fork only): a second tyre is drawn outside each tyre of the axle, `DUAL_GAP` (8 cm) out (`bodyDualsSk` in `js/map-draw.js`),
-joined to it by a spacer at the wheels' middle (`dualHubSk`, a steel bar across the gap; the tester asked for it):
-a tractor's rear tyres and a combine's front ones are in the body picture (`VEH_DUAL`: the left tyre's outer edge, width
-and rows in its 256 px), a tractor's front wheels are drawn again a tyre's width further out, turned with the inner one.
-The tyre drawn is the articulated tractor's outer rear tyre: its pictures have dual wheels already, so single wheels (the
-default, a new profile and one saved before it) draw its halves without the outer tyres (`ART_SINGLE`, the columns kept).
+fork only): a second tyre is drawn outside each tyre of the axle, `DUAL_GAP` (8 cm) out with the soil showing between
+the two (`bodyDualsSk` in `js/map-draw.js`), joined to it by a spacer at the wheels' middle (`dualSpacerSk`: a bar only
+across the gap, drawn before the tyres so it never lies over one, the colour of the tractor picture's front axle tinted
+as the vehicle; the tester asked for all of it): a tractor's rear tyres, a combine's front ones and an articulated
+half's are in the body picture (`VEH_DUAL`: the left tyre's outer edge, the dual's width and rows in its 256 px), a
+tractor's front wheels are drawn again a tyre's width further out, turned with the inner one. The tyre drawn is the
+articulated tractor's outer rear tyre: its pictures have dual wheels already, their tyres touching, so its halves are
+always drawn without their outer tyres (`ART_SINGLE`, the columns kept) and get the second tyre as the others.
 The list offers what each type carries (tractor: rear, front and rear; combine: front; articulated: dual). Drawing only:
 the track width stays as set. A tester asked for it (25 Nov 2026). Tests: `VehicleWheelsProfileTests`.
 
