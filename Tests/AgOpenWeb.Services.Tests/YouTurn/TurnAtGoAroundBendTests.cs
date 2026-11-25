@@ -224,6 +224,46 @@ public class TurnAtGoAroundBendTests
             Is.EqualTo("U-turn made early to keep clear of an obstacle: about 12 m of this pass is left to do at this end"));
     }
 
+    [Test]
+    public void The_pass_left_is_measured_along_the_pass_not_to_the_nearest_side()
+    {
+        // A headland line 100 m wide, its north end slanted 45°; a turn starting 5 m from the west
+        // side, driving north: the nearest edge is the side, 5 m; the pass runs on to the slanted end.
+        var line = new List<Vec3>
+        {
+            new(0, 0, 0), new(100, 0, 0), new(100, 150, 0), new(0, 50, 0),
+        };
+        var start = new Vec3(5, 40, 0);
+        Assert.That(YouTurnStateMachine.TurnStartInsideHeadlandLine(start, line), Is.EqualTo(5).Within(1e-9));
+        Assert.That(YouTurnStateMachine.PassLeftAhead(start, 0, line), Is.EqualTo(15).Within(1e-9));
+        Assert.That(YouTurnStateMachine.PassLeftAhead(new Vec3(5, 60, 0), 0, line), Is.Zero, "outside the line: nothing left");
+    }
+
+    [Test]
+    public void The_pass_end_note_reaches_the_toast_while_its_turn_is_planned()
+    {
+        var turn = new List<Vec3> { new(0, 0, 0), new(0, 1, 0) };
+        var effects = new YouTurnEffects
+        {
+            PassEndNotice = YouTurnStateMachine.PassEndLeftMessage(34, 85),
+            PassEndNoticeFor = turn,
+        };
+        Assert.That(AgOpenWeb.Services.Pipeline.GpsPipelineService.YouTurnNoticeOf(effects, turn), Is.EqualTo(effects.PassEndNotice));
+        Assert.That(AgOpenWeb.Services.Pipeline.GpsPipelineService.YouTurnNoticeOf(effects, new List<Vec3>(turn)), Is.Null,
+            "another turn planned since: the note is not told");
+
+        // Something to tell in the same cycle: both are told, neither hides the other.
+        effects.TellOperator = true;
+        effects.StatusMessage = "U-turn missed";
+        Assert.That(AgOpenWeb.Services.Pipeline.GpsPipelineService.YouTurnNoticeOf(effects, turn),
+            Is.EqualTo("U-turn missed. " + effects.PassEndNotice));
+
+        // A status line not for the operator ("YouTurn triggered!") never takes the note's place.
+        effects.TellOperator = false;
+        effects.StatusMessage = "YouTurn triggered!";
+        Assert.That(AgOpenWeb.Services.Pipeline.GpsPipelineService.YouTurnNoticeOf(effects, turn), Is.EqualTo(effects.PassEndNotice));
+    }
+
     [TestCase(-60.0)]
     [TestCase(-149.0)] // at the start of a job: between the fence and the turn line, driving in
     public void A_turn_obstacle_ahead_is_seen_from_outside_the_turn_line(double y)

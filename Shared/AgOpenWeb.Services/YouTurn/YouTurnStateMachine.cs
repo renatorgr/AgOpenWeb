@@ -2460,7 +2460,8 @@ public sealed class YouTurnStateMachine
         // operator is told how much (the crop before the headland line, or with no headland the
         // setback itself), not that the headland is too narrow. Fork only.
         double leftToDo = result.ObstacleSetback <= 0 ? 0
-            : ctx.WorkHeadlandLine is { Count: >= 3 } ? startsInside : result.ObstacleSetback;
+            : ctx.WorkHeadlandLine is { Count: >= 3 } ? PassLeftAhead(result.ArcStart, headingRadians, ctx.WorkHeadlandLine)
+            : result.ObstacleSetback;
         if (leftToDo > NarrowHeadlandToleranceM)
         {
             // Its own notice, not the status line: a turn planned late is triggered in the same
@@ -2581,6 +2582,32 @@ public sealed class YouTurnStateMachine
     /// <summary>How far inside the headland line (in the cultivated area) the turn leaves its
     /// pass: the arc's start, before the entry leg. 0 when it starts in the headland or there
     /// is no headland line.</summary>
+    /// <summary>
+    /// How much of the pass is left between a turn's start and the headland line, measured along
+    /// the way the tractor drives (the nearest edge of the headland line can be a side of the
+    /// field, nearer than the pass's own end). 0 when the start is not inside the headland line;
+    /// the nearest edge when the way ahead crosses none. Fork only.
+    /// </summary>
+    public static double PassLeftAhead(Vec3? arcStart, double headingRadians, IReadOnlyList<Vec3>? headlandLine)
+    {
+        if (arcStart is not { } a || headlandLine == null || headlandLine.Count < 3) return 0;
+        if (!GeometryMath.IsPointInPolygon(headlandLine, a)) return 0;
+        double ux = Math.Sin(headingRadians), uy = Math.Cos(headingRadians);
+        double best = double.MaxValue;
+        for (int i = 0, j = headlandLine.Count - 1; i < headlandLine.Count; j = i++)
+        {
+            var p = headlandLine[j]; var q = headlandLine[i];
+            double ex = q.Easting - p.Easting, ey = q.Northing - p.Northing;
+            double den = ux * ey - uy * ex;
+            if (Math.Abs(den) < 1e-12) continue;
+            double wx = p.Easting - a.Easting, wy = p.Northing - a.Northing;
+            double t = (wx * ey - wy * ex) / den;       // along the way ahead
+            double s = (wx * uy - wy * ux) / den;       // along the edge
+            if (t > 0 && s >= 0 && s <= 1) best = Math.Min(best, t);
+        }
+        return best < double.MaxValue ? best : TurnStartInsideHeadlandLine(arcStart, headlandLine);
+    }
+
     public static double TurnStartInsideHeadlandLine(Vec3? arcStart, IReadOnlyList<Vec3>? headlandLine)
     {
         if (arcStart is not { } a || headlandLine == null || headlandLine.Count < 3) return 0;

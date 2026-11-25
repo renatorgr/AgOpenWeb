@@ -242,6 +242,7 @@ public partial class YouTurnCreationService
                 {
                     extraSetback += ObstacleSetbackStep;
                     obstacleSetback = true;
+                    setbackObstacle = -1;   // a bend, not an obstacle crossed: named by the last cause
                     if (extraSetback <= MaxObstacleSetback)
                     {
                         _logger.LogDebug("[YouTurn] The turn lands {D:F1} m off the straight next pass, on a bend; seating it further back (setback {S:F1} m)",
@@ -353,6 +354,7 @@ public partial class YouTurnCreationService
                     {
                         extraSetback += ObstacleSetbackStep;
                         obstacleSetback = true;
+                        setbackObstacle = -1;
                         _logger.LogDebug("[YouTurn] Turn malformed (net={Net:F0}° cumulative={Cum:F0}°) on a pass bent round an obstacle; seating it further back (setback {S:F1} m)",
                             netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI, extraSetback);
                         continue;
