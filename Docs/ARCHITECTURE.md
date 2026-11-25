@@ -758,6 +758,13 @@ is compared, dropped selectively or chosen between the links:
 Tests: `TwoLinkDetectorTests` (the tester's router replayed: found, nothing used, cleared when the cable is
 pulled, found when it is plugged in; stray datagrams never found), `TwoLinksTests` (the stop and its hold).
 
+**Fork only.** This is the code of official PR #900, which was closed (25 Nov 2026) in favour of official #944
+(*Data quality: one monitor, many sensors*): there `FixTimeSensor` only warns (a toast and a `[Data]` log line)
+when positions come a second time or late, and nothing is stopped. The fork keeps the stop and runs #944's sensors
+beside it: a module on two links is held by `TwoLinkDetector` first, so the data quality sensors see only the
+datagrams that are used. In the fork's status frame the two-link fields come after `LineTune`, and #944's
+`DataQuality` after them, last.
+
 ### PGN Message Format
 
 All messages follow AgOpenGPS standard:
