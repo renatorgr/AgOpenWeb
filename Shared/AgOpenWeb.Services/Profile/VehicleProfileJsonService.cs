@@ -122,6 +122,7 @@ public static class VehicleProfileJsonService
             FrontHitchLength = store.Vehicle.FrontHitchLength,
             HitchType = store.Vehicle.HitchType,
             Color = store.Vehicle.Color,
+            DualWheels = store.Vehicle.DualWheels,
         },
         Guidance = new GuidanceDto
         {
@@ -193,6 +194,7 @@ public static class VehicleProfileJsonService
         store.Vehicle.FrontHitchLength = dto.Vehicle?.FrontHitchLength ?? 0.0;
         store.Vehicle.HitchType = dto.Vehicle?.HitchType ?? 0;
         store.Vehicle.Color = dto.Vehicle?.Color ?? VehicleConfig.DefaultColor;
+        store.Vehicle.DualWheels = dto.Vehicle?.DualWheels ?? 0; // missing or not a choice = single
 
         // Guidance
         store.Guidance.IsPurePursuit = dto.Guidance?.IsPurePursuit ?? true;
@@ -279,6 +281,8 @@ public static class VehicleProfileJsonService
         public int HitchType { get; set; }
         /// <summary>The vehicle's colour on the map, 0xRRGGBB; missing = white (the picture as drawn).</summary>
         public uint? Color { get; set; }
+        /// <summary>Dual wheels on the map: 0 single, 1 on the drive axle, 2 on both; missing = single (fork only).</summary>
+        public int? DualWheels { get; set; }
     }
 
     internal class GuidanceDto

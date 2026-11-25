@@ -605,7 +605,8 @@ public record VehicleConfigDto(
     double ImuPivot,
     double ImuHeight,
     double ImuOffset,
-    int Color = 0xFFFFFF);         // the vehicle's colour on the map, 0xRRGGBB (fork only)
+    int Color = 0xFFFFFF,          // the vehicle's colour on the map, 0xRRGGBB (fork only)
+    int DualWheels = 0);           // dual wheels on the map: 0 single, 1 drive axle, 2 both (fork only)
 
 /// <summary>Data Sources → GPS tab (ConfigStore.Connections).</summary>
 public record GpsConfigDto(

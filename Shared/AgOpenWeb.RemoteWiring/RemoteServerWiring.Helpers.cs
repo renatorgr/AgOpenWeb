@@ -127,6 +127,8 @@ public static partial class RemoteServerWiring
                 return;
             case "vehicle.hitchType": if (I(out var ht)) veh.HitchType = ht; return;
             case "vehicle.color": if (uint.TryParse(val, System.Globalization.NumberStyles.HexNumber, inv, out var vcol)) veh.Color = vcol; return;
+            // Dual wheels on the map: 0 single, 1 on the drive axle, 2 on both (fork only).
+            case "vehicle.dualWheels": if (I(out var dw)) veh.DualWheels = dw; return;
             case "vehicle.hitchLength": if (D(out var d1)) veh.HitchLength = d1; return;
             case "vehicle.threePointHitchLength": if (D(out var d1b)) veh.ThreePointHitchLength = d1b; return;
             case "vehicle.frontHitchLength": if (D(out var d1c)) veh.FrontHitchLength = d1c; return;

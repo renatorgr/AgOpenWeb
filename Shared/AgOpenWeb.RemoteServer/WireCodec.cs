@@ -371,6 +371,7 @@ public static class WireCodec
         w.Write(v.ImuHeight);
         w.Write(v.ImuOffset);
         w.Write(v.Color);              // i32, 0xRRGGBB (fork only)
+        w.Write(v.DualWheels);         // i32, 0 single, 1 drive axle, 2 both (fork only)
         var g = c.Gps;
         w.Write((byte)(g.IsDualGps ? 1 : 0));
         w.Write(g.DualHeadingOffset);  // f64

@@ -732,6 +732,49 @@ function vehicleTinted(img, kind) {
   vehTinted[kind] = { rgb: c, sk };
   return sk;
 }
+// Vehicle > Wheels (vehicle.dualWheels: 0 single, 1 dual on the drive axle, 2 dual on both axles of a tractor;
+// fork only). A second tyre is drawn outside each tyre of the axle, a gap of DUAL_GAP metres out: a tractor's rear
+// tyres and a combine's front ones are in the body picture (VEH_DUAL: the left tyre's outer edge, its width and its
+// rows in the picture's 256 px; the right one is its mirror), a tractor's front wheels are their own picture. The
+// tyre drawn is the articulated tractor's outer rear tyre, its pictures having dual wheels already: single wheels
+// draw the articulated halves without their outer tyres (ART_SINGLE, the columns kept). Drawing only.
+const VEH_DUAL = {
+  tractor: { edge: 41, w: 48, y0: 140, y1: 238 },
+  harvester: { edge: 50, w: 28, y0: 108, y1: 147 },
+};
+const DUAL_GAP = 0.08, ART_SINGLE = [41, 215];
+let dualSrcL = null, dualSrcR = null;
+function vehDualWheels(veh) { return veh ? Math.max(0, Math.min(2, veh.dualWheels | 0)) : 0; }
+// The dual tyre in the vehicle frame (+Y forward) from x0 to x1 and from yBack to yFront; left: the left one.
+function dualTyreSk(canvas, x0, x1, yBack, yFront, left) {
+  const img = skSprite(artRearSpr);
+  if (!img) return;
+  if (!dualSrcL) { dualSrcL = CK.LTRBRect(2, 78, 41, 177); dualSrcR = CK.LTRBRect(215, 78, 254, 177); }
+  canvas.save();
+  canvas.scale(1, -1);
+  canvas.drawImageRectOptions(img, left ? dualSrcL : dualSrcR, CK.LTRBRect(x0, -yFront, x1, -yBack),
+    CK.FilterMode.Linear, CK.MipmapMode.None, null);
+  canvas.restore();
+}
+// The dual tyres beside a body picture drawn from x = -hx to hx and from y = yTop (row 0) down to yTop - 2 hy.
+function bodyDualsSk(canvas, spec, hx, yTop, hy) {
+  const mx = hx / 128, my = hy / 128;
+  const edge = -hx + spec.edge * mx, x1 = edge - DUAL_GAP, x0 = x1 - spec.w * mx;
+  const yFront = yTop - spec.y0 * my, yBack = yTop - spec.y1 * my;
+  dualTyreSk(canvas, x0, x1, yBack, yFront, true);
+  dualTyreSk(canvas, -x1, -x0, yBack, yFront, false);
+}
+// drawVehSprite with only the picture's columns c0 to c1 (of 256) drawn, where they are in the whole picture.
+function drawVehSpriteCols(canvas, sk, cx, cy, hx, hy, rotDeg, c0, c1) {
+  canvas.save();
+  canvas.translate(cx, cy);
+  if (rotDeg) canvas.rotate(rotDeg, 0, 0);
+  canvas.scale(1, -1);
+  const k = sk.width() / 256;
+  canvas.drawImageRectOptions(sk, CK.LTRBRect(c0 * k, 0, c1 * k, sk.height()),
+    CK.LTRBRect(-hx + c0 * hx / 128, -hy, -hx + c1 * hx / 128, hy), CK.FilterMode.Linear, CK.MipmapMode.None, null);
+  canvas.restore();
+}
 // Harvester / articulated bodies (issue #88), laid out as AgOpenGPS CVehicle.DrawVehicle:
 //  harvester  — body 2·tw × 3·wb centred on the pivot; steerable wheels at the REAR axle
 //               (−wb), turned the opposite way to a tractor, tinted HarvesterWheelColor.
@@ -753,13 +796,21 @@ function vehicleBodySk(canvas, p, veh, type) {
       }
       for (const sx of [1, -1]) drawVehSprite(canvas, wheel, sx * tw / 2, -wb, 0.25 * tw, 0.5 * wb, steer, SKP.harvesterWheel);
     }
+    if (vehDualWheels(veh)) bodyDualsSk(canvas, VEH_DUAL.harvester, tw, 1.5 * wb, 1.5 * wb);
     drawVehSprite(canvas, vehicleTinted(harvesterSpr.img, 'harvester') || body, 0, 0, tw, 1.5 * wb, 0);
   } else {
     const front = skSprite(artFrontSpr), rear = skSprite(artRearSpr);
     if (!front || !rear) return false;
     beginVehicleFrame(canvas, p);
-    drawVehSprite(canvas, vehicleTinted(artRearSpr.img, 'articulatedRear') || rear, 0, -wb / 2, tw, 0.65 * wb, steer / 2);
-    drawVehSprite(canvas, vehicleTinted(artFrontSpr.img, 'articulatedFront') || front, 0, wb / 2, tw, 0.65 * wb, -steer / 2);
+    const rearImg = vehicleTinted(artRearSpr.img, 'articulatedRear') || rear;
+    const frontImg = vehicleTinted(artFrontSpr.img, 'articulatedFront') || front;
+    if (vehDualWheels(veh)) {
+      drawVehSprite(canvas, rearImg, 0, -wb / 2, tw, 0.65 * wb, steer / 2);
+      drawVehSprite(canvas, frontImg, 0, wb / 2, tw, 0.65 * wb, -steer / 2);
+    } else {
+      drawVehSpriteCols(canvas, rearImg, 0, -wb / 2, tw, 0.65 * wb, steer / 2, ART_SINGLE[0], ART_SINGLE[1]);
+      drawVehSpriteCols(canvas, frontImg, 0, wb / 2, tw, 0.65 * wb, -steer / 2, ART_SINGLE[0], ART_SINGLE[1]);
+    }
   }
   canvas.restore();
   return true;
@@ -802,6 +853,8 @@ function vehicleSk(canvas, p) {
       const bH = veh.wheelbase / (SPR_FRONT - SPR_REAR);
       const half = bW / 2, top = (1 - SPR_REAR) * bH, bot = -SPR_REAR * bH;
       beginVehicleFrame(canvas, p);
+      const duals = vehDualWheels(veh);
+      if (duals) bodyDualsSk(canvas, VEH_DUAL.tractor, half, top, bH / 2);
       // Body sprite (scale 1,-1 = bitmap rows top-down → world N up).
       canvas.save();
       canvas.scale(1, -1);
@@ -820,10 +873,13 @@ function vehicleSk(canvas, p) {
         const ww = 0.378 / 0.27, wh = 0.85 / 0.29; // FrontTireWidth/ContentW, Diameter/ContentH
         const wsrc = CK.LTRBRect(0, 0, skFrontWheel.width(), skFrontWheel.height());
         const wdst = CK.LTRBRect(-ww / 2, -wh / 2, ww / 2, wh / 2);
-        for (const sx of [1, -1]) {
+        // Dual front wheels: the same wheel again, a tyre's width (FrontTireWidth 0.378) and a gap further out,
+        // turned with it about the inner wheel's middle.
+        for (const sx of duals === 2 ? [1, -1, 2, -2] : [1, -1]) {
           canvas.save();
-          canvas.translate(sx * woX, woY);
+          canvas.translate(Math.sign(sx) * woX, woY);
           canvas.rotate(steerDeg, 0, 0);
+          if (Math.abs(sx) === 2) canvas.translate(Math.sign(sx) * (0.378 + DUAL_GAP), 0);
           canvas.scale(1, -1);
           canvas.drawImageRectOptions(skFrontWheel, wsrc, wdst, CK.FilterMode.Linear, CK.MipmapMode.None, null);
           canvas.restore();

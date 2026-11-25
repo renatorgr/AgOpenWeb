@@ -509,6 +509,16 @@ leaves the picture as it is. The setting is a list of the makers' colours for th
 `js/settings-panels.js`, each with where its value comes from) and a picker for any other. A tester's three tractors are
 red and he asked for the makers' own colours (24 Nov 2026). Tests: `VehicleColorProfileTests`.
 
+**Dual wheels on the map** (Vehicle › *Wheels*, `VehicleConfig.DualWheels` 0 single, 1 dual on the drive axle, 2 dual on
+both axles of a tractor; `vehicle.dualWheels`, saved with the vehicle profile, the Config frame's i32 after the colour;
+fork only): a second tyre is drawn outside each tyre of the axle, `DUAL_GAP` (8 cm) out (`bodyDualsSk` in `js/map-draw.js`):
+a tractor's rear tyres and a combine's front ones are in the body picture (`VEH_DUAL`: the left tyre's outer edge, width
+and rows in its 256 px), a tractor's front wheels are drawn again a tyre's width further out, turned with the inner one.
+The tyre drawn is the articulated tractor's outer rear tyre: its pictures have dual wheels already, so single wheels (the
+default, a new profile and one saved before it) draw its halves without the outer tyres (`ART_SINGLE`, the columns kept).
+The list offers what each type carries (tractor: rear, front and rear; combine: front; articulated: dual). Drawing only:
+the track width stays as set. A tester asked for it (25 Nov 2026). Tests: `VehicleWheelsProfileTests`.
+
 **The implement's colour on the map** (Tool › Type › *Colour on the map*, shown with a picture chosen; `ToolConfig.PictureColor`
 0xRRGGBB, red by default (`ToolConfig.DefaultPictureColor`), `tool.pictureColor` as hex, saved with the tool profile, the
 Config frame's i32 after the picture; fork only): every picture drawn from shapes is drawn in it, its paint (`IC.red`,
