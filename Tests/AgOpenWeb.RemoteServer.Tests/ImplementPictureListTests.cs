@@ -49,7 +49,7 @@ public class ImplementPictureListTests
             Assert.That(textures, Has.Count.EqualTo(10), "the ten textures of the mock-up");
             Assert.That(works, Is.EquivalentTo(textures), "each texture is a picture's work, each work a texture");
             foreach (var w in textures)
-                Assert.That(names, Does.Contain(w + ": () => tr('"), w + " has a name");
+                Assert.That(names, Does.Match(Regex.Escape(w + ": () => tr('") + "[^']+'\\)"), w + " has a name");
         });
     }
 

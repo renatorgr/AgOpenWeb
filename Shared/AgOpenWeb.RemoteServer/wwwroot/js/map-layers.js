@@ -305,7 +305,7 @@ function drawCoverageSk(canvas) {
 // bend and the tile does not: it lies along the curve's general direction (its first point to its furthest).
 // Zoomed out the tile's mipmaps take it to its mean colour.
 const PAINTED_AREA = { work: 0, colourWithPattern: 1, plain: 2 }; // ToolConfig.PaintedArea (PaintedAreaLook)
-let covWorkFx, covWorkPaint = null, covWorkFrame = null, _covWorkPass = null;
+let covWorkFx, covWorkPaint = null, covWorkFrame = null, _covWorkPass = null, _covWorkTrack;
 const COV_WORK_SKSL = `
 uniform shader cov;
 uniform shader tex;
@@ -331,11 +331,13 @@ function coverageWork() {
 }
 // Where the passes lie: a point on a pass's centre line and their direction (a unit vector), from the pass the tool
 // runs on (the Scene's toolPass); the last one kept while no line is in use. The direction is always the one
-// pointing north (or east), so a pass driven either way gives the same tile.
+// pointing north (or east), so a pass driven either way gives the same tile. The point is moved a whole number of
+// passes to the pass nearest the line's reference (the active track's first point), so it is the same whatever pass
+// is in use: a tile two passes wide (rolled) swapped the shades of every pass painted when the line moved a pass over.
 function coverageWorkFrame() {
-  const tp = scene && scene.toolPass;
-  if (tp && tp.length >= 2 && tp !== _covWorkPass) {
-    _covWorkPass = tp;
+  const tp = scene && scene.toolPass, name = tick && tick.activeTrackName;
+  if (tp && tp.length >= 2 && (tp !== _covWorkPass || name !== _covWorkTrack)) {
+    _covWorkPass = tp; _covWorkTrack = name;
     const a = tp[0];
     let b = tp[tp.length - 1];
     if (tp.length > 2) { let far = -1; for (const q of tp) { const d = (q.e - a.e) ** 2 + (q.n - a.n) ** 2; if (d > far) { far = d; b = q; } } }
@@ -344,7 +346,14 @@ function coverageWorkFrame() {
     if (L > 0.5) {
       dE /= L; dN /= L;
       if (dN < -1e-9 || (Math.abs(dN) <= 1e-9 && dE < 0)) { dE = -dE; dN = -dN; }
-      covWorkFrame = { e: a.e, n: a.n, dE, dN };
+      let e = a.e, n = a.n;
+      const ref = name && scene.tracks && scene.tracks.find(t => t.name === name);
+      const pw = toolWidthM() - ((config && config.tool && config.tool.overlap) || 0);
+      if (ref && ref.points.length && pw > 0.05) {
+        const r = ref.points[0], k = Math.round(((r.e - e) * dN - (r.n - n) * dE) / pw);
+        if (Number.isFinite(k)) { e += k * pw * dN; n -= k * pw * dE; }
+      }
+      covWorkFrame = { e, n, dE, dN };
     }
   }
   return covWorkFrame || { e: 0, n: 0, dE: 0, dN: 1 };
