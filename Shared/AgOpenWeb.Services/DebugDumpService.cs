@@ -54,7 +54,8 @@ public class DebugDumpService
         string? ntripSessionReport = null,
         string? ntripSummary = null,
         string? browsersSummary = null,
-        IReadOnlyList<AgOpenWeb.Models.State.SecondLink>? secondLinks = null)
+        IReadOnlyList<AgOpenWeb.Models.State.SecondLink>? secondLinks = null,
+        string? dataQualityReport = null)
     {
         string? profileName = null;
         try { profileName = configStore.ActiveVehicleProfileName; } catch { }
@@ -64,7 +65,7 @@ public class DebugDumpService
         // 1. System info
         double? quality = null;
         try { quality = configStore.Display.DisplayResolutionMultiplier; } catch { }
-        entries.Add(("system_info.txt", BuildSystemInfo(ntripSummary, browsersSummary, quality, secondLinks)));
+        entries.Add(("system_info.txt", BuildSystemInfo(ntripSummary, browsersSummary, quality, secondLinks, dataQualityReport)));
 
         // 2. App settings
         try
@@ -171,9 +172,10 @@ public class DebugDumpService
         string? ntripRtcmReport = null,
         string? ntripSessionReport = null,
         string? ntripSummary = null,
-        IReadOnlyList<AgOpenWeb.Models.State.SecondLink>? secondLinks = null) =>
+        IReadOnlyList<AgOpenWeb.Models.State.SecondLink>? secondLinks = null,
+        string? dataQualityReport = null) =>
         WriteDump(Capture(settingsService, runtime, configStore, ntripRtcmReport, ntripSessionReport, ntripSummary,
-                secondLinks: secondLinks),
+                secondLinks: secondLinks, dataQualityReport: dataQualityReport),
             additionalNotes, screenshotPng, outputDirectory, filePrefix, userAttachments, activeJobTaskName);
 
     /// <summary>
@@ -375,7 +377,8 @@ public class DebugDumpService
     }
 
     private static string BuildSystemInfo(string? ntripSummary, string? browsersSummary = null, double? displayQuality = null,
-        IReadOnlyList<AgOpenWeb.Models.State.SecondLink>? secondLinks = null)
+        IReadOnlyList<AgOpenWeb.Models.State.SecondLink>? secondLinks = null,
+        string? dataQualityReport = null)
     {
         var sb = new StringBuilder();
 
@@ -406,6 +409,13 @@ public class DebugDumpService
         // A module found on two network links: nothing from it was used while it was.
         foreach (var link in secondLinks ?? Array.Empty<AgOpenWeb.Models.State.SecondLink>())
             sb.AppendLine(inv, $"Two network links: {link}");
+        // How the modules' data arrived (gaps, bursts): a faulty link is told apart from a slow
+        // app at a glance.
+        if (!string.IsNullOrEmpty(dataQualityReport))
+        {
+            sb.AppendLine();
+            sb.Append(dataQualityReport);
+        }
         // How each browser draws the map (GPU or software, frame rate): a slow map on a weak
         // tablet is told apart from a slow app at a glance.
         sb.AppendLine();

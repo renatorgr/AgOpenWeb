@@ -298,6 +298,13 @@ window.RemoteTransport = {
           const onTwoLinks = o < dv.byteLength && !!u8();
           const secondLinks = [];
           for (let k = o < dv.byteLength ? u8() : 0; k > 0; k--) secondLinks.push({ module: str(), linkA: str(), kindA: u8(), linkB: str(), kindB: u8(), notUsed: i32(), now: !!u8() });
+          // The data quality sensors (append-only, #922). finding: 0 no data, 1 even, 2 gaps,
+          // 3 bursts, 4 in order, 5 out of order, 6 at rate, 7 slow, 8 whole, 9 damaged; nominalHz
+          // 0 = not known (7: the rate expected); amount: per cent missing (gaps), the number
+          // in the last minute (out of order, damaged).
+          const dataQuality = [];
+          for (let k = u8(); k > 0; k--)
+            dataQuality.push({ name: str(), finding: u8(), faulty: !!u8(), rateHz: f32(), nominalHz: f32(), amount: f32() });
           handlers.onStatusBar && handlers.onStatusBar({
             fixQuality, fixText, age, sats, isMetric,
             gpsOk, imuOk, autoSteerOk, machineOk, imuIp, autoSteerIp, machineIp,
@@ -310,7 +317,7 @@ window.RemoteTransport = {
             simPanelVisible, driftEasting, driftNorthing, unsavedCoveragePrompt,
             devOverlay, gpsToPgnLatencyMs, gpsSentence, dualHeadingMissing, ntripRtcm, systemData,
             gpsLost, isobus, fieldData, sendCorrectedPosition, scanReplySubnet, ntripSession, simDrivesSteering, sprayer,
-            lineTune, onTwoLinks, secondLinks,
+            lineTune, onTwoLinks, secondLinks, dataQuality,
           });
           break;
         }

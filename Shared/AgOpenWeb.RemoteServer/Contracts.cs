@@ -346,13 +346,27 @@ public record StatusDto(
     // Modules found on two network links (cable and Wi-Fi to the same router), for Network IO;
     // OnTwoLinks: one is now, nothing from it is used and the client shows why over the map.
     IReadOnlyList<AgOpenWeb.Models.State.SecondLink>? SecondLinks = null,
-    bool OnTwoLinks = false);
+    bool OnTwoLinks = false,
+    // How each stream from the modules arrives (gaps, bursts): the GPS fixes first. null before
+    // the first judgement. Last in the fork's frame, after the fork's own fields.
+    IReadOnlyList<DataStreamDto>? DataQuality = null);
 
 /// <summary>Tuning on the line: <c>LineTuneStage</c> (0 Idle, 1 Waiting, 2 Measuring, 3 Result,
 /// 4 Accepted, 5 Stopped, 6 Failed), whether it tunes the Stanley gains (else Steer Response),
 /// how many values were tried, what is happening now, the outcome and every value tried (one
 /// per line).</summary>
 public record LineTuneDto(int Stage, bool Stanley, int Tried, string Description, string Result, string Measurements);
+
+/// <summary>One data quality sensor's judgement (<c>DataReading</c>, <c>DataQualityMonitor</c>).</summary>
+/// <param name="Name">"GPS positions", "GPS position times", "Steer module data (PGN 253)", ...</param>
+/// <param name="Finding"><c>DataFinding</c>: 0 no data (silent, too little to judge, not looked at), 1 even,
+/// 2 gaps, 3 bursts, 4 in order, 5 out of order, 6 at rate, 7 slow, 8 whole, 9 damaged.</param>
+/// <param name="Faulty">Not fit to use: the operator was told.</param>
+/// <param name="RateHz">Arrivals a second, where the sensor counts them; else 0.</param>
+/// <param name="NominalHz">The rate the sender sends at; 0 when not known.</param>
+/// <param name="Amount">How much is wrong, in the sensor's measure: per cent missing (gaps), the number in the
+/// last minute (out of order).</param>
+public record DataStreamDto(string Name, int Finding, bool Faulty, double RateHz, double NominalHz, double Amount);
 
 /// <summary>What the field data card shows beyond the worked area the status frame already
 /// carries: the boundary area less inner boundaries (0 = no boundary), the ground covered
