@@ -52,6 +52,19 @@ public class VehicleConfig : ObservableObject
         set => SetProperty(ref _color, value & 0xFFFFFFu);
     }
 
+    private int _dualWheels;
+    /// <summary>
+    /// Dual wheels on the map (Vehicle > Wheels), saved with the vehicle profile: 0 single, 1 dual on the drive
+    /// axle (a tractor's rear, a combine's front, both halves of an articulated tractor), 2 dual on both axles of a
+    /// tractor (on a combine or an articulated tractor the same as 1). Anything else is single. Drawing only:
+    /// nothing in guidance or the tool's position reads it (fork only).
+    /// </summary>
+    public int DualWheels
+    {
+        get => _dualWheels;
+        set => SetProperty(ref _dualWheels, value is >= 0 and <= 2 ? value : 0);
+    }
+
     // Physical dimensions
     private double _wheelbase = 2.5;
     public double Wheelbase

@@ -127,6 +127,20 @@ vcColorSel.addEventListener('change', () => {
   vcColorSel.blur();
 });
 vcColor.addEventListener('change', () => { cfgSend('vehicle.color', vcColor.value.slice(1)); vcColor.blur(); });
+// Wheels (vehicle.dualWheels: 0 single, 1 dual on the drive axle, 2 dual on both axles of a tractor; fork only):
+// the dual wheels some tractors, combines and articulated tractors carry, drawn on the map. Drawing only.
+const vcWheelSel = document.getElementById('vc-wheelsel');
+let vcWheelType = -1;
+function vcWheelOptions(type) {
+  if (type === vcWheelType) return;
+  vcWheelType = type; vcWheelSel.textContent = '';
+  const add = (v, label) => { const o = document.createElement('option'); o.value = v; o.textContent = label; vcWheelSel.appendChild(o); };
+  add('0', tr('Single wheels'));
+  if (type === 0) { add('1', tr('Dual rear wheels')); add('2', tr('Dual front and rear wheels')); }
+  else if (type === 1) add('1', tr('Dual front wheels'));
+  else add('1', tr('Dual wheels'));
+}
+vcWheelSel.addEventListener('change', () => { cfgSend('vehicle.dualWheels', vcWheelSel.value); vcWheelSel.blur(); });
 // Zero Now captures the current roll as the offset, like AgOpenGPS Zero Roll and
 // Tools › Roll Correction; it used to clear the offset (that's Remove Offset, #111).
 document.getElementById('vc-rollzero').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); transport.send('roll.zeroCalibrate'); });
@@ -159,6 +173,9 @@ function populateVehicleCfg(force) {
   if (document.activeElement !== vcColorSel)
     vcColorSel.value = [...vcColorSel.options].some(o => o.value && parseInt(o.value, 16) === col) ? hex6(col).slice(1) : '';
   if (document.activeElement !== vcColor) vcColor.value = hex6(col);
+  vcWheelOptions(ty);
+  const dw = Math.max(0, Math.min(ty === 0 ? 2 : 1, cfgGet('vehicle.dualWheels') | 0));
+  if (document.activeElement !== vcWheelSel) vcWheelSel.value = String(dw);
   // The front 3-point hitch is asked for only with a front-mounted tool (type 0).
   const front = cfgGet('tool.type') === 0;
   for (const el of vcPanel.querySelectorAll('[data-vshow="front"]')) el.hidden = !front;
