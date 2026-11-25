@@ -14,7 +14,9 @@
 // everything back.
 
 function startFpsTest() {
-  const SETTLE_S = 1, MEASURE_S = 5, SLOW_MS = 50;
+  // The first step settles longer: a tablet's first seconds at the test's place were far slower than the rest
+  // (19 fps there, 60 in every other step, on a Mali-G57), which made the plain colour look slow.
+  const SETTLE_S = 1, FIRST_SETTLE_S = 3, MEASURE_S = 5, SLOW_MS = 50;
   const LOOKS = [[PAINTED_AREA.plain, 'plain'], [PAINTED_AREA.work, 'texture'], [PAINTED_AREA.colourWithPattern, 'colour+pattern']];
   const TAU = 2 * Math.PI;
 
@@ -178,10 +180,10 @@ function startFpsTest() {
     if (CardPane.coversMap) { st.t0 = 0; run.m = null; return; }
     if (!st.t0) { st.t0 = now; applyLook(st.look); }
     else if (config !== run.mine) applyLook(st.look);
-    const T = SETTLE_S + MEASURE_S, t = (now - st.t0) / 1000;
+    const settle = run.i === 0 ? FIRST_SETTLE_S : SETTLE_S, T = settle + MEASURE_S, t = (now - st.t0) / 1000;
     const c = st.view.cam(Math.min(1, t / T));
     cameraMode = 2; camE = c.e; camN = c.n; pxPerM = c.z; pitch = c.pitch; mapRotation = c.rot;
-    if (t >= SETTLE_S && !run.m) run.m = { t0: now, draws: 0, ms: 0, max: 0, slow: 0, last: now };
+    if (t >= settle && !run.m) run.m = { t0: now, draws: 0, ms: 0, max: 0, slow: 0, last: now };
     if (run.m) {
       if (now - run.m.last > SLOW_MS) run.m.slow++;
       run.m.last = now;
