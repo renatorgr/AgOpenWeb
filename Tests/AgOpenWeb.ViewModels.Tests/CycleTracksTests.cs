@@ -83,6 +83,78 @@ public class CycleTracksTests
         Assert.That(vm.IsYouTurnEnabled, Is.False);
     }
 
+    private static Track Loop(string name) => new()
+    {
+        Name = name, Type = TrackType.Curve, IsClosed = true,
+        Points = new() { new Vec3(0, 0, 0), new Vec3(100, 0, 0), new Vec3(100, 100, 0), new Vec3(0, 100, 0), new Vec3(0, 0, 0) },
+    };
+
+    // Eucaliptal in the simulator (25 Nov 2026, hand test 55): U-turns on, the AB line, the
+    // Boundary Curve and the AB line again by the cycle button, and U-turns stayed off. The
+    // button turned them off before the closed track was chosen, so the closed track never
+    // knew they were on.
+    [Test]
+    public void Cycle_OntoAClosedTrackAndBack_GivesUTurnsBack()
+    {
+        var vm = WithTracks(Line("A+ 15:45", 0), Loop("Boundary Curve"));
+        vm.ActivateTrackAt(0);
+        vm.IsYouTurnEnabled = true;
+        var toasts = new List<string>();
+        vm.FailureReported += toasts.Add;
+
+        vm.CycleABLinesCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("Boundary Curve"));
+        Assert.That(vm.IsYouTurnEnabled, Is.False, "no U-turns on a closed track (#421)");
+
+        vm.CycleABLinesCommand!.Execute(null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("A+ 15:45"));
+            Assert.That(vm.IsYouTurnEnabled, Is.True);
+            Assert.That(toasts, Has.Some.StartsWith("Automatic U-turns on again"));
+        });
+
+        // Back and forth again, as in the test: every time back on the AB line they are on.
+        vm.CycleABLinesBackCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("Boundary Curve"));
+        Assert.That(vm.IsYouTurnEnabled, Is.False);
+        vm.CycleABLinesBackCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("A+ 15:45"));
+        Assert.That(vm.IsYouTurnEnabled, Is.True);
+    }
+
+    [Test]
+    public void Cycle_OntoAClosedTrack_WithUTurnsOff_LeavesThemOff()
+    {
+        var vm = WithTracks(Line("A", 0), Loop("Boundary Curve"));
+        vm.ActivateTrackAt(0);
+
+        vm.CycleABLinesCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("Boundary Curve"));
+        vm.CycleABLinesCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("A"));
+
+        Assert.That(vm.IsYouTurnEnabled, Is.False);
+    }
+
+    [Test]
+    public void Cycle_OntoAnotherOpenTrack_StillTurnsUTurnsOff()
+    {
+        var vm = WithTracks(Line("A", 0), Loop("Boundary Curve"), Line("B", 20));
+        vm.ActivateTrackAt(0);
+        vm.IsYouTurnEnabled = true;
+
+        vm.CycleABLinesCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("Boundary Curve"));
+        vm.CycleABLinesCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("B"));
+        Assert.That(vm.IsYouTurnEnabled, Is.True, "back, as after a pick from the list");
+
+        vm.CycleABLinesCommand!.Execute(null);
+        Assert.That(vm.SelectedTrack?.Name, Is.EqualTo("A"));
+        Assert.That(vm.IsYouTurnEnabled, Is.False, "open to open: off, as AgOpenGPS");
+    }
+
     [Test]
     public void OnlyOneVisibleTrack_NothingChanges()
     {
