@@ -267,10 +267,13 @@ is, nothing from that module is used and `MainViewModel.UpdateSecondLinks` holds
 Wi-Fi only "turn the Wi-Fi off and keep the cable" (`SecondLink.CableAndWiFi`: module data needs the cable). It
 clears 1 s after one link goes quiet. Where the system does not give the link, everything is used, as before.
 Docs/ARCHITECTURE.md has the rule, the measurements and the Linux checks. Tests: `TwoLinkDetectorTests`,
-`TwoLinksTests`. Same code as official draft PR #900 (branch `fix/udp-second-link-copies`); it replaced the fork's
-`LinkCopyFilter` (#296, #316), which dropped the copies and kept working. Fork status frame: the two-link fields
-come after `LineTune` (official: after the NTRIP session); at a sync after #900 merges, keep one copy, in the order
-the merged codec has.
+`TwoLinksTests`. Fork only: the code of official PR #900 (branch `fix/udp-second-link-copies`), which Chris closed
+on 25 Nov 2026 in favour of official #944 (*Data quality: one monitor, many sensors*, above): there `FixTimeSensor`
+only warns when positions come a second time or late, and nothing is stopped. The fork keeps the stop (Renato,
+25 Nov 2026) and runs #944's sensors beside it: a module on two links is held by `TwoLinkDetector` first, so the
+sensors see only the datagrams that are used. It replaced the fork's `LinkCopyFilter` (#296, #316), which dropped
+the copies and kept working. Fork status frame: the two-link fields come after `LineTune`, and #944's `DataQuality`
+after them, last; at a sync keep the fork's stop, its detector and this order.
 
 ### The simulator's 10x is a time-lapse
 The sim bar's 10x (`IsSimulatorSpeed10x`) runs time ten times faster at the speed shown, not the tractor
