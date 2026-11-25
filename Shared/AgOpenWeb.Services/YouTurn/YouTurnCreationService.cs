@@ -852,9 +852,10 @@ namespace AgOpenWeb.Services.YouTurn
                         Vec3 tPoint = new Vec3();
                         int turnCount = input.BoundaryTurnLines[startClosestTurnPt.TurnLineNum].Points.Count;
 
-                        // The turn line is walked the shorter way from the first arc to the second.
-                        // AgOpenGPS takes the way from the turn line's heading where the PASS crosses
-                        // it, against the first arc's end, and the count of points the shorter way.
+                        // The turn line is walked the shorter way from the first arc to the second
+                        // (ours). AgOpenGPS takes the way from the turn line's heading where the PASS
+                        // crosses it, against the first arc's end (CYouTurn.cs:703-705), and the count
+                        // of points the shorter way (CYouTurn.cs:737-749).
                         // Where the field ends in an acute corner the first arc, seated back from
                         // the end of the pass, meets the side's turn line, not the end's: the way
                         // read at the end's led into the corner, and the path came straight back
