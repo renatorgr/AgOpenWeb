@@ -2292,7 +2292,9 @@ public sealed class GpsPipelineService : IGpsPipelineService
             GoAroundSpeedNotice = Interlocked.Exchange(ref _goAroundSpeedNotice, null),
             RtkHoldNotice = rtkHoldNotice,
             RtkHoldM = _rtkHold.OffsetM,
-            YouTurnNotice = youTurnTickEffects is { TellOperator: true } ? youTurnTickEffects.StatusMessage : null,
+            YouTurnNotice = (youTurnTickEffects is { TellOperator: true } ? youTurnTickEffects.StatusMessage : null)
+                ?? (youTurnTickEffects?.PassEndNoticeFor is { } noticeFor && ReferenceEquals(noticeFor, _youTurn.TurnPath)
+                    ? youTurnTickEffects.PassEndNotice : null),
             LineEntryPath = _lineEntryPath ?? _lineEntryOffer ?? _sideStepPath,
             LineEntryOfferPass = _lineEntryPath == null && _lineEntryOffer != null ? PassName(_lineEntryOfferPass) : null,
             LineEntryNotice = TakeLineEntryNotice(),

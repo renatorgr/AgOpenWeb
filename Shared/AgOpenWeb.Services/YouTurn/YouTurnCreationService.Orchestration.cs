@@ -85,6 +85,18 @@ public partial class YouTurnCreationService
         /// distance from boundary by this much, or turn by hand.
         /// </summary>
         public double? OutsideTurnLineBy { get; init; }
+
+        /// <summary>
+        /// With a <see cref="Path"/>: how far the turn was seated back because an obstacle stopped it
+        /// nearer the end (it landed on a bend round a Go around obstacle, or its legs or exit met an
+        /// obstacle); 0 when none did. The end of the pass before the turn is left to do, and the
+        /// operator is told. Fork only.
+        /// </summary>
+        public double ObstacleSetback { get; init; }
+
+        /// <summary>With <see cref="ObstacleSetback"/>: the inner boundary whose crossing seated the
+        /// turn back last, or -1 (a bend of the next pass, whose obstacle is not known here).</summary>
+        public int SetbackObstacleIndex { get; init; } = -1;
     }
 
     /// <summary>
@@ -159,7 +171,18 @@ public partial class YouTurnCreationService
         // its legs or exit meet an obstacle (a coarser step than the implement's: a bend is metres long,
         // and the plan is tried again every cycle until a turn is found).
         const double ObstacleSetbackStep = 4.0;
+        // How far back a turn an obstacle stops may be seated (it lands on a bend round a Go around
+        // obstacle, or its legs or exit meet an obstacle). A Go around tree 47 m from a hard fence
+        // stopped every turn on the passes beside it within 30 m, and with no turn there the job
+        // stopped (a tester's field, the farm job harness: 9.5 % sprayed). Seated back that far the
+        // end of the pass is left to do, and the operator is
+        // told (TurnPathResult.ObstacleSetback). The hard fence's own clearance keeps 30 m unless an
+        // obstacle already seated the turn back. Fork only.
+        const double MaxObstacleSetback = 60.0;
         double extraSetback = 0.0;
+        // An obstacle seated the turn back (MaxObstacleSetback), the last one known by its index.
+        bool obstacleSetback = false;
+        int setbackObstacle = -1;
         // Where the pass leaves the turn area on the first try: a try with the turn lines moved in
         // seats the turn back from there (YouTurnCreationInput.TurnLineEndIndex).
         int? turnLineEnd = null;
@@ -218,13 +241,14 @@ public partial class YouTurnCreationService
                 if (LandsOnBend(path, out double offStraight))
                 {
                     extraSetback += ObstacleSetbackStep;
-                    if (extraSetback <= MaxExtraSetback)
+                    obstacleSetback = true;
+                    if (extraSetback <= MaxObstacleSetback)
                     {
                         _logger.LogDebug("[YouTurn] The turn lands {D:F1} m off the straight next pass, on a bend; seating it further back (setback {S:F1} m)",
                             offStraight, extraSetback);
                         continue;
                     }
-                    _logger.LogWarning("[YouTurn] No turn within {S:F0} m lands on a straight stretch of the next pass; no turn.", MaxExtraSetback);
+                    _logger.LogWarning("[YouTurn] No turn within {S:F0} m lands on a straight stretch of the next pass; no turn.", MaxObstacleSetback);
                     return new TurnPathResult(null, UsedFallback: false) { AtObstacle = true };
                 }
 
@@ -312,6 +336,8 @@ public partial class YouTurnCreationService
                             netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI);
                         omegaOnly = true;
                         extraSetback = 0.0;
+                        obstacleSetback = false;
+                        setbackObstacle = -1;
                         continue;
                     }
                     if (atObstacle)
@@ -323,9 +349,10 @@ public partial class YouTurnCreationService
                     // On a pass bent round Go around obstacles a turn seated on a bend can loop (a
                     // counter-arc onto a pass the bend took nearer); seated further back it starts
                     // on the straight. Fork only.
-                    if (input.StraightGuidancePoints != null && extraSetback + ObstacleSetbackStep <= MaxExtraSetback)
+                    if (input.StraightGuidancePoints != null && extraSetback + ObstacleSetbackStep <= MaxObstacleSetback)
                     {
                         extraSetback += ObstacleSetbackStep;
+                        obstacleSetback = true;
                         _logger.LogDebug("[YouTurn] Turn malformed (net={Net:F0}° cumulative={Cum:F0}°) on a pass bent round an obstacle; seating it further back (setback {S:F1} m)",
                             netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI, extraSetback);
                         continue;
@@ -360,7 +387,7 @@ public partial class YouTurnCreationService
                     if (!clearance.IsClear)
                     {
                         extraSetback += Math.Max(SetbackStep, clearance.MaxIntrusion);
-                        if (extraSetback <= MaxExtraSetback)
+                        if (extraSetback <= (obstacleSetback ? MaxObstacleSetback : MaxExtraSetback))
                         {
                             _logger.LogDebug("[YouTurn] Implement intrudes hard boundary by {I:F2}m; shifting turn away (setback {S:F2}m) and retrying",
                                 clearance.MaxIntrusion, extraSetback);
@@ -412,7 +439,9 @@ public partial class YouTurnCreationService
                     // Seated further back the legs may clear the obstacle, or the exit land with
                     // room before it; then there is no turn.
                     extraSetback += ObstacleSetbackStep;
-                    if (extraSetback <= MaxExtraSetback)
+                    obstacleSetback = true;
+                    setbackObstacle = crossed;
+                    if (extraSetback <= MaxObstacleSetback)
                     {
                         _logger.LogDebug("[YouTurn] The turn would cross obstacle {I}, or end right before it; seating it further back (setback {S:F1} m)",
                             crossed + 1, extraSetback);
@@ -422,12 +451,27 @@ public partial class YouTurnCreationService
                     return new TurnPathResult(null, UsedFallback: false) { AtObstacle = true };
                 }
 
+                // Seated back further than the fence's clearance ever seats a turn, it must still
+                // start ahead of the tractor, a soft fence too (the hard one is checked above).
+                if (obstacleSetback && extraSetback > MaxExtraSetback && output.ArcStart is { } farStart)
+                {
+                    double ahead = (farStart.Easting - currentPosition.Easting) * Math.Sin(headingRadians)
+                                 + (farStart.Northing - currentPosition.Northing) * Math.Cos(headingRadians);
+                    if (ahead < MinArcStartAhead)
+                    {
+                        _logger.LogWarning("[YouTurn] The turn seated back {S:F1} m for an obstacle would start {D:F1} m behind the tractor; no turn.",
+                            extraSetback, MinArcStartAhead - ahead);
+                        return new TurnPathResult(null, UsedFallback: false) { AtObstacle = true };
+                    }
+                }
+
                 _logger.LogDebug("[YouTurn] Path created with {Count} points, net={Net:F0}° cumulative={Cum:F0}° (setback {S:F2}m){At}",
                     path.Count, netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI, extraSetback,
                     atObstacle ? $", before obstacle {obstacle!.InnerIndex + 1}" : "");
                 return new TurnPathResult(path, UsedFallback: false)
                 {
                     ArcStart = output.ArcStart, AtObstacle = atObstacle, AtObstacleIndex = atObstacle ? obstacle!.InnerIndex : -1,
+                    ObstacleSetback = obstacleSetback ? extraSetback : 0, SetbackObstacleIndex = obstacleSetback ? setbackObstacle : -1,
                 };
             }
 
