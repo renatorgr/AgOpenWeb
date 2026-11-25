@@ -1343,7 +1343,7 @@ function mowerConditionerPictureSk(canvas, tl, veh) {
   iRect(canvas, wx - half + 0.1, cut + 1.4, wx + half - 0.1, cut + 1.65, ip(IC.grey));              // the swath boards
   iBar(canvas, wx - half + 0.1, wy, wx + half - 0.1, wy, IC.dark, 0.1);
   for (const s of [-1, 1]) iTyre(canvas, wx + s * (half + 0.02), wy, 0.32, 0.72, IC.rim);
-  const px = wx * 0.86, py = cut + 0.55;
+  const px = wx, py = cut + 0.55;                                                                    // the centre pivot
   iBar(canvas, 0.1, 0.3, px * 0.95 + 0.1, py - 0.3, 0x2B2D30, 0.06);                                 // the drive shaft
   iBar(canvas, 0, 0, px, py, IC.red, 0.16);                                                          // the tongue
   iCircle(canvas, px, py, 0.13, ip(IC.redD));
@@ -1463,9 +1463,9 @@ function reversiblePloughPictureSk(canvas, tl, veh) {
 }
 
 // Four gangs of discs in an X about the working line y = yc (the front gangs' inner ends further back, the rear
-// gangs' further on, 16° from square), under a frame d either side of it, W across: a tandem disc harrow seen
-// from above. Each disc square to its gang's axle.
-function iDiscGangsX(c, W, yc, d) {
+// gangs' further on, 16° from square), their outer ends g either side of it, under a frame d either side of it, W
+// across: a tandem disc harrow seen from above. Each disc square to its gang's axle.
+function iDiscGangsX(c, W, yc, d, g = d * 0.62) {
   const fr = ip(IC.red), frD = ip(IC.redD, 1, 0.025), dark = ip(0x8A9096), rim = ip(0x2B2D30, 1, 0.02);
   iRect(c, -W / 2 - 0.1, yc - d, W / 2 + 0.1, yc - d + 0.14, fr, frD);                              // front and rear beams
   iRect(c, -W / 2 - 0.1, yc + d - 0.12, W / 2 + 0.1, yc + d, fr, frD);
@@ -1475,24 +1475,25 @@ function iDiscGangsX(c, W, yc, d) {
     hdrStroke(c, [[x0, y, x1, y + (x1 - x0) * tn]], ip(0x202225, 1, 0.07));
     for (let j = 0; j <= m; j++) { const x = x0 + (x1 - x0) * j / m; iDisc(c, x, y + (x - x0) * tn, 0.28, ang, dark, rim); }
   };
-  const g = d * 0.62;
   gang(-W / 2 + 0.1, -0.05, yc - g, 16); gang(W / 2 - 0.1, 0.05, yc - g, -16);
   gang(-W / 2 + 0.25, 0.1, yc + g, -16); gang(W / 2 - 0.25, -0.1, yc + g, 16);
   for (const s of [-1, 1]) iRect(c, s * W / 4 - 0.06, yc - d, s * W / 4 + 0.06, yc + d, fr, frD);  // the beams the gangs hang from
 }
 // A trailed disc harrow on the drawbar pin: an A-frame tongue to a frame over four gangs in an X, its wheels in
-// pairs in the middle (Trailing hitch behind the pin), the gangs about the working line, as wide as the tool; a pair
-// of wheels more every 4 m past 5 m.
+// pairs in the gap between the front and the rear gangs (Trailing hitch behind the pin, kept in the gap), the gangs
+// about the working line, as wide as the tool; a pair of wheels more every 4 m past 5 m. The gangs' inner ends keep
+// clear of the wheels, so the frame is longer the wider the harrow (3.7 m for 4 m).
 function discHarrowTrailedPictureSk(canvas, tl, veh) {
   if (!implTrailFrame(canvas, tl)) return null;
-  const W = Math.max(2, tl.totalWidth || 4), d = 1.1;
-  const yc = tl.trailingHitchLength + tl.trailingToolToPivotLength;
-  const wy = Math.max(yc - d + 0.4, Math.min(yc + d - 0.4, tl.trailingHitchLength));
+  const W = Math.max(2, tl.totalWidth || 4), slant = (W / 2 - 0.15) * Math.tan(16 * Math.PI / 180);
+  const clear = 0.28 + 0.36 + 0.2, g = slant + clear, d = g + 0.45;  // a disc's radius, a wheel's, room between
+  const yc = tl.trailingHitchLength + tl.trailingToolToPivotLength, room = clear - 0.28 - 0.36;
+  const wy = Math.max(yc - room, Math.min(yc + room, tl.trailingHitchLength));
   for (const s of [-1, 1]) iBar(canvas, 0.05 * s, 0.35, s * W / 4, yc - d + 0.07, IC.red, 0.13);  // the A-frame tongue
   iBar(canvas, 0, 0, 0, 0.6, IC.red, 0.15);
   iBar(canvas, -W / 8, (yc - d) * 0.7, W / 8, (yc - d) * 0.7, IC.red, 0.08);
   iRRect(canvas, -0.08, -0.12, 0.08, 0.12, 0.03, ip(0x2A2C2F));                                     // the hitch eye
-  iDiscGangsX(canvas, W, yc, d);
+  iDiscGangsX(canvas, W, yc, d, g);
   const pairs = [0.55];
   for (let x = 2.0; x < W / 2 - 0.4; x += 2.0) pairs.push(x);
   iBar(canvas, -pairs[pairs.length - 1] - 0.2, wy, pairs[pairs.length - 1] + 0.2, wy, IC.dark, 0.08);
@@ -1557,16 +1558,16 @@ function rearSideMowerPictureSk(canvas, tl, veh) {
   implTractorFrame(canvas, p);
   iLowerLinks(canvas, L);
   iHeadstock(canvas, L, 0.35, IC.red, IC.redD);
-  const ay = Math.max(L + 0.4, wc - 0.35), sy = Math.max(L + 0.2, wc - 0.6);
+  const ay = Math.max(L + 0.4, wc - 0.1), sy = Math.max(L + 0.2, wc - 0.35);
   iBar(canvas, s * 0.3, L + 0.35, inner, ay, IC.red, 0.16);                                         // the arm
   iBar(canvas, s * 0.1, L + 0.1, inner * 0.7, sy, 0xC0392B, 0.08);                                 // its spring
   hdrStroke(canvas, [[s * 0.1, L + 0.1, inner * 0.7, sy]], ip(0x7D1712, 1, 0.03));
-  iRect(canvas, cx - W / 2 - 0.05, wc - 0.45, cx + W / 2 + 0.05, wc + 0.6, ip(IC.green), ip(IC.greenD, 1, 0.03)); // the cover
-  iRect(canvas, cx - W / 2 + 0.1, wc - 0.12, cx + W / 2 - 0.1, wc + 0.18, ip(IC.red), ip(IC.redD, 1, 0.02));     // its top
+  iRect(canvas, cx - W / 2 - 0.05, wc - 0.25, cx + W / 2 + 0.05, wc + 0.8, ip(IC.green), ip(IC.greenD, 1, 0.03)); // the cover
+  iRect(canvas, cx - W / 2 + 0.1, wc + 0.08, cx + W / 2 - 0.1, wc + 0.38, ip(IC.red), ip(IC.redD, 1, 0.02));     // its top
   const folds = [];
-  for (let k = 1; k < 4; k++) folds.push([cx - W / 2 + 0.05, wc - 0.45 + k * 0.26, cx + W / 2 - 0.05, wc - 0.45 + k * 0.26]);
+  for (let k = 1; k < 4; k++) folds.push([cx - W / 2 + 0.05, wc - 0.25 + k * 0.26, cx + W / 2 - 0.05, wc - 0.25 + k * 0.26]);
   hdrStroke(canvas, folds, ip(IC.greenD, 0.5, 0.02));
-  iRRect(canvas, inner - 0.22, wc - 0.5, inner + 0.22, wc + 0.1, 0.05, ip(IC.red));                // the drive
+  iRRect(canvas, inner - 0.22, wc - 0.3, inner + 0.22, wc + 0.3, 0.05, ip(IC.red));                // the drive
   canvas.restore();
   return { half: 0.05, ahead: 0 };
 }
