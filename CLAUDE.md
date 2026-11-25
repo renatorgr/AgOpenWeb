@@ -474,11 +474,15 @@ Tests: `ToolPictureProfileTests`, `ImplementPictureListTests` (one row per `Tool
 disc harrow, a semi-mounted roller, a reversible plough, a trailed and a 3-point disc harrow, a rear side disc mower and a
 twin-disc fertiliser spreader (`ToolPicture` 5 to 13), drawn in `js/map-draw.js` from rectangles, bars and paths like the
 headers, sized from the tool's width and hitch lengths, in metres with y backwards (`implTractorFrame`: what rides on the
-tractor, from the rear axle; `implTrailFrame`: a trailing tool from its pin). Colours from the tester's own machines where
+tractor, from the rear axle; `implTrailFrame`: a trailing tool from its pin). The part that works (bodies, discs, cutter
+bar, beaters) is always on the line the map paints, frames, arms and wheels fitting round it: clamped to look right, the
+plough and the mower conditioner were drawn 0.5 m behind the strip at a tester's settings. Colours from the tester's own machines where
 he sent photos, else generic; never a maker's name (the mower conditioner's above all). The rear side mower is drawn where
 the tool offset puts it (`implSectionsMiddle`). **The plough and the mower change side by themselves** (`implWorkLeft`): the
 side of the ground still to work, from the pass label (↑ A to B, ↓ B to A) and the way the passes last changed (a pass
-counts after 10 m on it, or at once when a U-turn lands on it; before any change on the track, the U-turn arrow's side).
+counts after 10 m on it within a quarter of the tool's width of its line, so a turn by hand that loops over a pass does not,
+or at once when a U-turn lands on it; before any change on the track, the U-turn arrow's side; followed on every Tick, a
+picture shown or not, and started again on another track or field).
 During a U-turn the label names the pass it lands on, driven the other way, so the plough turns over and the mower swings
 across as the turn starts (`implSideNow`, eased over about 3 s). Only the picture changes side: the painted strip stays
 where the tool settings put it.
