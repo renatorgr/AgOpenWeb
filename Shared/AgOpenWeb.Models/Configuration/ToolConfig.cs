@@ -583,4 +583,15 @@ public enum ToolPicture
     RakeFour = 19,
     /// <summary>A trailed finger-wheel rake in a V (trailing tool), the swath at its point.</summary>
     WheelRake = 20,
+    /// <summary>An air seeder with its cart between the tractor and the tine bar (TBT tool); on a tractor or an
+    /// articulated tractor.</summary>
+    AirSeederCartBetween = 21,
+    /// <summary>An air seeder with its cart pulled behind the tine bar (trailing tool); on a tractor or an articulated
+    /// tractor.</summary>
+    AirSeederCartBehind = 22,
+    /// <summary>A precision planter on the rear 3-point hitch, its hopper on the tractor's front linkage.</summary>
+    PlanterFrontHopper = 23,
+    /// <summary>A wide trailed precision planter (trailing tool), its tanks on the centre frame; on a tractor or an
+    /// articulated tractor.</summary>
+    PlanterTrailed = 24,
 }

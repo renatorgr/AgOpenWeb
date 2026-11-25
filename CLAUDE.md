@@ -468,16 +468,19 @@ implements over the rear tyres; these two are a tester's own machines, drawn fro
 tractor; a combine carries only its header, *Grain header* or *Maize header* (`grainHeaderPictureSk`,
 `maizeHeaderPictureSk`: drawn, not pictures, as wide as the tool and in the vehicle's colour, a row unit every 75 cm,
 a feeder house to the combine's body); an articulated tractor pulls big implements, the trailed disc harrow, the
-ploughs and the four-rotor rake only so far.
+ploughs, the four-rotor rake, the air seeders and the trailed planter only so far.
 Tests: `ToolPictureProfileTests`, `ImplementPictureListTests` (one row per `ToolPicture` value, RemoteServer).
 
 **Implements drawn from shapes** (fork only, 25 Nov 2026): a manure spreader, a centre-pivot mower conditioner, a quick
 disc harrow, a semi-mounted roller, a reversible plough, a trailed and a 3-point disc harrow, a rear side disc mower, a
 twin-disc fertiliser spreader, a semi-mounted reversible plough, a reversible disc plough and five rakes (one, two side by side,
-two one behind the other, four rotors, and finger wheels in a V; `iRakeRotor`) (`ToolPicture` 5 to 20), drawn in `js/map-draw.js` from rectangles, bars and paths like the
+two one behind the other, four rotors, and finger wheels in a V; `iRakeRotor`), two air seeders (a tine bar with the cart
+between it and the tractor, a TBT tool, the cart from the tractor's hitch to the tank's axle; or the cart behind the bar,
+following it as a trailer in the page, `implCart`) and two precision planters (mounted with a hopper on the front linkage, and
+a wide trailed one; a row unit on each section when the sections are a row each, `iPlanterRows`) (`ToolPicture` 5 to 24), drawn in `js/map-draw.js` from rectangles, bars and paths like the
 headers, sized from the tool's width and hitch lengths, in metres with y backwards (`implTractorFrame`: what rides on the
 tractor, from the rear axle; `implTrailFrame`: a trailing tool from its pin). The part that works (bodies, discs, cutter
-bar, beaters) is always on the line the map paints, frames, arms and wheels fitting round it: clamped to look right, the
+bar, beaters, openers, seed tubes) is always on the line the map paints, frames, arms and wheels fitting round it: clamped to look right, the
 plough and the mower conditioner were drawn 0.5 m behind the strip at a tester's settings. Colours from the tester's own machines where
 he sent photos, else generic; never a maker's name (the mower conditioner's above all). The rear side mower is drawn where
 the tool offset puts it (`implSectionsMiddle`), as are the rakes' rotors and wheels. A plough has as many bodies as its width takes at about 40 cm each (a disc
