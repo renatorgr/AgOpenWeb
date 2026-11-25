@@ -110,7 +110,7 @@ Most of these have been offered to the official project too. When one is merged 
 - A tractor already heading steeply towards the line is first turned along it.
 - The S is drawn on the map.
 - When no S fits (the end of the field is too near), AutoSteer goes off with the alarm and says to move over by hand.
-- Checked by replaying a simulator drive, not tried on a tractor yet.
+- Checked by replaying a simulator drive, then used in the field on a tractor with an 8 m front boom.
 
 **Joining a new line from the headland.** U-turn tab › "Joining a new line in the headland": Nearest point (as before), Ask, or Start of the pass. It acts when AutoSteer is turned on, or the line is moved or changed, with the tractor in the headland facing the field.
 
@@ -138,7 +138,7 @@ Most of these have been offered to the official project too. When one is merged 
 
 - 4.5 m ahead: 0.2 m on a 50 m bend, 0.5 m on a 20 m bend, 1.3 m on an 8 m bend. That left gaps on the inside and overlaps on the outside.
 - Now, with a front-fixed implement, the tractor steers a little inside each bend so the implement runs on the line. Never tighter than the tractor can turn.
-- Checked by replaying a simulator drive, not tried on a tractor yet.
+- Checked by replaying a simulator drive, then used in the field on a tractor with an 8 m front boom.
 
 ### Fields
 
