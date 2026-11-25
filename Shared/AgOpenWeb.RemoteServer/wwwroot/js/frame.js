@@ -189,9 +189,7 @@ function skFrame(ts) {
 // Start the connection and CanvasKit only now, with every script loaded: their callbacks reach into all of them.
 transport.start();
 // The frame rate test (js/fps-test.js; fork only), only when the address asks for it: http://<host>:5174/?fpstest
-if (/[?&]fpstest(?:[=&]|$)/.test(location.search)) {
-  const s = document.createElement('script'); s.src = '/js/fps-test.js'; document.head.appendChild(s);
-}
+if (/[?&]fpstest(?:[=&]|$)/.test(location.search)) startFpsTest();
 if (typeof CanvasKitInit === 'function') {
   CanvasKitInit({ locateFile: f => '/vendor/' + f }).then(ck => {
     CK = ck;

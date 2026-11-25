@@ -2,15 +2,16 @@
 // Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// The frame rate test (fork only), loaded only when the address asks for it: http://<host>:5174/?fpstest
-// (frame.js). It moves the camera through a set of views (close and far, turning, tilted, zooming in and out, the
-// whole painted area) and draws each with the painted area in its three looks (plain colour, the work's texture,
-// the colour with the work's pattern): the frames a second and the draw time each costs on this screen. Only this
-// page is touched: the look is set here (the tool profile is not changed), the camera is put back at the end, and
-// nothing goes to the host but the result lines, for its log (diag.page, which an observer may send too). While it
-// runs the frame cap is off (frame.js: 30 a second), so the numbers say how far this screen can go.
+// The frame rate test (fork only). Every page loads this file, but it only declares startFpsTest(), which frame.js
+// calls at its end when the address asks for the test: http://<host>:5174/?fpstest. It moves the camera through a
+// set of views (close and far, turning, tilted, zooming in and out, the whole painted area) and draws each with the
+// painted area in its three looks (plain colour, the work's texture, the colour with the work's pattern): the frames
+// a second and the draw time each costs on this screen. Only this page is touched: the look is set here (the tool
+// profile is not changed), the camera is put back at the end, and nothing goes to the host but the result lines, for
+// its log (diag.page, which an observer may send too). While it runs the frame cap is off (frame.js: 30 a second),
+// so the numbers say how far this screen can go.
 
-(function () {
+function startFpsTest() {
   const SETTLE_S = 1, MEASURE_S = 5, SLOW_MS = 50;
   const LOOKS = [[PAINTED_AREA.plain, 'plain'], [PAINTED_AREA.work, 'texture'], [PAINTED_AREA.colourWithPattern, 'colour+pattern']];
   const TAU = 2 * Math.PI;
@@ -265,4 +266,4 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   });
-})();
+}
