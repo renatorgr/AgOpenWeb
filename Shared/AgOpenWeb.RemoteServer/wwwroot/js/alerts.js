@@ -337,6 +337,19 @@ function glInfo() {
     maxTexture: gl.getParameter(gl.MAX_TEXTURE_SIZE),
   };
 }
+// Whether this browser draws the map on the CPU: CanvasKit with no WebGL context, or a renderer that is a CPU (the
+// same names as ClientDiagnostics.Software on the host). Asked once. Such a screen keeps the painted area a
+// plain colour (map-layers.js): a texture is two more lookups for every pixel, nothing on a GPU, a fifth of the frame
+// rate on SwiftShader with the painted area filling the screen.
+let _drawnByCpu;
+function drawnByCpu() {
+  if (_drawnByCpu !== undefined) return _drawnByCpu;
+  if (!grCtx) return true; // CanvasKit not up yet, or on a CPU surface: asked again next time
+  let g;
+  try { g = glInfo(); } catch (e) { g = { kind: 'error' }; }
+  _drawnByCpu = g.kind === 'none' || g.kind === 'error' || /llvmpipe|softpipe|swiftshader|software|basic render/i.test(g.renderer || '');
+  return _drawnByCpu;
+}
 function clientDiagReport() {
   const f = [];
   const put = (k, v) => { if (v !== undefined && v !== null && v !== '') f.push(k + '=' + String(v).replace(/[\t\r\n]/g, ' ')); };

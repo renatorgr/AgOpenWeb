@@ -160,6 +160,7 @@ public static class ToolProfileJsonService
                 SectionColors = (uint[])store.Tool.SectionColors.Clone(),
                 Picture = (int)store.Tool.Picture,
                 PictureColor = store.Tool.PictureColor,
+                PaintedArea = (int)store.Tool.PaintedArea,
             },
             Sections = new SectionsDto
             {
@@ -258,6 +259,9 @@ public static class ToolProfileJsonService
             ? (ToolPicture)pic : ToolPicture.None;
         // Its colour (fork only); missing or not a colour = the default, red.
         store.Tool.PictureColor = dto.Tool?.PictureColor ?? ToolConfig.DefaultPictureColor;
+        // How the painted area looks with a picture (fork only); missing or unknown = the work's texture.
+        store.Tool.PaintedArea = dto.Tool?.PaintedArea is int look && Enum.IsDefined(typeof(PaintedAreaLook), look)
+            ? (PaintedAreaLook)look : PaintedAreaLook.WorkTexture;
         // Overlay saved colors onto the full MaxSections-length array so older
         // 16-color profiles keep palette defaults for sections 17–64.
         if (dto.Tool?.SectionColors != null && dto.Tool.SectionColors.Length > 0)
@@ -395,6 +399,8 @@ public static class ToolProfileJsonService
         public int? Picture { get; set; }
         /// <summary>The implement's colour on the map, 0xRRGGBB; fork only.</summary>
         public int? PictureColor { get; set; }
+        /// <summary>How the painted area looks with a picture (<see cref="PaintedAreaLook"/>); fork only.</summary>
+        public int? PaintedArea { get; set; }
     }
 
     internal class SectionsDto

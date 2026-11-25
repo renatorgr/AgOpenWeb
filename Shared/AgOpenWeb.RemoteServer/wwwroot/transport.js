@@ -451,6 +451,7 @@ window.RemoteTransport = {
             isSteerSwitchEnabled: !!u8(), isSteerSwitchManualSections: !!u8(), totalWidth: f64(),
             picture: i32(), // the implement's picture on the map: 0 none, then one value per picture (fork only)
             pictureColor: i32(), // its colour 0xRRGGBB (fork only)
+            paintedArea: i32(), // how the painted area looks with it: 0 the work's texture, 1 the colour with its pattern, 2 plain (fork only)
           };
           const uturn = { style: i32(), extension: f64(), smoothing: i32(), radius: f64(), distanceFromBoundary: f64(),
             goAroundRadius: f64(), goAroundMargin: f64(), crossGap: f64(), entryMode: i32(), entryStraight: f64() };

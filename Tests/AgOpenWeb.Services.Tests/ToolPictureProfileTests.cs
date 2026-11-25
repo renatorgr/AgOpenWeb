@@ -13,7 +13,8 @@ namespace AgOpenWeb.Services.Tests;
 /// <summary>The implement's picture on the map (Tool > Type > Picture on the map; fork only) is the
 /// tool profile's: the seed drill's profile shows the drill, the sprayer's the boom and its tank.
 /// A profile saved before it, or with a value this build does not know, shows the section bars. Its
-/// colour (Colour on the map) is the profile's too; without one it is red, the default.</summary>
+/// colour (Colour on the map) is the profile's too; without one it is red, the default. So is the painted area's look
+/// (the work's texture, the coverage colour with its pattern, or the plain colour); without one, the texture.</summary>
 [TestFixture]
 public class ToolPictureProfileTests
 {
@@ -126,6 +127,51 @@ public class ToolPictureProfileTests
         store.Tool.PictureColor = 0x3B8A3A; // the tool that was active before
         new TestToolProfileService(_dir).CreateDefaultProfile("New", store);
         Assert.That(store.Tool.PictureColor, Is.EqualTo(ToolConfig.DefaultPictureColor));
+    }
+
+    [TestCase(PaintedAreaLook.WorkTexture)]
+    [TestCase(PaintedAreaLook.ColourWithPattern)]
+    [TestCase(PaintedAreaLook.PlainColour)]
+    public void The_painted_area_s_look_is_saved_with_the_tool_profile(PaintedAreaLook look)
+    {
+        var src = new ConfigurationStore();
+        src.Tool.Picture = ToolPicture.ReversiblePlough;
+        src.Tool.PaintedArea = look;
+        ToolProfileJsonService.Save(_dir, "Implement", src);
+
+        var dst = new ConfigurationStore();
+        dst.Tool.PaintedArea = look == PaintedAreaLook.PlainColour ? PaintedAreaLook.WorkTexture : PaintedAreaLook.PlainColour; // the tool before
+        Assert.That(ToolProfileJsonService.Load(_dir, "Implement", dst), Is.True);
+        Assert.That(dst.Tool.PaintedArea, Is.EqualTo(look));
+    }
+
+    [TestCase(null, Description = "saved before the setting")]
+    [TestCase(3, Description = "a look this build does not have")]
+    [TestCase(-1)]
+    public void A_profile_without_a_known_look_has_the_work_s_texture(int? stored)
+    {
+        ToolProfileJsonService.Save(_dir, "Old", new ConfigurationStore());
+        var path = Path.Combine(_dir, "Old.json");
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        var tool = node["tool"]!.AsObject();
+        Assert.That(tool.ContainsKey("paintedArea"), Is.True, "the setting is written");
+        tool.Remove("paintedArea");
+        if (stored is int v) tool["paintedArea"] = v;
+        File.WriteAllText(path, node.ToJsonString());
+
+        var dst = new ConfigurationStore();
+        dst.Tool.PaintedArea = PaintedAreaLook.PlainColour; // the tool that was active before
+        Assert.That(ToolProfileJsonService.Load(_dir, "Old", dst), Is.True);
+        Assert.That(dst.Tool.PaintedArea, Is.EqualTo(PaintedAreaLook.WorkTexture));
+    }
+
+    [Test]
+    public void A_new_tool_profile_has_the_work_s_texture()
+    {
+        var store = new ConfigurationStore();
+        store.Tool.PaintedArea = PaintedAreaLook.PlainColour; // the tool that was active before
+        new TestToolProfileService(_dir).CreateDefaultProfile("New", store);
+        Assert.That(store.Tool.PaintedArea, Is.EqualTo(PaintedAreaLook.WorkTexture));
     }
 
     private sealed class TestToolProfileService : ToolProfileService

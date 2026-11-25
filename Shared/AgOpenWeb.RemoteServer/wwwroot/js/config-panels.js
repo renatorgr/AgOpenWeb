@@ -110,6 +110,15 @@ function populateToolCfg(force) {
     tcPicColSel.value = IMPLEMENT_COLOURS.some(([v]) => parseInt(v, 16) === pcol) ? hex6(pcol).slice(1) : '';
   }
   if (document.activeElement !== tcPicCol) tcPicCol.value = hex6(pcol);
+  // How the painted area looks (fork only): the list is filled by populateCfgControls (tool.paintedArea); the note
+  // names the work, or says this implement has no texture yet.
+  const work = picRow && picRow.work, look = t.paintedArea | 0;
+  document.getElementById('tc-painthint').textContent = !work
+    ? tr('No texture for this implement yet: the painted area keeps the plain colour.')
+    : look === 2 ? tr('The colour chosen under Sections, as without a picture.')
+    : drawnByCpu() ? tr('This screen draws the map without a graphics card: the painted area keeps the plain colour here.')
+    : look === 1 ? tr('The colour chosen under Sections, with the pattern of the work ({work}) over it.', { work: workName(work) })
+    : tr('Texture: {work}. It lies along the passes of the line in use (on a curve, along its general direction).', { work: workName(work) });
   // A fixed tool hangs on the tractor's 3-point hitch (the vehicle's): the sum says where its
   // working point is from the rear axle (#547).
   if (!trailtbt) {

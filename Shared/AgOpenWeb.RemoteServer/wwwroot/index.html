@@ -549,6 +549,13 @@
             <input id="tc-piccol" class="cfg-color" type="color" title="Any colour" aria-label="Any colour">
           </div>
           <div class="sa-hint" id="tc-piccolhint" hidden>This picture is drawn from photos of a machine and keeps its colours.</div>
+          <div class="cfg-label">Painted area</div>
+          <select class="cfg-isel" id="tc-paintsel" data-key="tool.paintedArea">
+            <option value="0">Texture of the work</option>
+            <option value="1">Coverage colour with the work's pattern</option>
+            <option value="2">Plain coverage colour</option>
+          </select>
+          <div class="sa-hint" id="tc-painthint"></div>
         </div>
       </div>
       <div id="tcs-hitch" class="cfg-body" data-strip="tc-sub" hidden>
@@ -2175,6 +2182,7 @@
   <script src="/js/vt.js"></script>
   <script src="/js/web-cards.js"></script>
   <script src="/js/map-draw.js"></script>
+  <script src="/js/work-textures.js"></script>
   <script src="/js/map-layers.js"></script>
   <script src="/js/frame.js"></script>
 </body>

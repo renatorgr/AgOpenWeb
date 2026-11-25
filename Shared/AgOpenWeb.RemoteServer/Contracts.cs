@@ -529,8 +529,9 @@ public record ToolConfigDto(
     bool IsSteerSwitchEnabled, bool IsSteerSwitchManualSections,
     double TotalWidth,
     // The implement's picture on the map (ToolPicture: 0 none, then one value per picture) and its colour (0xRRGGBB,
-    // red by default: ToolConfig.DefaultPictureColor); fork only.
-    int Picture = 0, int PictureColor = 0xC8322B);
+    // red by default: ToolConfig.DefaultPictureColor), and how the painted area looks with it (PaintedAreaLook: 0 the
+    // work's texture, 1 the coverage colour with the work's pattern, 2 the plain colour); fork only.
+    int Picture = 0, int PictureColor = 0xC8322B, int PaintedArea = 0);
 
 /// <summary>U-Turn tab (ConfigStore.Guidance). Style: 0 Omega, 1 Sagitta.</summary>
 /// <param name="GoAroundRadius">The tightest a pass bends round a Go around obstacle, m.</param>

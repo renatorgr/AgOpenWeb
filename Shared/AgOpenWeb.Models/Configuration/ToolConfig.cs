@@ -492,6 +492,18 @@ public class ToolConfig : ObservableObject
         set => SetProperty(ref _pictureColor, value is >= 0 and <= 0xFFFFFF ? value : DefaultPictureColor);
     }
 
+    private PaintedAreaLook _paintedArea = PaintedAreaLook.WorkTexture;
+    /// <summary>
+    /// How the painted area looks with an implement's picture chosen, saved with the tool profile: the texture of the
+    /// picture's work (ploughed, mown, sprayed...; the default), the coverage colour with the work's pattern over it,
+    /// or the plain coverage colour, as without a picture. Anything else is the texture. Drawing only; fork only.
+    /// </summary>
+    public PaintedAreaLook PaintedArea
+    {
+        get => _paintedArea;
+        set => SetProperty(ref _paintedArea, Enum.IsDefined(value) ? value : PaintedAreaLook.WorkTexture);
+    }
+
     /// <summary>
     /// Gets the current tool type as a string for display
     /// </summary>
@@ -535,6 +547,18 @@ public class ToolConfig : ObservableObject
 
         OnPropertyChanged(nameof(CurrentToolType));
     }
+}
+
+/// <summary>How the painted area looks with an implement's picture chosen (<see cref="ToolConfig.PaintedArea"/>;
+/// fork only).</summary>
+public enum PaintedAreaLook
+{
+    /// <summary>The texture of the picture's work: its own colours (js/work-textures.js).</summary>
+    WorkTexture = 0,
+    /// <summary>The coverage colour (one, or each section's) with the work's pattern over it.</summary>
+    ColourWithPattern = 1,
+    /// <summary>The plain coverage colour, as without a picture.</summary>
+    PlainColour = 2,
 }
 
 /// <summary>The implement's picture on the map (fork only). Each one is drawn at the tool's real
