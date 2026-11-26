@@ -105,6 +105,68 @@ namespace AgOpenWeb.Models.Tool
         private static bool SamePlace(Vec3 a, Vec3 b) =>
             Math.Abs(a.Easting - b.Easting) < 1e-6 && Math.Abs(a.Northing - b.Northing) < 1e-6;
 
+        /// <summary>The longest step the pivot is pulled by in <see cref="PivotPathBehind"/>, m.</summary>
+        private const double PullStep = 0.05;
+
+        /// <summary>
+        /// The pivot's path while the point <paramref name="x"/> ahead of the rear axle on the
+        /// tractor's centre line drives <paramref name="pointPath"/>: the other way round from
+        /// <see cref="PathOfPointAhead"/>. The rear axle does not slide sideways, so the pivot
+        /// follows that point as a trailer follows its hitch, x behind it: on a steady bend of
+        /// radius ρ it runs on a circle of √(ρ² − x²) about the same centre, it comes into a bend
+        /// and out of it gradually (onto a straight as e^(−s/x)), and it never turns tighter than
+        /// that circle while the point's path bends no tighter than ρ. One pivot point for each
+        /// point of the path, in the same order, its heading the tractor's there. The tractor starts
+        /// in line with the path's first stretch. A U-turn planned for a front implement's centre
+        /// is turned into the path the pivot is steered on with it. Fork only.
+        /// </summary>
+        public static List<Vec3> PivotPathBehind(IReadOnlyList<Vec3> pointPath, double x)
+        {
+            int n = pointPath.Count;
+            var result = new List<Vec3>(n);
+            if (n == 0) return result;
+            if (x <= 0)
+            {
+                result.AddRange(pointPath);
+                return result;
+            }
+
+            // In line with the first stretch that has a length.
+            double heading = pointPath[0].Heading;
+            for (int i = 1; i < n; i++)
+            {
+                if (SamePlace(pointPath[i], pointPath[0])) continue;
+                heading = Math.Atan2(pointPath[i].Easting - pointPath[0].Easting, pointPath[i].Northing - pointPath[0].Northing);
+                break;
+            }
+
+            result.Add(AlongTractor(pointPath[0], ZeroToTwoPi(heading), -x));
+            for (int i = 1; i < n; i++)
+            {
+                double dE = pointPath[i].Easting - pointPath[i - 1].Easting;
+                double dN = pointPath[i].Northing - pointPath[i - 1].Northing;
+                double length = Math.Sqrt(dE * dE + dN * dN);
+                int steps = Math.Max(1, (int)Math.Ceiling(length / PullStep));
+                for (int k = 0; k < steps && length > 0; k++)
+                {
+                    double sE = dE / steps, sN = dN / steps;
+                    // The point's move across the tractor turns it: to the right of a heading h is
+                    // (cos h, -sin h). The turn is taken at the middle of the step.
+                    double first = (sE * Math.Cos(heading) - sN * Math.Sin(heading)) / x;
+                    double mid = heading + first / 2;
+                    heading += (sE * Math.Cos(mid) - sN * Math.Sin(mid)) / x;
+                }
+                result.Add(AlongTractor(pointPath[i], ZeroToTwoPi(heading), -x));
+            }
+            return result;
+        }
+
+        private static double ZeroToTwoPi(double heading)
+        {
+            heading %= 2 * Math.PI;
+            return heading < 0 ? heading + 2 * Math.PI : heading;
+        }
+
         /// <summary>
         /// How far ahead of the pivot a front implement works (a combine's header too: its tool
         /// is a front one), 0 for any other mount. Negative if its working point is set behind

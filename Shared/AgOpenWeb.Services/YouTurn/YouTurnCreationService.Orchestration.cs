@@ -69,6 +69,13 @@ public partial class YouTurnCreationService
         public Vec3? ArcStart { get; init; }
 
         /// <summary>
+        /// With a turn planned for a front implement's centre (<see cref="FrontToolPlan"/>): where the
+        /// implement leaves the current pass, a reach ahead of <see cref="ArcStart"/>, where the pivot
+        /// does. What is left of the pass before the turn is measured from here. Null otherwise.
+        /// </summary>
+        public Vec3? ToolLeavesPassAt { get; init; }
+
+        /// <summary>
         /// The pass runs into an obstacle whose choice is a U-turn before it reaches the outer
         /// turn line: the turn is made there. With no <see cref="Path"/>, no turn fits before the
         /// obstacle and none is planned elsewhere; the operator has to take over.
@@ -134,6 +141,46 @@ public partial class YouTurnCreationService
         double headlandDistance)
     {
         TurnPathBuilds++;
+        // For a front implement's centre when the operator chose that (FrontToolPlan); where no
+        // such turn is made (it does not fit, an obstacle or a hard fence stops it, the tractor
+        // could not drive it), for the pivot, as without the choice. Fork only.
+        var plan = FrontToolPlanFor(_configStore, MapTurnStyle(_configStore.Guidance.UTurnStyle) == YouTurnType.KStyle);
+        if (plan.On)
+        {
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            var forTool = CreateTurnPathFor(plan, currentPosition, selectedTrack, headingRadians, abHeading, boundary,
+                headlandLine, guidance, turn, uTurnSkipRows, headlandCalculatedWidth, headlandDistance);
+            if (forTool.Path != null && !forTool.UsedFallback)
+            {
+                _logger.LogDebug("[YouTurn] Planned for the front implement's centre ({Ms:F0} ms): the implement leaves the pass {D:F1} m after the tractor",
+                    System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                    forTool.ToolLeavesPassAt is { } tool && forTool.ArcStart is { } pivot ? GeometryMath.Distance(tool, pivot) : 0.0);
+                return forTool;
+            }
+            if (headlandLine != null)
+                _logger.LogDebug("[YouTurn] No turn planned for the front implement's centre here ({Ms:F0} ms); planning for the pivot",
+                    System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        }
+        return CreateTurnPathFor(default, currentPosition, selectedTrack, headingRadians, abHeading, boundary,
+            headlandLine, guidance, turn, uTurnSkipRows, headlandCalculatedWidth, headlandDistance);
+    }
+
+    /// <summary><see cref="CreateTurnPath"/> for the pivot, or for a front implement's centre
+    /// (<paramref name="plan"/>).</summary>
+    private TurnPathResult CreateTurnPathFor(
+        FrontToolPlan plan,
+        Position currentPosition,
+        Models.Track.Track selectedTrack,
+        double headingRadians,
+        double abHeading,
+        Boundary? boundary,
+        IReadOnlyList<Vec3>? headlandLine,
+        GuidanceWorkingState guidance,
+        YouTurnWorkingState turn,
+        int uTurnSkipRows,
+        double headlandCalculatedWidth,
+        double headlandDistance)
+    {
         if (headlandLine == null)
             return new TurnPathResult(null, false);
 
@@ -195,7 +242,7 @@ public partial class YouTurnCreationService
             var input = BuildCreationInput(
                 currentPosition, selectedTrack, headingRadians, abHeading, turnLeft,
                 boundary, headlandLine, guidance, turn, uTurnSkipRows, headlandCalculatedWidth,
-                out var obstacles, extraSetback);
+                out var obstacles, extraSetback, plan);
 
             if (input == null)
             {
@@ -372,6 +419,23 @@ public partial class YouTurnCreationService
                     return FallbackResult(fallback, boundary, config);
                 }
 
+                // Planned for a front implement's centre: so far the path is the implement's. From
+                // here on it is the pivot's, the one that takes the implement along it, a point for
+                // a point: the path steered, checked below and kept as the turn's. Where the pivot
+                // leaves the pass is a reach before where the implement does. Fork only.
+                Vec3? leavesPass = output.ArcStart, toolLeavesPass = null;
+                if (plan.On)
+                {
+                    var pivotPath = PivotPathFor(path, plan);
+                    if (pivotPath == null) return new TurnPathResult(null, UsedFallback: false);
+                    if (output.ArcStart is { } toolArc)
+                    {
+                        toolLeavesPass = toolArc;
+                        leavesPass = PivotWhenToolIsAt(path, pivotPath, toolArc);
+                    }
+                    path = pivotPath;
+                }
+
                 // Implement clearance against the hard outer boundary and a hard obstacle the
                 // turn is made at, checked on the final (smoothed) path that will actually be driven.
                 if (hardOuter || hardObstacle)
@@ -411,7 +475,7 @@ public partial class YouTurnCreationService
                     // entry, it turned the tractor round there and out of the field): not engaging.
                     // At an obstacle the result says so, and the operator is told it is the
                     // obstacle, not the field's edge.
-                    if (output.ArcStart is { } arcStart)
+                    if (leavesPass is { } arcStart)
                     {
                         double arcAhead = (arcStart.Easting - currentPosition.Easting) * Math.Sin(headingRadians)
                                         + (arcStart.Northing - currentPosition.Northing) * Math.Cos(headingRadians);
@@ -434,8 +498,13 @@ public partial class YouTurnCreationService
                 // next tree's turn line 8 m away, and a turn whose exit landed just before another
                 // obstacle ended in the AutoSteer-off alarm with no room. No such turn is made;
                 // the operator is told and takes over before the obstacle.
-                int arcIndex = output.ArcStart is { } seated ? PassEnds.NearestIndex(path, seated.Easting, seated.Northing) : 0;
-                if (boundary != null && !ClearsTurnObstacles(path, boundary, config, out int crossed, ExitReach, obstacle?.InnerIndex ?? -1,
+                int arcIndex = leavesPass is { } seated ? PassEnds.NearestIndex(path, seated.Easting, seated.Northing) : 0;
+                // Planned for the implement, the path goes on along the next pass further than the
+                // pivot's turn would: its arc ends that much further back, and its exit leg is longer.
+                double extension = Math.Max(0.0, config.Guidance.UTurnExtension);
+                double exitReach = ExitReachFor(plan,
+                    plan.Radius - plan.PivotRadius + Math.Max(plan.MinExitLeg, extension) - plan.Reach - extension);
+                if (boundary != null && !ClearsTurnObstacles(path, boundary, config, out int crossed, exitReach, obstacle?.InnerIndex ?? -1,
                         obstacles, arcFrom: arcIndex))
                 {
                     // Seated further back the legs may clear the obstacle, or the exit land with
@@ -455,7 +524,7 @@ public partial class YouTurnCreationService
 
                 // Seated back further than the fence's clearance ever seats a turn, it must still
                 // start ahead of the tractor, a soft fence too (the hard one is checked above).
-                if (obstacleSetback && extraSetback > MaxExtraSetback && output.ArcStart is { } farStart)
+                if (obstacleSetback && extraSetback > MaxExtraSetback && leavesPass is { } farStart)
                 {
                     double ahead = (farStart.Easting - currentPosition.Easting) * Math.Sin(headingRadians)
                                  + (farStart.Northing - currentPosition.Northing) * Math.Cos(headingRadians);
@@ -472,7 +541,8 @@ public partial class YouTurnCreationService
                     atObstacle ? $", before obstacle {obstacle!.InnerIndex + 1}" : "");
                 return new TurnPathResult(path, UsedFallback: false)
                 {
-                    ArcStart = output.ArcStart, AtObstacle = atObstacle, AtObstacleIndex = atObstacle ? obstacle!.InnerIndex : -1,
+                    ArcStart = leavesPass, ToolLeavesPassAt = toolLeavesPass,
+                    AtObstacle = atObstacle, AtObstacleIndex = atObstacle ? obstacle!.InnerIndex : -1,
                     ObstacleSetback = obstacleSetback ? extraSetback : 0, SetbackObstacleIndex = obstacleSetback ? setbackObstacle : -1,
                 };
             }
@@ -494,6 +564,10 @@ public partial class YouTurnCreationService
                     Failure = output.Failure, OutsideTurnLineBy = output.OutsideTurnLineBy,
                 };
             }
+
+            // The simple fallback is laid out for the pivot: with none made for the implement,
+            // the turn is planned for the pivot first (CreateTurnPath).
+            if (plan.On) return new TurnPathResult(null, UsedFallback: false) { Failure = output.Failure };
 
             _logger.LogWarning("[YouTurn] Service failed: {Reason} - using simple fallback",
                 output.FailureReason ?? "unknown");
@@ -641,7 +715,8 @@ public partial class YouTurnCreationService
         int uTurnSkipRows,
         double headlandCalculatedWidth,
         out List<TurnObstacle> obstacles,
-        double extraInwardSetback = 0.0)
+        double extraInwardSetback = 0.0,
+        FrontToolPlan plan = default)
     {
         obstacles = EmptyObstacles;
         if (boundary?.OuterBoundary == null || !boundary.OuterBoundary.IsValid)
@@ -754,6 +829,10 @@ public partial class YouTurnCreationService
             && stripObstacles.All(b => !b.IsPointInside(point.Easting, point.Northing));
 
         var pivotPosition = new Vec3(currentPosition.Easting, currentPosition.Northing, headingRadians);
+        // What the turn is planned for: the pivot, or the front implement's centre ahead of it
+        // (FrontToolPlan). The end of the pass is found from the pivot either way, as the state
+        // machine finds it.
+        var planPosition = plan.On ? RigGeometry.AlongTractor(pivotPosition, headingRadians, plan.Reach) : pivotPosition;
 
         // ONE turn generator. "An AB line is just a curve with 2 points": a 2-point AB
         // line is densified into a straight poly-curve so it flows through the SAME
@@ -823,11 +902,11 @@ public partial class YouTurnCreationService
             ABReferencePoint = passEnd?.Crossing ?? new Vec2(pivotPosition.Easting, pivotPosition.Northing),
             IsHeadingSameWay = guidance.IsHeadingSameWay,
 
-            PivotPosition = pivotPosition,
+            PivotPosition = planPosition,
             ToolWidth = toolWidth,
             ToolOverlap = config.Tool.Overlap,
             ToolOffset = config.Tool.Offset,
-            TurnRadius = config.Guidance.UTurnRadius,
+            TurnRadius = plan.On ? plan.Radius : config.Guidance.UTurnRadius,
 
             // Matches the cyan next-track line exactly.
             TurnOffset = turn.NextTrackTurnOffset,
@@ -844,6 +923,7 @@ public partial class YouTurnCreationService
             MakeUTurnCounter = turn.YouTurnCounter + 10,
 
             LegLength = config.Guidance.UTurnExtension,
+            MinExitLegLength = plan.On ? plan.MinExitLeg : 0,
             YouTurnLegExtensionMultiplier = 2.5,
             HeadlandWidth = headlandWidthForTurn,
         };
@@ -1290,9 +1370,49 @@ public partial class YouTurnCreationService
         out bool obstacleInTheWay,
         bool startedByTheApp = false)
     {
+        // For a front implement's centre when the operator chose that (FrontToolPlan); where no
+        // such turn is made from here, for the pivot, as without the choice. Fork only.
+        var plan = FrontToolPlanFor(_configStore);
+        if (plan.On)
+        {
+            var forTool = ManualArcPathFor(plan, currentPosition, abHeading, turnLeft, boundary, guidance,
+                uTurnSkipRows, targetPass, out _, startedByTheApp);
+            if (forTool.Count > 0)
+            {
+                obstacleInTheWay = false;
+                return forTool;
+            }
+            _logger.LogDebug("[ManualYouTurn] No turn planned for the front implement's centre from here; planning for the pivot");
+        }
+        return ManualArcPathFor(default, currentPosition, abHeading, turnLeft, boundary, guidance,
+            uTurnSkipRows, targetPass, out obstacleInTheWay, startedByTheApp);
+    }
+
+    /// <summary>
+    /// <see cref="CreateManualArcPath(Position, double, bool, Boundary?, GuidanceWorkingState, int, Models.Track.Track?, out bool, bool)"/>
+    /// for the pivot, or for a front implement's centre (<paramref name="plan"/>): the Dubins path
+    /// is then the implement's, at the radius of its circle, from where the tractor's would start
+    /// (or half a metre ahead of the implement, if that is further on) to the next pass, and on
+    /// along that pass while the tractor comes onto it; the path returned is the pivot's
+    /// (<see cref="PivotPathFor"/>), which every check below reads.
+    /// </summary>
+    private List<Vec3> ManualArcPathFor(
+        FrontToolPlan plan,
+        Position currentPosition,
+        double abHeading,
+        bool turnLeft,
+        Boundary? boundary,
+        GuidanceWorkingState guidance,
+        int uTurnSkipRows,
+        Models.Track.Track? targetPass,
+        out bool obstacleInTheWay,
+        bool startedByTheApp)
+    {
         obstacleInTheWay = false;
         var path = new List<Vec3>();
         var config = _configStore;
+        // A turn not made for the implement is planned for the pivot next: its refusal is no warning.
+        var refused = plan.On ? LogLevel.Debug : LogLevel.Warning;
 
         double trackWidth = config.ActualToolWidth - config.Tool.Overlap;
         // From the line steered now to the one steered on the next pass: the passes apart, and
@@ -1311,7 +1431,9 @@ public partial class YouTurnCreationService
             return path;
         }
 
-        double turnRadius = Math.Max(config.Guidance.UTurnRadius, MinManualTurnRadius);
+        double turnRadius = plan.On ? plan.Radius : Math.Max(config.Guidance.UTurnRadius, MinManualTurnRadius);
+        double reach = plan.On ? plan.Reach : 0.0;
+        double startLead = plan.On ? Math.Max(ManualTurnStartLead, reach + ManualToolLead) : ManualTurnStartLead;
 
         // Travel direction as the tractor is currently heading along the track.
         double lineHeading = abHeading;
@@ -1327,8 +1449,8 @@ public partial class YouTurnCreationService
         // and the arc must not begin behind the pivot by the time it renders (AgOpenGPS: 4 m).
         var start = new Vec3
         {
-            Easting = currentPosition.Easting + Math.Sin(lineHeading) * ManualTurnStartLead,
-            Northing = currentPosition.Northing + Math.Cos(lineHeading) * ManualTurnStartLead,
+            Easting = currentPosition.Easting + Math.Sin(lineHeading) * startLead,
+            Northing = currentPosition.Northing + Math.Cos(lineHeading) * startLead,
             Heading = travelHeading,
         };
 
@@ -1370,7 +1492,7 @@ public partial class YouTurnCreationService
         path = _dubinsService.GeneratePath(start, goal);
         if (path.Count < 3)
         {
-            _logger.LogWarning("[ManualYouTurn] Dubins found no path: radius={Rad:F1}m, offset={Off:F1}m",
+            _logger.Log(refused, "[ManualYouTurn] Dubins found no path: radius={Rad:F1}m, offset={Off:F1}m",
                 turnRadius, turnOffset);
             path.Clear();
             return path;
@@ -1379,14 +1501,37 @@ public partial class YouTurnCreationService
         // The path begins at the tractor with a straight lead into the Dubins start, so
         // guidance has its t=0 sample at the pivot: it abandons a turn whose nearest path
         // point is over 4 m away, which the lead alone would be the moment it renders.
+        // (Planned for the implement: at the implement, which puts the pivot's path at the tractor.)
         path.Insert(0, new Vec3
         {
-            Easting = currentPosition.Easting,
-            Northing = currentPosition.Northing,
+            Easting = currentPosition.Easting + Math.Sin(lineHeading) * reach,
+            Northing = currentPosition.Northing + Math.Cos(lineHeading) * reach,
             Heading = lineHeading,
         });
+        // The implement is on the next pass at the goal, the tractor still at an angle to it:
+        // on along the pass until the tractor is on it too.
+        if (plan.On) RunOnAlongPass(path, targetPass, plan.SettleLeg);
 
         TurnPathSmoothing.Smooth(path, config.Guidance.UTurnSmoothing);
+
+        if (plan.On)
+        {
+            var inField = boundary?.OuterBoundary;
+            if (inField != null && inField.IsValid && inField.IsPointInside(currentPosition.Easting, currentPosition.Northing)
+                && LeavesField(path, boundary))
+            {
+                _logger.LogDebug("[ManualYouTurn] The front implement's centre would leave the field");
+                path.Clear();
+                return path;
+            }
+            var pivotPath = PivotPathFor(path, plan);
+            if (pivotPath == null)
+            {
+                path.Clear();
+                return path;
+            }
+            path = pivotPath;
+        }
 
         // Hard boundary: a manual turn is anchored at the tractor, so it can't be
         // shifted inward — if the implement would swing into the fence, refuse it.
@@ -1396,7 +1541,7 @@ public partial class YouTurnCreationService
             : ManualTurnClearsHardBoundary(path, boundary, config, out intrusion);
         if (!clear)
         {
-            _logger.LogWarning("[ManualYouTurn] Implement would swing into hard boundary (intrusion {I:F2}m) — refusing",
+            _logger.Log(refused, "[ManualYouTurn] Implement would swing into hard boundary (intrusion {I:F2}m) — refusing",
                 intrusion);
             path.Clear();
             return path;
@@ -1407,10 +1552,10 @@ public partial class YouTurnCreationService
         // refused, as the automatic turn keeps out of them. Its exit too, as the automatic
         // turn's (ExitReach): one that lands just before an obstacle ends in the AutoSteer-off
         // alarm once the turn is driven, with no room left to stop (official #613, Sourcery).
-        if (boundary != null && !ClearsTurnObstacles(path, boundary, config, out int inner, ExitReach,
-                promoted: _goAround.CurrentBlocked))
+        if (boundary != null && !ClearsTurnObstacles(path, boundary, config, out int inner,
+                ExitReachFor(plan, plan.SettleLeg - plan.Reach), promoted: _goAround.CurrentBlocked))
         {
-            _logger.LogWarning("[ManualYouTurn] The turn would cross obstacle {I} - refusing", inner + 1);
+            _logger.Log(refused, "[ManualYouTurn] The turn would cross obstacle {I} - refusing", inner + 1);
             obstacleInTheWay = true;
             path.Clear();
             return path;
@@ -1431,14 +1576,18 @@ public partial class YouTurnCreationService
             return path;
         }
 
-        _logger.LogDebug("[ManualYouTurn] Dubins path: {Count} points, radius={Rad:F1}m, offset={Off:F1}m, turnLeft={Left}",
-            path.Count, turnRadius, turnOffset, turnLeft);
+        _logger.LogDebug("[ManualYouTurn] Dubins path: {Count} points, radius={Rad:F1}m, offset={Off:F1}m, turnLeft={Left}{For}",
+            path.Count, turnRadius, turnOffset, turnLeft, plan.On ? ", planned for the front implement's centre" : "");
 
         return path;
     }
 
     /// <summary>Manual turn starts this far ahead of the tractor (AgOpenGPS: 4 m).</summary>
     private const double ManualTurnStartLead = 4.0;
+
+    /// <summary>A turn planned for a front implement's centre starts at least this far ahead of the
+    /// implement: a straight stretch first, so the pivot's path starts at the tractor, m.</summary>
+    private const double ManualToolLead = 0.5;
 
     /// <summary>Heading rotation that keeps a manual turn's start and goal from being
     /// exactly abreast (AgOpenGPS: 0.01 rad).</summary>

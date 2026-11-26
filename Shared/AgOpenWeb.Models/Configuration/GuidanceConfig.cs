@@ -197,6 +197,17 @@ public class GuidanceConfig : ObservableObject
 
     public const double DefaultLineEntryStraight = 3.0;
 
+    // With a front implement (a combine's header too), U-turns and the way onto a pass are planned
+    // for the implement's centre, the tractor following it as a trailer follows its hitch
+    // (YouTurnCreationService.FrontTool.cs), not for the pivot with the implement swinging
+    // outside it. Off unless the operator turns it on. Fork only.
+    private bool _uTurnForFrontTool;
+    public bool UTurnForFrontTool
+    {
+        get => _uTurnForFrontTool;
+        set => SetProperty(ref _uTurnForFrontTool, value);
+    }
+
     // The ranges the settings page keeps these to, kept when a profile is read too: a profile
     // written by hand with a huge straight or bend radius held up the GPS cycle (the way onto the
     // pass and the bend round an obstacle are built a point every 0.25 m).

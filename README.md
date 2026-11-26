@@ -157,9 +157,19 @@ Most of these have been offered to the official project too. When one is merged 
 **The green path with a front implement.** The green path of a U-turn, and of the way onto a pass, was drawn where the tractor's rear axle goes. An implement fixed ahead of the tractor swings wider in the turn, so the path on the map was not where the implement went.
 
 - Now, with a front-fixed implement (a front boom, a combine's header), the green path is drawn where the middle of the implement goes. An 8 m boom 4.7 m ahead on a 5.4 m turn: 1.8 m further out.
-- Only the drawing changed. The turn is still worked out for the rear axle; working it out for the implement comes next.
+- Only the drawing changed. The turn is still worked out for the rear axle, unless the setting below is on.
 - A rear or trailed implement is drawn as before.
 - Simulator only, not tried on a tractor yet.
+
+**U-turns worked out for a front implement.** A U-turn is worked out for the tractor's rear axle. An implement fixed ahead of the tractor then swings outside the turn: past the turn line, past the next pass, and back onto it with a sudden change of direction the steering can't follow.
+
+- New setting on the U-turn tab, shown with a front implement: *U-turns planned for* The tractor (as before, and the default) or The front implement.
+- With The front implement, the turn is the path of the middle of the implement. It stays inside the turn line and goes from one pass onto the next without crossing it. The tractor follows behind and never turns tighter than the U-turn radius.
+- The manual U-turn and the way to the start of a pass are worked out the same way.
+- What it costs: the tractor starts turning sooner, about the implement's distance ahead of the rear axle earlier. Rows closer together than the implement's turning circle get a wider turn. The implement comes square to the next pass over about three times that distance.
+- Where such a turn does not fit (too close to a fence or an obstacle), the turn is worked out for the tractor as before, so there is never no turn where there was one. A K-turn is always worked out for the tractor.
+- In the simulator, an 8 m boom 4.7 m ahead on a 5.4 m turn: worked out for the tractor, the middle of the boom went 1.75 m past the turn line and 1.7 m past the next pass; worked out for the boom, it stays inside both.
+- Simulator only, not tried on a tractor yet. Off unless you turn it on.
 
 ### Fields
 

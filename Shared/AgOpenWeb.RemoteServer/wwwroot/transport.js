@@ -454,7 +454,8 @@ window.RemoteTransport = {
             paintedArea: i32(), // how the painted area looks with it: 0 the work's texture, 1 the colour with its pattern, 2 plain (fork only)
           };
           const uturn = { style: i32(), extension: f64(), smoothing: i32(), radius: f64(), distanceFromBoundary: f64(),
-            goAroundRadius: f64(), goAroundMargin: f64(), crossGap: f64(), entryMode: i32(), entryStraight: f64() };
+            goAroundRadius: f64(), goAroundMargin: f64(), crossGap: f64(), entryMode: i32(), entryStraight: f64(),
+            frontTool: u8() }; // U-turns planned for a front implement's centre: 0 the tractor, 1 the implement (fork only)
           const tram = { passes: i32(), display: !!u8(), line: i32(), width: f64(), outerInverted: !!u8() };
           const machine = {
             hydraulicLiftEnabled: !!u8(), raiseTime: i32(), lookAhead: f64(), lowerTime: i32(), invertRelay: !!u8(),

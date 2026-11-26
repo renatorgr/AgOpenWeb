@@ -340,7 +340,7 @@ public sealed class YouTurnPathingService
         double widthMinusOverlap = config.ActualToolWidth - config.Tool.Overlap;
         double distAway = PassGeometry.Offset(track, pathsAway, widthMinusOverlap);
         bool wideTurn = fromPath is int from && from != pathsAway
-            && Math.Abs(distAway - PassGeometry.Offset(track, from, widthMinusOverlap)) > 2.0 * config.Guidance.UTurnRadius;
+            && Math.Abs(distAway - PassGeometry.Offset(track, from, widthMinusOverlap)) > 2.0 * YouTurnCreationService.PlannedTurnRadius(config);
         const double Step = 1.0;
         const double RunBack = 2000.0;
         double runLimit = Math.Min(RunBack, stopAt);

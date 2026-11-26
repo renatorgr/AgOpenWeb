@@ -226,6 +226,7 @@ public static class FarmJobs
                     k.BoomExtra.Add(JobRun.F($"uturn.crossGap:{D(y, "crossGap", 0)}"));
                     k.BoomExtra.Add(JobRun.F($"uturn.entryMode:{(int)D(y, "entryMode", 0)}"));
                     k.BoomExtra.Add(JobRun.F($"uturn.entryStraight:{D(y, "entryStraight", 3)}"));
+                    k.BoomExtra.Add(JobRun.F($"uturn.frontTool:{(B(y, "forFrontTool", false) ? 1 : 0)}"));
                 }
                 read.Add("tool '" + tName + "'");
             }

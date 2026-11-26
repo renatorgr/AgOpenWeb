@@ -231,6 +231,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private List<Vec3>? _youTurnTrackPoints; // its points then: a moved line is a new set of passes
     private double _youTurnPassSpacing;      // width less overlap then: another spacing is a new set too
     private double _youTurnToolReach;        // the implement's reach to the side then (YouTurnCreationService.HardReach)
+    private double _youTurnFrontReach;       // what turns were planned for then: a front implement's reach, 0 the pivot (FrontToolPlanFor)
     private readonly GuidanceWorkingState _guidanceWorking = new();
 
     // ── Joining a new line at the start of the pass (fork only) ─────────
@@ -874,12 +875,14 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // (FormBuildTracks: yt.ResetYouTurn).
         double passSpacing = _configStore.ActualToolWidth - _configStore.Tool.Overlap;
         double toolReach = YouTurnCreationService.HardReach(_configStore);
+        double frontReach = YouTurnCreationService.FrontToolPlanFor(_configStore).Reach;
         if (!ReferenceEquals(track, _youTurnTrack))
         {
             _youTurnTrack = track;
             _youTurnTrackPoints = track?.Points;
             _youTurnPassSpacing = passSpacing;
             _youTurnToolReach = toolReach;
+            _youTurnFrontReach = frontReach;
             _youTurnStateMachine.ForgetTrack(_youTurn);
         }
         else if (track != null
@@ -895,16 +898,20 @@ public sealed class GpsPipelineService : IGpsPipelineService
             _youTurnTrackPoints = track?.Points;
             _youTurnPassSpacing = passSpacing;
             _youTurnToolReach = toolReach;
+            _youTurnFrontReach = frontReach;
             _youTurnStateMachine.ForgetPassStatus(_youTurn);
         }
-        else if (track != null && Math.Abs(toolReach - _youTurnToolReach) > 1e-6)
+        else if (track != null && (Math.Abs(toolReach - _youTurnToolReach) > 1e-6 || Math.Abs(frontReach - _youTurnFrontReach) > 1e-6))
         {
             // The passes are where they were (the same spacing), but the implement reaches
             // further to one side or less far: its offset changed, or its width and the overlap
             // by the same amount. A turn planned but not yet driven was kept clear of a hard
             // fence or a hard obstacle by the old reach, so it is planned again; the order and
-            // what was found about each pass still hold. Fork only.
+            // what was found about each pass still hold. The same when turns are planned for
+            // another point of the rig: the pivot, or a front implement's centre (its reach ahead
+            // changed, or the operator's choice). Fork only.
             _youTurnToolReach = toolReach;
+            _youTurnFrontReach = frontReach;
             if (!_youTurn.IsExecuting) YouTurnStateMachine.DiscardPlannedTurn(_youTurn);
         }
 
@@ -2455,7 +2462,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
     private double OpeningTurnRoom()
     {
         var g = _configStore.Guidance;
-        return 2 * g.UTurnRadius + Math.Max(0, g.UTurnDistanceFromBoundary);
+        return 2 * YouTurnCreationService.PlannedTurnRadius(_configStore) + Math.Max(0, g.UTurnDistanceFromBoundary);
     }
 
     // The U-turn's field for a curve whose ends face each other, kept until the track, its

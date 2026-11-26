@@ -975,8 +975,45 @@ tester's simulator, Couto da Ribeira, 26 Nov 2026: "the line drawn is not the bo
 path steered, its checks and `GpsCycleResult` are the pivot's, and the way to a recorded path is drawn as it is.
 In the simulator (the tester's field, a turn from 22R onto 20R at 7.5 km/h) the boom's centre ran 0.28 m from the path
 drawn on average and 0.85 m at worst, where the turn starts (the steering's own error in a tight turn, times the 4.7 m
-to the boom); from the rear axle's track, 0.90 m and 2.13 m. Planning the turn itself for the implement's centre (its
-radius, its distance from the fence, where it joins the pass) is the next step, not done. Tests: `PathOfPointAheadTests` (Models), `FrontToolPathOnMapTests` (RemoteServer).
+to the boom); from the rear axle's track, 0.90 m and 2.13 m. Tests: `PathOfPointAheadTests` (Models), `FrontToolPathOnMapTests` (RemoteServer).
+
+**The U-turn planned for a front implement's centre** (U-turn tab › *U-turns planned for*: The tractor / The front
+implement, shown with a front tool; `GuidanceConfig.UTurnForFrontTool`, `uturn.frontTool`, saved with the tool profile
+as `youTurn.forFrontTool`, the last byte of the Config frame's U-turn part; **off by default**; fork only). With it on and
+a front-fixed tool 0.5 m or more ahead (`YouTurnCreationService.FrontToolPlanFor`, `FrontToolPlan`,
+`YouTurnCreationService.FrontTool.cs`), the automatic turn's shape (the legs along the two passes, the arc, a wide turn's
+run along the turn line) is the path of the point `h` ahead on the tractor's centre line, at √(R² + h²), the radius of its
+circle when the tractor turns at the U-turn radius R: the generator is given that point as its position and that radius
+(`BuildCreationInput`), so the implement's centre is held to the turn line and goes from one pass onto the next along
+them. The pivot's path is the one that takes the implement along it (`RigGeometry.PivotPathBehind`: the pivot follows
+the point as a trailer follows its hitch, never tighter than R, into a bend and out of it gradually), a point for a
+point. That path is the one steered, checked (the implement's sweep against a hard fence, the obstacles, the start
+ahead of the tractor) and kept as `TurnPath`, so the guards, the state machine and the map read it as before
+(`PathOfPointAhead` of it is the implement's path again). `ArcStart` is where the pivot leaves the pass,
+`TurnPathResult.ToolLeavesPassAt` where the implement does (the "Headland too narrow" test and the end of the pass left
+to do read that one). After the implement's arc the tractor is still at an angle to the next pass (41° with h 4.7 m and
+R 5.4 m; 16° a reach on, 6° two reaches on, under 2.5° three), so the exit leg is at least `FrontToolPlan.MinExitLeg`
+(3.5 h + 6 m), and the exit looked at past the path's end is shorter by what the path runs on further
+(`ExitReachFor`: the same place on the next pass). A manual U-turn (`ManualArcPathFor`: the implement's Dubins path at
+that radius, from 4 m ahead of the tractor or half a metre ahead of the implement if that is further on, to the next
+pass, and on along it for `SettleLeg`, 3 h + 4 m) and the way to the start of a pass (`EntryWay`: the implement's centre
+joins the pass where the tractor's way would, a reach more before the crop, and runs on until the tractor is on the
+pass too) are planned the same way. **Never no turn where there was one**: where no such turn is made (it does not fit,
+a hard fence or an obstacle stops it, the implement's centre would leave the field, or the tractor could not drive the
+pivot's path: a bend under 0.85 R, or more than 0.5 m beside the pass where the path ends, `PivotPathFor`), the turn is
+planned for the pivot, as without the choice, and the log says so (`CreateTurnPath`, `CreateManualArcPath` and
+`PlanLineEntry` each try the implement first). A K-turn, the simple fallback and the S onto a line beside a fence are
+planned for the pivot. Rows wider than twice the implement's radius get the wide turn (`PlannedTurnRadius`). An implement
+shifted to one side is planned by the point ahead on the tractor's centre line (the pass lines are the tractor's). A
+turn planned and not yet driven is planned again when the choice or the reach changes (`_youTurnFrontReach`, `EndKey`).
+What changes on the ground (a tester's sprayer: an 8 m boom 4.7 m ahead, R 5.4 m, the turn line 1.5 m from the fence):
+planned for the pivot, the boom's centre went 1.75 m past the turn line (over the fence) and 1.7 m past the next pass,
+and came back to it at a 41° kink the steering can't follow; planned for the implement it stays inside the turn line and
+never crosses the next pass. The cost: the tractor turns off the pass a reach before the implement leaves it (a turn has
+to be planned a reach earlier), rows nearer than twice the implement's radius (14.3 m) take a wider bulb, and the boom
+comes square to the next pass over about three reaches (14 m), where planned for the pivot it is square from the arc's
+end. Tests: `PivotPathBehindTests` (Models), `FrontToolTurnPlanTests`, `FrontToolManualTurnTests`,
+`ToolProfileUTurnTramTests`.
 
 **Following the moved line** (`FrontToolFollower` in `Services/Track`, applied after `CalculateGuidance` in
 `GpsPipelineService.CalculateTrackGuidance`; fork only). Pure Pursuit aims at a goal the look-ahead ahead, so it starts

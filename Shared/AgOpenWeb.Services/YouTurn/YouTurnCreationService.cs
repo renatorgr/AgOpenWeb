@@ -1481,7 +1481,7 @@ namespace AgOpenWeb.Services.YouTurn
             // Exit leg: walk the destination pass outward from the arc end for legLength METRES.
             bool outSameWay = isOutSameCurve ? !sameWay : sameWay;
             WalkLegByDistance(nextCurve, ytList[ytList.Count - 1], outClosestTurnPt.CurveIndex,
-                outSameWay ? -1 : 1, legLength, insertFront: false);
+                outSameWay ? -1 : 1, Math.Max(legLength, input.MinExitLegLength), insertFront: false);
 
             return true;
         }

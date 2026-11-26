@@ -201,5 +201,13 @@ namespace AgOpenWeb.Models.YouTurn
         /// This is the user's UTurnExtension setting.
         /// </summary>
         public double LegLength { get; set; } = 0;
+
+        /// <summary>
+        /// The least the exit leg along the next pass is, in metres; the entry leg keeps
+        /// <see cref="LegLength"/>. A turn planned for a front implement's centre needs a few of its
+        /// reaches of straight after the arc for the tractor behind it to come onto the pass.
+        /// 0: the exit leg is the entry leg's length. Fork only.
+        /// </summary>
+        public double MinExitLegLength { get; set; } = 0;
     }
 }

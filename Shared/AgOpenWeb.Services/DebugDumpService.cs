@@ -480,6 +480,7 @@ public class DebugDumpService
                 store.Guidance.UTurnCrossGap,
                 store.Guidance.LineEntryMode,
                 store.Guidance.LineEntryStraight,
+                store.Guidance.UTurnForFrontTool,
                 store.Guidance.UTurnStyle,
                 store.Guidance.UTurnSmoothing,
                 store.Guidance.UTurnCompensation,

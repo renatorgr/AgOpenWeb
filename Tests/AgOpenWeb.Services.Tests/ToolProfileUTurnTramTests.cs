@@ -228,6 +228,32 @@ public class ToolProfileUTurnTramTests
     }
 
     [Test]
+    public void UTurnsPlannedForTheFrontImplement_IsSavedWithTheToolProfile_AndOffInOneSavedBeforeIt()
+    {
+        // Fork only: the choice is the implement's (a front boom, a combine's header), and a
+        // profile saved before it, or loaded after one that had it on, plans for the pivot.
+        var boom = new ConfigurationStore();
+        boom.Guidance.UTurnForFrontTool = true;
+        ToolProfileJsonService.Save(_tools, "Boom", boom);
+        ToolProfileJsonService.Save(_tools, "Drill", new ConfigurationStore());
+
+        var d = new ConfigurationStore();
+        Assert.That(ToolProfileJsonService.Load(_tools, "Boom", d), Is.True);
+        Assert.That(d.Guidance.UTurnForFrontTool, Is.True, "saved with the profile");
+        Assert.That(ToolProfileJsonService.Load(_tools, "Drill", d), Is.True);
+        Assert.That(d.Guidance.UTurnForFrontTool, Is.False, "another implement's profile turns it off");
+
+        // A profile from before the setting: the key is not in the file.
+        string file = Path.Combine(_tools, "Boom.json");
+        string text = File.ReadAllText(file);
+        Assert.That(text, Does.Contain("\"forFrontTool\": true"));
+        File.WriteAllText(file, System.Text.RegularExpressions.Regex.Replace(text, "\\s*\"forFrontTool\": true,?", ""));
+        d.Guidance.UTurnForFrontTool = true;
+        Assert.That(ToolProfileJsonService.Load(_tools, "Boom", d), Is.True);
+        Assert.That(d.Guidance.UTurnForFrontTool, Is.False, "off unless the profile says on");
+    }
+
+    [Test]
     public void UTurnRadiusAndExtension_OutOfRangeOrNoNumberInAFile_AreReadInsideTheirLimits()
     {
         // As the Go around radius above: the settings page holds the radius to 2-100 m and the
