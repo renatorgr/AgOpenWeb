@@ -482,6 +482,7 @@ public class DebugDumpService
                 store.Guidance.LineEntryStraight,
                 store.Guidance.UTurnForFrontTool,
                 store.Guidance.UTurnForTrailedTool,
+                store.Guidance.UTurnTrailedOpen,
                 store.Guidance.UTurnStyle,
                 store.Guidance.UTurnSmoothing,
                 store.Guidance.UTurnCompensation,

@@ -319,6 +319,14 @@ public class YouTurnTrackSwitchTests
         _gpsService.UpdateGpsData(ValidFix());
         Assert.That(turn.TurnPath, Is.Null, "the exit swung for a shorter drill");
 
+        // The whole turn sized for the drill is a choice of its own on top of the swung exit.
+        turn.TurnPath = planned;
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(turn.TurnPath, Is.SameAs(planned));
+        config.Guidance.UTurnTrailedOpen = true;
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(turn.TurnPath, Is.Null, "the turn not yet sized for the drill");
+
         turn.TurnPath = planned;
         _gpsService.UpdateGpsData(ValidFix());
         Assert.That(turn.TurnPath, Is.SameAs(planned));

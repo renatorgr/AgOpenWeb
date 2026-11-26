@@ -1622,7 +1622,7 @@ public sealed class YouTurnStateMachine
             HashCode.Combine(c.ActualToolWidth, c.Tool.Width, c.Tool.Overlap,
                 AgOpenWeb.Models.Tool.RigGeometry.Stamp(c.Vehicle, c.Tool), c.Vehicle.TrackWidth),
             HashCode.Combine(ctx.HeadlandCalculatedWidth, ctx.HeadlandDistance, ctx.IsAlternateSkipMode, g.UTurnForFrontTool,
-                g.UTurnForTrailedTool));
+                g.UTurnForTrailedTool, g.UTurnTrailedOpen));
         return new EndTried(track, guidance.HowManyPathsAway, guidance.IsHeadingSameWay, guidance.NudgeOffset,
             turn.SnakeSequence, fieldStamp, ctx.UTurnSkipRows, turn.NextUTurnDirectionLeftOverride, settings);
     }

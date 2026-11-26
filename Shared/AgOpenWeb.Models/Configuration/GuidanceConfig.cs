@@ -219,6 +219,18 @@ public class GuidanceConfig : ObservableObject
         set => SetProperty(ref _uTurnForTrailedTool, value);
     }
 
+    // With that choice, the whole turn sized for the trailed implement where the passes are far
+    // enough apart: the tractor's arc opened to the radius that keeps the implement's working
+    // centre on the U-turn radius, and the exit's swing part of the shape (TrailedOpenTurn,
+    // YouTurnCreationService.TrailedOpen.cs). Has no effect without UTurnForTrailedTool.
+    // Off unless the operator turns it on. Fork only.
+    private bool _uTurnTrailedOpen;
+    public bool UTurnTrailedOpen
+    {
+        get => _uTurnTrailedOpen;
+        set => SetProperty(ref _uTurnTrailedOpen, value);
+    }
+
     // The ranges the settings page keeps these to, kept when a profile is read too: a profile
     // written by hand with a huge straight or bend radius held up the GPS cycle (the way onto the
     // pass and the bend round an obstacle are built a point every 0.25 m).

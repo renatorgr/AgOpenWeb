@@ -116,13 +116,17 @@ public partial class YouTurnCreationService
     }
 
     /// <summary>
-    /// The radius the turn generator works with: the U-turn radius, or the radius of the front
-    /// implement's circle when turns are planned for it. Rows wider than twice this get the wide turn.
+    /// The radius the turn generator works with: the U-turn radius, the radius of the front
+    /// implement's circle when turns are planned for it, or the radius the tractor's arc is opened
+    /// to when they are sized for a trailed implement. Rows wider than twice this get the wide turn.
     /// </summary>
     public static double PlannedTurnRadius(ConfigurationStore config)
     {
-        var plan = FrontToolPlanFor(config, MapTurnStyle(config.Guidance.UTurnStyle) == Models.YouTurn.YouTurnType.KStyle);
-        return plan.On ? plan.Radius : config.Guidance.UTurnRadius;
+        bool kTurn = MapTurnStyle(config.Guidance.UTurnStyle) == Models.YouTurn.YouTurnType.KStyle;
+        var plan = FrontToolPlanFor(config, kTurn);
+        if (plan.On) return plan.Radius;
+        double open = TrailedOpenRadius(config, kTurn);
+        return open > 0 ? open : config.Guidance.UTurnRadius;
     }
 
     /// <summary>

@@ -95,6 +95,7 @@ public static class AgOpenGpsSettings
         // AgOpenGPS plans every U-turn for the tractor (fork only): not the choice of the implement open before.
         store.Guidance.UTurnForFrontTool = false;
         store.Guidance.UTurnForTrailedTool = false;
+        store.Guidance.UTurnTrailedOpen = false;
 
         // Tool config
         store.Tool.Width = GetDouble(settings, "setVehicle_toolWidth", 6.0);

@@ -83,6 +83,16 @@ public partial class YouTurnCreationService
         public TrailedExitSwing.Result? ExitSwing { get; init; }
 
         /// <summary>
+        /// With a turn sized for a trailed implement (<see cref="GuidanceConfig.UTurnTrailedOpen"/>):
+        /// the radius the tractor's arcs were made at, above the U-turn radius; 0 otherwise.
+        /// </summary>
+        public double OpenRadius { get; init; }
+
+        /// <summary>With such a turn made as one shape: the shape. Null for the wide turn (its exit is
+        /// <see cref="ExitSwing"/>) and for any other turn.</summary>
+        public TrailedOpenTurn.Shape? OpenShape { get; init; }
+
+        /// <summary>
         /// The pass runs into an obstacle whose choice is a U-turn before it reaches the outer
         /// turn line: the turn is made there. With no <see cref="Path"/>, no turn fits before the
         /// obstacle and none is planned elsewhere; the operator has to take over.
@@ -172,12 +182,30 @@ public partial class YouTurnCreationService
                 _logger.LogDebug("[YouTurn] No turn planned for the front implement's centre here ({Ms:F0} ms); planning for the pivot",
                     System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
         }
+        // Sized for a trailed implement when the operator chose that (TrailedOpenPlan); where no
+        // such turn is made, as without that choice: for the tractor, its exit swung. Fork only.
+        var open = TrailedOpenPlanFor(_configStore, PlannedTurnOffset(_configStore, turn.NextTrackTurnOffset, uTurnSkipRows),
+            MapTurnStyle(_configStore.Guidance.UTurnStyle) == YouTurnType.KStyle);
+        if (open.On && headlandLine != null)
+        {
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            var opened = CreateTurnPathFor(default, currentPosition, selectedTrack, headingRadians, abHeading, boundary,
+                headlandLine, guidance, turn, uTurnSkipRows, headlandCalculatedWidth, headlandDistance, open);
+            double ms = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            if (opened.Path != null && !opened.UsedFallback)
+            {
+                LogOpenTurn(opened, open, ms);
+                return opened;
+            }
+            _logger.LogDebug("[YouTurn] No turn sized for the trailed implement here ({Ms:F0} ms); planning for the tractor, the exit swung", ms);
+        }
         return CreateTurnPathFor(default, currentPosition, selectedTrack, headingRadians, abHeading, boundary,
             headlandLine, guidance, turn, uTurnSkipRows, headlandCalculatedWidth, headlandDistance);
     }
 
-    /// <summary><see cref="CreateTurnPath"/> for the pivot, or for a front implement's centre
-    /// (<paramref name="plan"/>).</summary>
+    /// <summary><see cref="CreateTurnPath"/> for the pivot, for a front implement's centre
+    /// (<paramref name="plan"/>), or sized for a trailed implement (<paramref name="open"/>; with no
+    /// such turn the result has no path, and the caller plans without it).</summary>
     private TurnPathResult CreateTurnPathFor(
         FrontToolPlan plan,
         Position currentPosition,
@@ -190,12 +218,16 @@ public partial class YouTurnCreationService
         YouTurnWorkingState turn,
         int uTurnSkipRows,
         double headlandCalculatedWidth,
-        double headlandDistance)
+        double headlandDistance,
+        TrailedOpenPlan open = default)
     {
         if (headlandLine == null)
             return new TurnPathResult(null, false);
 
         bool turnLeft = turn.IsTurnLeft;
+        // A turn sized for a trailed implement that is not made is planned again without that (the
+        // caller): why it was not made is for the log's detail, not a warning of no turn.
+        var refused = open.On ? LogLevel.Debug : LogLevel.Warning;
 
         _logger.LogDebug("[YouTurn] Creating turn: direction={Dir}, sameWay={SameWay}, pathsAway={Away}",
             turnLeft ? "LEFT" : "RIGHT", guidance.IsHeadingSameWay, guidance.HowManyPathsAway);
@@ -260,14 +292,22 @@ public partial class YouTurnCreationService
 
             if (input == null)
             {
-                _logger.LogWarning("[YouTurn] Failed to build creation input - no boundary available?");
+                _logger.Log(refused, "[YouTurn] Failed to build creation input - no boundary available?");
                 return new TurnPathResult(null, false);
             }
             if (extraSetback > 0) input.TurnLineEndIndex = turnLineEnd;
             input.NoWideTurn = omegaOnly;
             turnAreaAsItIs ??= input.IsPointInsideTurnArea;
+            if (open.On) ApplyOpenPlan(input, open);
 
             var output = CreateTurn(input);
+            // Sized for a trailed implement and the wide turn was not built: the omega the generator
+            // made in its place at the open radius is not the turn asked for.
+            if (open.Wide && output.Success && !output.IsWideTurn)
+            {
+                _logger.LogDebug("[YouTurn] The wide turn at the open radius was not built");
+                return new TurnPathResult(null, UsedFallback: false);
+            }
             if (turnLineEnd == null && output.Success && output.TurnLineEndIndex >= 0)
                 turnLineEnd = output.TurnLineEndIndex;
 
@@ -311,7 +351,7 @@ public partial class YouTurnCreationService
                             offStraight, extraSetback);
                         continue;
                     }
-                    _logger.LogWarning("[YouTurn] No turn within {S:F0} m lands on a straight stretch of the next pass; no turn.", MaxObstacleSetback);
+                    _logger.Log(refused, "[YouTurn] No turn within {S:F0} m lands on a straight stretch of the next pass; no turn.", MaxObstacleSetback);
                     return new TurnPathResult(null, UsedFallback: false) { AtObstacle = true };
                 }
 
@@ -387,6 +427,12 @@ public partial class YouTurnCreationService
 
                 if (!netIsUTurnLike || cumulativeRunaway)
                 {
+                    if (open.On)
+                    {
+                        _logger.LogDebug("[YouTurn] The turn sized for the trailed implement was malformed (net={Net:F0}° cumulative={Cum:F0}°)",
+                            netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI);
+                        return new TurnPathResult(null, UsedFallback: false);
+                    }
                     // A wide turn runs along the turn line from the end of this pass to the end
                     // of the next. Where the next pass runs on far past this one's end (this pass
                     // ends at a bump of the fence, the next one 150 m on round a corner of the
@@ -405,7 +451,7 @@ public partial class YouTurnCreationService
                     }
                     if (atObstacle)
                     {
-                        _logger.LogWarning("[YouTurn] Turn before obstacle {I} was malformed (net={Net:F0}° cumulative={Cum:F0}°); no turn.",
+                        _logger.Log(refused, "[YouTurn] Turn before obstacle {I} was malformed (net={Net:F0}° cumulative={Cum:F0}°); no turn.",
                             obstacle!.InnerIndex + 1, netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI);
                         return new TurnPathResult(null, UsedFallback: false) { AtObstacle = true };
                     }
@@ -423,11 +469,11 @@ public partial class YouTurnCreationService
                     }
                     if (hardOuter)
                     {
-                        _logger.LogWarning("[YouTurn] Turn near hard boundary was malformed (net={Net:F0}° cumulative={Cum:F0}°); not engaging.",
+                        _logger.Log(refused, "[YouTurn] Turn near hard boundary was malformed (net={Net:F0}° cumulative={Cum:F0}°); not engaging.",
                             netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI);
                         return new TurnPathResult(null, UsedFallback: false) { ClearanceBlocked = true, NoTurnBuilt = true };
                     }
-                    _logger.LogWarning("[YouTurn] Service path rejected: net={Net:F0}° cumulative={Cum:F0}° - using simple fallback",
+                    _logger.Log(refused, "[YouTurn] Service path rejected: net={Net:F0}° cumulative={Cum:F0}° - using simple fallback",
                         netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI);
                     var fallback = SimpleFallback(currentPosition, abHeading, turnLeft, boundary,
                         guidance, turn, uTurnSkipRows, headlandDistance, selectedTrack);
@@ -484,7 +530,7 @@ public partial class YouTurnCreationService
                             continue;
                         }
 
-                        _logger.LogWarning("[YouTurn] No forward turn keeps the implement clear of the hard boundary (intrusion {I:F2}m); not engaging.",
+                        _logger.Log(refused, "[YouTurn] No forward turn keeps the implement clear of the hard boundary (intrusion {I:F2}m); not engaging.",
                             clearance.MaxIntrusion);
                         return new TurnPathResult(null, UsedFallback: false) { ClearanceBlocked = true, AtObstacle = atObstacle };
                     }
@@ -506,10 +552,10 @@ public partial class YouTurnCreationService
                         if (arcAhead < MinArcStartAhead)
                         {
                             if (atObstacle)
-                                _logger.LogWarning("[YouTurn] The turn before obstacle {I}, seated back {S:F1}m, would start {D:F1}m behind the tractor; no turn.",
+                                _logger.Log(refused, "[YouTurn] The turn before obstacle {I}, seated back {S:F1}m, would start {D:F1}m behind the tractor; no turn.",
                                     obstacle!.InnerIndex + 1, extraSetback, MinArcStartAhead - arcAhead);
                             else
-                                _logger.LogWarning("[YouTurn] The turn seated back {S:F1}m to clear the hard boundary would start {D:F1}m behind the tractor; not engaging.",
+                                _logger.Log(refused, "[YouTurn] The turn seated back {S:F1}m to clear the hard boundary would start {D:F1}m behind the tractor; not engaging.",
                                     extraSetback, MinArcStartAhead - arcAhead);
                             return new TurnPathResult(null, UsedFallback: false) { ClearanceBlocked = true, AtObstacle = atObstacle };
                         }
@@ -542,7 +588,7 @@ public partial class YouTurnCreationService
                             crossed + 1, extraSetback);
                         continue;
                     }
-                    _logger.LogWarning("[YouTurn] The turn would cross obstacle {I}, or end right before it; no turn.", crossed + 1);
+                    _logger.Log(refused, "[YouTurn] The turn would cross obstacle {I}, or end right before it; no turn.", crossed + 1);
                     return new TurnPathResult(null, UsedFallback: false) { AtObstacle = true };
                 }
 
@@ -554,7 +600,7 @@ public partial class YouTurnCreationService
                                  + (farStart.Northing - currentPosition.Northing) * Math.Cos(headingRadians);
                     if (ahead < MinArcStartAhead)
                     {
-                        _logger.LogWarning("[YouTurn] The turn seated back {S:F1} m for an obstacle would start {D:F1} m behind the tractor; no turn.",
+                        _logger.Log(refused, "[YouTurn] The turn seated back {S:F1} m for an obstacle would start {D:F1} m behind the tractor; no turn.",
                             extraSetback, MinArcStartAhead - ahead);
                         return new TurnPathResult(null, UsedFallback: false) { AtObstacle = true };
                     }
@@ -564,12 +610,24 @@ public partial class YouTurnCreationService
                 // swung wide so the implement is square on the next pass when the tractor is
                 // (TrailedExitSwing); where the swung exit breaks a rule the turn is held to, the
                 // turn stays as it is. Fork only.
+                // A turn made as the one open shape has its swing in the shape; the wide turn at the
+                // open radius gets its exit swung from that radius, back onto the pass at the U-turn
+                // radius, and without that swing it is not the turn asked for.
                 TrailedExitSwing.Result? swing = null;
-                if (!plan.On && SwingsExitForTrailedTool(config, input.TurnType == YouTurnType.KStyle))
+                if (open.Shape != null)
+                {
+                    if (TurnLanding.PastLineEnd(path, turn.NextTrack))
+                    {
+                        _logger.LogDebug("[YouTurn] The turn sized for the trailed implement would hand over past the end of the next pass's line");
+                        return new TurnPathResult(null, UsedFallback: false);
+                    }
+                }
+                else if (!plan.On && SwingsExitForTrailedTool(config, input.TurnType == YouTurnType.KStyle))
                 {
                     swing = ExitSwingFor(path, input, boundary, config, obstacles, obstacle, hardOuter ? outerPolygon : null,
-                        clearanceMargin, arcIndex, turn.NextTrack);
+                        clearanceMargin, arcIndex, turn.NextTrack, open.On ? open.Radius : 0);
                     if (swing != null) path = swing.Path;
+                    else if (open.On) return new TurnPathResult(null, UsedFallback: false);
                 }
 
                 _logger.LogDebug("[YouTurn] Path created with {Count} points, net={Net:F0}° cumulative={Cum:F0}° (setback {S:F2}m){At}",
@@ -577,7 +635,7 @@ public partial class YouTurnCreationService
                     atObstacle ? $", before obstacle {obstacle!.InnerIndex + 1}" : "");
                 return new TurnPathResult(path, UsedFallback: false)
                 {
-                    ExitSwing = swing,
+                    ExitSwing = swing, OpenRadius = open.On ? open.Radius : 0, OpenShape = open.Shape,
                     ArcStart = leavesPass, ToolLeavesPassAt = toolLeavesPass,
                     AtObstacle = atObstacle, AtObstacleIndex = atObstacle ? obstacle!.InnerIndex : -1,
                     ObstacleSetback = obstacleSetback ? extraSetback : 0, SetbackObstacleIndex = obstacleSetback ? setbackObstacle : -1,
@@ -587,13 +645,13 @@ public partial class YouTurnCreationService
             // Creation failed outright.
             if (atObstacle)
             {
-                _logger.LogWarning("[YouTurn] No turn fits before obstacle {I} ({Reason}); no turn.",
+                _logger.Log(refused, "[YouTurn] No turn fits before obstacle {I} ({Reason}); no turn.",
                     obstacle!.InnerIndex + 1, output.FailureReason ?? "unknown");
                 return new TurnPathResult(null, UsedFallback: false) { AtObstacle = true };
             }
             if (hardOuter)
             {
-                _logger.LogWarning("[YouTurn] Turn creation failed near a hard boundary ({Reason}); not engaging.",
+                _logger.Log(refused, "[YouTurn] Turn creation failed near a hard boundary ({Reason}); not engaging.",
                     output.FailureReason ?? "unknown");
                 return new TurnPathResult(null, UsedFallback: false)
                 {
@@ -604,9 +662,9 @@ public partial class YouTurnCreationService
 
             // The simple fallback is laid out for the pivot: with none made for the implement,
             // the turn is planned for the pivot first (CreateTurnPath).
-            if (plan.On) return new TurnPathResult(null, UsedFallback: false) { Failure = output.Failure };
+            if (plan.On || open.On) return new TurnPathResult(null, UsedFallback: false) { Failure = output.Failure };
 
-            _logger.LogWarning("[YouTurn] Service failed: {Reason} - using simple fallback",
+            _logger.Log(refused, "[YouTurn] Service failed: {Reason} - using simple fallback",
                 output.FailureReason ?? "unknown");
             var fallbackPath = SimpleFallback(currentPosition, abHeading, turnLeft, boundary,
                 guidance, turn, uTurnSkipRows, headlandDistance, selectedTrack);

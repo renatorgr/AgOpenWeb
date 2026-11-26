@@ -187,6 +187,7 @@ public static class ProfileJsonServiceV1
                 EntryStraight = store.Guidance.LineEntryStraight,
                 ForFrontTool = store.Guidance.UTurnForFrontTool,
                 ForTrailedTool = store.Guidance.UTurnForTrailedTool,
+                TrailedOpen = store.Guidance.UTurnTrailedOpen,
                 Style = store.Guidance.UTurnStyle,
                 Smoothing = store.Guidance.UTurnSmoothing,
                 GoAroundRadius = store.Guidance.GoAroundRadius,
@@ -256,6 +257,7 @@ public static class ProfileJsonServiceV1
         store.Guidance.LineEntryStraight = GuidanceConfig.InRange(dto.YouTurn?.EntryStraight ?? GuidanceConfig.DefaultLineEntryStraight, GuidanceConfig.DefaultLineEntryStraight, 0.0, GuidanceConfig.MaxLineEntryStraight);
         store.Guidance.UTurnForFrontTool = dto.YouTurn?.ForFrontTool ?? false;
         store.Guidance.UTurnForTrailedTool = dto.YouTurn?.ForTrailedTool ?? false;
+        store.Guidance.UTurnTrailedOpen = dto.YouTurn?.TrailedOpen ?? false;
         store.Guidance.UTurnStyle = dto.YouTurn?.Style ?? (int)Models.YouTurn.YouTurnType.SagittaStyle;
         store.Guidance.UTurnSmoothing = dto.YouTurn?.Smoothing ?? 14;
         var dgo = new GuidanceConfig();
@@ -472,6 +474,8 @@ public static class ProfileJsonServiceV1
         public bool? ForFrontTool { get; set; }
         // A U-turn's exit swung wide for a trailed implement (fork only).
         public bool? ForTrailedTool { get; set; }
+        // With it, the whole turn sized for the trailed implement where the passes are far enough apart (fork only).
+        public bool? TrailedOpen { get; set; }
         public int Style { get; set; }
         public int Smoothing { get; set; }
     }

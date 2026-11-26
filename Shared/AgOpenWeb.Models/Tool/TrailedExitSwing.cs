@@ -77,10 +77,14 @@ namespace AgOpenWeb.Models.Tool
         /// <param name="fits">A further test of a whole swung path (the implement against a fence); where
         /// it fails, the tail is tried from further round the arc, as where it leaves the allowed ground:
         /// from there the straight heads back into the field. Null: every swung path fits.</param>
+        /// <param name="counterRadius">The counter-arc's radius, m, when it is not the turn's: a turn made at a
+        /// wider radius for the implement (<see cref="TrailedOpenTurn"/>) comes back onto the pass at the
+        /// U-turn radius. 0: <paramref name="radius"/>.</param>
         public static Result? Apply(IReadOnlyList<Vec3> path, ToolGeometry tool, double radius, Func<Vec3, bool>? allowed = null,
-            Func<Result, bool>? fits = null)
+            Func<Result, bool>? fits = null, double counterRadius = 0)
         {
             if (path == null || path.Count < 8 || !(radius > 0) || !double.IsFinite(radius)) return null;
+            if (!(counterRadius > 0) || !double.IsFinite(counterRadius)) counterRadius = radius;
             if (tool.Mount is not (ToolMount.Trailing or ToolMount.TBT)) return null;
 
             int n = path.Count;
@@ -137,7 +141,7 @@ namespace AgOpenWeb.Models.Tool
                 double arriving = Chord(path, from - 1);
                 double toGo = dir * Wrap(passHeading - arriving);       // the arc left before the pass's direction
                 if (toGo < 30.0 * Math.PI / 180.0) break;
-                var result = Solve(path, from, arriving, end, passHeading, dir, radius, tool, angleBefore, allowed, out bool outside);
+                var result = Solve(path, from, arriving, end, passHeading, dir, radius, counterRadius, tool, angleBefore, allowed, out bool outside);
                 if (result != null && (fits == null || fits(result))) return result;
                 if (result == null && !outside) break;
             }
@@ -172,13 +176,13 @@ namespace AgOpenWeb.Models.Tool
 
         /// <summary>The swing from one point of the last arc: the angle that leaves the implement square.</summary>
         private static Result? Solve(IReadOnlyList<Vec3> path, int from, double arriving, Vec3 end, double passHeading, int dir,
-            double radius, ToolGeometry tool, double angleBefore, Func<Vec3, bool>? allowed, out bool outside)
+            double radius, double counterRadius, ToolGeometry tool, double angleBefore, Func<Vec3, bool>? allowed, out bool outside)
         {
             outside = false;
             // dir * (implement's angle to the pass) where the counter-arc ends: under 0 it still lags.
             double Lag(double swing, out List<Vec3>? candidate, out int onPassIndex, out double straight)
             {
-                candidate = Build(path, from, arriving, end, passHeading, dir, radius, swing, out onPassIndex, out straight);
+                candidate = Build(path, from, arriving, end, passHeading, dir, radius, counterRadius, swing, out onPassIndex, out straight);
                 if (candidate == null) return double.NaN;
                 return dir * Wrap(ToolHeadingAt(candidate, onPassIndex, tool) - passHeading);
             }
@@ -228,7 +232,7 @@ namespace AgOpenWeb.Models.Tool
         /// counter-arc can't end on the pass with a straight of 0 or more.
         /// </summary>
         private static List<Vec3>? Build(IReadOnlyList<Vec3> path, int from, double arriving, Vec3 end, double passHeading, int dir,
-            double radius, double swing, out int onPassIndex, out double straight)
+            double radius, double counterRadius, double swing, out int onPassIndex, out double straight)
         {
             onPassIndex = -1;
             straight = 0;
@@ -240,7 +244,8 @@ namespace AgOpenWeb.Models.Tool
             var (cE, cN) = Centre(arriving, dir);
             var (oE, oN) = Centre(over, dir);
             var (pE, pN) = Centre(passHeading, dir);
-            double shiftE = radius * (cE - 2 * oE + pE), shiftN = radius * (cN - 2 * oN + pN);
+            // The arc from the arriving direction round to the hand-over, the counter-arc from there onto the pass.
+            double shiftE = radius * (cE - oE) + counterRadius * (pE - oE), shiftN = radius * (cN - oN) + counterRadius * (pN - oN);
             var start = path[from];
             double lateral = Lateral(new Vec3(start.Easting + shiftE, start.Northing + shiftN, 0), end, passHeading);
             straight = -lateral / sinOff;
@@ -266,7 +271,7 @@ namespace AgOpenWeb.Models.Tool
             if (arcAngle <= 0) return null;
             AddArc(result, ref e, ref nn, arriving, dir, radius, arcAngle);
             // The counter-arc back onto the pass.
-            if (swing > 1e-9) AddArc(result, ref e, ref nn, over, -dir, radius, swing);
+            if (swing > 1e-9) AddArc(result, ref e, ref nn, over, -dir, counterRadius, swing);
             onPassIndex = result.Count - 1;
 
             // Along the pass: as far as the planned path went, and far enough for the line to take over.

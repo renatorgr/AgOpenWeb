@@ -61,7 +61,8 @@ public partial class YouTurnCreationService
     /// </summary>
     internal static int TrailedSwingStamp(ConfigurationStore config) =>
         SwingsExitForTrailedTool(config, MapTurnStyle(config.Guidance.UTurnStyle) == YouTurnType.KStyle)
-            ? HashCode.Combine(RigGeometry.Stamp(config.Vehicle, config.Tool), config.Guidance.UTurnRadius) | 1
+            ? HashCode.Combine(RigGeometry.Stamp(config.Vehicle, config.Tool), config.Guidance.UTurnRadius,
+                config.Guidance.UTurnTrailedOpen) | 1
             : 0;
 
     /// <summary>
@@ -73,10 +74,13 @@ public partial class YouTurnCreationService
     /// <param name="hardOuter">The hard outer boundary, or null with a soft one.</param>
     /// <param name="turnedAt">The obstacle the turn is made at, or null at the field's edge.</param>
     /// <param name="arcFrom">The path's first point that is not the current pass.</param>
+    /// <param name="turnRadius">The radius the turn's arcs were made at when it is not the U-turn radius (a wide
+    /// turn sized for the implement, <see cref="TrailedOpenPlan"/>): the swing carries the last arc on at
+    /// it and comes back onto the pass at the U-turn radius. 0: the U-turn radius.</param>
     private TrailedExitSwing.Result? ExitSwingFor(
         List<Vec3> path, YouTurnCreationInput input, Boundary? boundary, ConfigurationStore config,
         List<TurnObstacle> obstacles, TurnObstacle? turnedAt, List<Vec2>? hardOuter, double clearanceMargin,
-        int arcFrom, Models.Track.Track? nextTrack)
+        int arcFrom, Models.Track.Track? nextTrack, double turnRadius = 0)
     {
         var tool = BuildToolGeometry(config);
         // The implement against the hard outer boundary and a hard obstacle the turn is made at: a
@@ -92,8 +96,9 @@ public partial class YouTurnCreationService
             if (!clear) nearFence = true;
             return clear;
         };
-        var swing = TrailedExitSwing.Apply(path, tool, config.Guidance.UTurnRadius,
-            p => input.IsPointInsideTurnArea(p) == 0 && input.IsPointBlockedForTurn?.Invoke(p) != true, clearOfFences);
+        var swing = TrailedExitSwing.Apply(path, tool, turnRadius > 0 ? turnRadius : config.Guidance.UTurnRadius,
+            p => input.IsPointInsideTurnArea(p) == 0 && input.IsPointBlockedForTurn?.Invoke(p) != true, clearOfFences,
+            counterRadius: config.Guidance.UTurnRadius);
         if (swing == null)
         {
             _logger.LogDebug("[YouTurn] No swung exit for the trailed implement here ({Why}); the turn as planned for the tractor",
