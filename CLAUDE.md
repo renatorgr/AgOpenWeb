@@ -988,7 +988,7 @@ trailed implement's working line is not done. Tests: `TrailedToolPathOnMapTests`
 
 **The U-turn planned for a front implement's centre** (U-turn tab › *U-turns planned for*: The tractor / The front
 implement, shown with a front tool; `GuidanceConfig.UTurnForFrontTool`, `uturn.frontTool`, saved with the tool profile
-as `youTurn.forFrontTool`, the last byte of the Config frame's U-turn part; **off by default**; fork only). With it on and
+as `youTurn.forFrontTool` (an AgOpenGPS profile read in has it off, `AgOpenGpsSettings.ApplyToStore`), the last byte of the Config frame's U-turn part; **off by default**; fork only). With it on and
 a front-fixed tool 0.5 m or more ahead (`YouTurnCreationService.FrontToolPlanFor`, `FrontToolPlan`,
 `YouTurnCreationService.FrontTool.cs`), the automatic turn's shape (the legs along the two passes, the arc, a wide turn's
 run along the turn line) is the path of the point `h` ahead on the tractor's centre line, at √(R² + h²), the radius of its

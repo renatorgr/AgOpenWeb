@@ -251,6 +251,11 @@ public class ToolProfileUTurnTramTests
         d.Guidance.UTurnForFrontTool = true;
         Assert.That(ToolProfileJsonService.Load(_tools, "Boom", d), Is.True);
         Assert.That(d.Guidance.UTurnForFrontTool, Is.False, "off unless the profile says on");
+
+        // An AgOpenGPS profile: AgOpenGPS plans for the tractor, whatever the implement open before had.
+        d.Guidance.UTurnForFrontTool = true;
+        AgOpenWeb.Services.Profile.AgOpenGpsSettings.ApplyToStore(new System.Collections.Generic.Dictionary<string, string>(), "Imported", "Imported.xml", d);
+        Assert.That(d.Guidance.UTurnForFrontTool, Is.False, "an AgOpenGPS profile plans for the tractor");
     }
 
     [Test]
