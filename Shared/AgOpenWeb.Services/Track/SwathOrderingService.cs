@@ -94,8 +94,8 @@ public static class SwathOrderingService
     /// (with an odd step the rest of the tractor's lane is reached across the field unless it
     /// starts at an end); with no difference, as the snake: up on the lanes of even rank, down on
     /// the others. A pass outside the range is put first, followed by the order from
-    /// <paramref name="minPath"/> up. Each pass of the range is in it once. Fork only: the snake
-    /// order skipped one row whatever the operator chose (a tester's field, 25 Nov 2026).
+    /// <paramref name="minPath"/> up. Each pass of the range is in it once. The snake order
+    /// skipped one row whatever the operator chose (a tester's field, 25 Nov 2026).
     /// </summary>
     public static List<int> SkipAndFillFrom(int minPath, int maxPath, int current, int step)
     {

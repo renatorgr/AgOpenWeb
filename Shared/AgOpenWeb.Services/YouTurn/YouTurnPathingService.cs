@@ -1036,7 +1036,7 @@ public sealed class YouTurnPathingService
         // still starts from the pass the tractor is on and goes on to the first one; otherwise the
         // plan would be made again on every cycle. The step is the operator's: the order was the
         // fixed snake (one pass in two), so the row count did nothing in this mode and changing it
-        // planned the same turn again (a tester's field, 25 Nov 2026; fork only).
+        // planned the same turn again (a tester's field, 25 Nov 2026).
         step = Math.Max(2, step);
         turn.SnakeSequence = AgOpenWeb.Services.Track.SwathOrderingService.SkipAndFillFrom(
             minPath, maxPath, guidance.HowManyPathsAway, step);

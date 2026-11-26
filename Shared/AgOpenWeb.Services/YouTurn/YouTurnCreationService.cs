@@ -1650,18 +1650,18 @@ namespace AgOpenWeb.Services.YouTurn
             for (int k = 1; k <= forwardPoints; k++)
             {
                 var p = line[(a + k) % n];
-                forward += Distance(at, p);
+                forward += GeometryMath.Distance(at, p);
                 at = p;
             }
-            forward += Distance(at, to.ClosePt);
+            forward += GeometryMath.Distance(at, to.ClosePt);
             at = from.ClosePt;
             for (int k = 0; k < backPoints; k++)
             {
                 var p = line[((a - k) % n + n) % n];
-                back += Distance(at, p);
+                back += GeometryMath.Distance(at, p);
                 at = p;
             }
-            back += Distance(at, to.ClosePt);
+            back += GeometryMath.Distance(at, to.ClosePt);
 
             bool walkForward = forward <= back;
             points = walkForward ? forwardPoints : backPoints;

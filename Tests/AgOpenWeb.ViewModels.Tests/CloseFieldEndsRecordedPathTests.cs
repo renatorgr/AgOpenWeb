@@ -13,10 +13,11 @@ using NSubstitute;
 namespace AgOpenWeb.ViewModels.Tests;
 
 /// <summary>
-/// Closing a field ends the recorded path with it, as AgOpenGPS JobClose stops the replay
-/// and drops the recording. A replay left driving put the Auto master back on at the next
-/// fix, right after the close had switched the sections off; a loaded path would have been
-/// driven in the next field's coordinates when that field had no path of its own.
+/// Closing a field ends the recorded path with it, as AgOpenGPS JobClose clears recList and
+/// stops driving it. A loaded path was drawn (the map draws the path in use whatever "Rec
+/// paths" shows), and would have been driven, in the next field's coordinates until another
+/// was picked; a replay left driving put the Auto master back on at the next fix, right after
+/// the close had switched the sections off.
 /// </summary>
 [TestFixture]
 public class CloseFieldEndsRecordedPathTests
@@ -56,6 +57,18 @@ public class CloseFieldEndsRecordedPathTests
         for (int i = 0; i < 12; i++)
             points.Add(new RecPathPoint(0, 30 + 5 * i, 0, 8, autoBtnState: true));
         return points;
+    }
+
+    [Test]
+    public async Task ClosingTheField_DropsThePathLoadedForPlayback()
+    {
+        // Picked in the Playback list (or just recorded), not played.
+        _vm.State.RecordedPath.RecordedPoints = PathRecordedWithAutoOn();
+
+        await _vm.CloseFieldAsync();
+
+        Assert.That(_vm.State.RecordedPath.RecordedPoints, Is.Empty, "drawn, and playable, in the next field");
+        Assert.That(_vm.RecordedPathInfo, Is.EqualTo("No path loaded"));
     }
 
     [Test]
