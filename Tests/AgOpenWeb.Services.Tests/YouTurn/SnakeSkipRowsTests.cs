@@ -23,7 +23,7 @@ namespace AgOpenWeb.Services.Tests.YouTurn;
 /// operator chose, as the other two modes do. Its order was the fixed snake, one pass in two,
 /// whatever the row count: on a tester's field (25 Nov 2026, 3 rows chosen) every tap of the row
 /// button planned the same turn again, onto the pass two over, and the curve on the map never
-/// changed. Fork only.
+/// changed.
 /// </summary>
 [TestFixture]
 [NonParallelizable] // ConfigurationStore is a singleton.

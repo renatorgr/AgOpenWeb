@@ -89,7 +89,7 @@ public class WideTurnAcuteCornerTests
     {
         double length = 0;
         for (int i = 1; i < path.Count; i++)
-            length += Math.Sqrt(GeometryMath.DistanceSquared(path[i - 1], path[i]));
+            length += GeometryMath.Distance(path[i - 1], path[i]);
         return length;
     }
 
@@ -114,9 +114,12 @@ public class WideTurnAcuteCornerTests
             // straight back (cumulative turn 489°); the fork took that for no U-turn and made the
             // omega instead, which leaves pass 0 at y 79, 30 m before its crop ends.
             Assert.That(log.Lines, Has.None.Contains("Wide turn malformed"), "the wide turn is a U-turn");
+            Assert.That(log.Lines, Has.None.Contains("Service path rejected"), "the wide turn is a U-turn");
             Assert.That(furthest, Is.LessThan(leavesAt + 8 + 1), "nothing of it runs further into the corner than its first arc");
             Assert.That(leavesAt, Is.GreaterThan(90), "it leaves the pass near its end (the end of the crop is at y 108.8)");
             Assert.That(path[^1].Easting, Is.EqualTo(PassX - 6 * Width).Within(0.5), "it lands on the next pass");
+            Assert.That(path[^1].Northing, Is.LessThan(leavesAt - 20), "it ends on the way back down the next pass");
+            Assert.That(Length(path), Is.LessThan(90), "the shorter way round the turn line (73 m here)");
         });
     }
 
