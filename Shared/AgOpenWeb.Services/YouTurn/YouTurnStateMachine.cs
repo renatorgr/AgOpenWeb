@@ -134,6 +134,9 @@ public sealed class YouTurnStateMachine
         _configStore = configStore;
     }
 
+    /// <summary>The passes bent round Go around obstacles the planner plans from (<see cref="YouTurnCreationService.GoAround"/>).</summary>
+    public Track.GoAroundPasses GoAround => _creation.GoAround;
+
     /// <summary>
     /// Per-cycle inputs for the state machine. Immutable snapshot — the state machine
     /// reads these but does not retain references beyond a single call.
