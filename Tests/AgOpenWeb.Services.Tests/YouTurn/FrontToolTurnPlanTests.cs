@@ -64,22 +64,69 @@ public class FrontToolTurnPlanTests
         new(-HalfE, -HalfN), new(-HalfE, HalfN), new(HalfE, HalfN), new(HalfE, -HalfN),
     };
 
-    /// <summary>Pass 0 (x = 4) north from y = 60, the turn to the right with <paramref name="skip"/> rows skipped.</summary>
-    private static YouTurnCreationService.TurnPathResult Turn(YouTurnCreationService creation, int skip, bool hard = false, double fromY = 60)
+    /// <summary>
+    /// The field with its part east of x = 12 ending at y = <paramref name="south"/>: the passes
+    /// there (x = 20, 28, ...) are short, the ones west of it the field's whole length.
+    /// </summary>
+    private static List<Vec2> FenceWithShortPasses(double south) => new()
     {
-        var fence = Fence();
-        var field = new Boundary
+        new(-HalfE, -HalfN), new(-HalfE, HalfN), new(HalfE, HalfN), new(HalfE, south), new(12, south), new(12, -HalfN),
+    };
+
+    private static Boundary Field(List<Vec2> fence, bool hard) => new()
+    {
+        OuterBoundary = new BoundaryPolygon { Points = fence.Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(), IsHard = hard },
+    };
+
+    private static List<Vec3> TurnLine(List<Vec2> fence) => new PolygonOffsetService().CreateInwardOffset(fence, FromBoundary)!
+        .Select(p => new Vec3(p.Easting, p.Northing, 0)).ToList();
+
+    private static readonly AgOpenWeb.Models.Track.Track Line =
+        AgOpenWeb.Models.Track.Track.FromABLine("AB", new Vec3(0, -300, 0), new Vec3(0, 300, 0));
+
+    /// <summary>
+    /// The turn at the south end of pass 2 (x = 20, driven south) of <see cref="FenceWithShortPasses"/>,
+    /// to the left onto pass 4, planned with the tractor at <paramref name="at"/> on the pass.
+    /// </summary>
+    private static YouTurnCreationService.TurnPathResult TurnAtTheOtherEnd(YouTurnCreationService creation, double south, Vec3 at)
+    {
+        var fence = FenceWithShortPasses(south);
+        var guidance = new GuidanceWorkingState { IsHeadingSameWay = false, HowManyPathsAway = 2 };
+        double toEnd = at.Northing - (south + FromBoundary);
+        var turn = new YouTurnWorkingState { IsTurnLeft = true, DistanceToHeadland = toEnd, NextTrackTurnOffset = Width * 2 };
+        return creation.CreateTurnPath(new Position { Easting = NextPassX(1), Northing = at.Northing, Heading = Math.PI }, Line,
+            headingRadians: Math.PI, abHeading: 0, Field(fence, hard: true), TurnLine(fence), guidance, turn,
+            uTurnSkipRows: 1, headlandCalculatedWidth: 24, headlandDistance: toEnd);
+    }
+
+    /// <summary>Where the tractor is on a turn's path when the line takes over: 4 m before its end.</summary>
+    private static Vec3 LineTakesOver(IReadOnlyList<Vec3> path)
+    {
+        double left = 4.0;
+        for (int i = path.Count - 1; i > 0; i--)
         {
-            OuterBoundary = new BoundaryPolygon { Points = fence.Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(), IsHard = hard },
-        };
-        var turnLine = new PolygonOffsetService().CreateInwardOffset(fence, FromBoundary)!
-            .Select(p => new Vec3(p.Easting, p.Northing, 0)).ToList();
-        var track = AgOpenWeb.Models.Track.Track.FromABLine("AB", new Vec3(0, -300, 0), new Vec3(0, 300, 0));
+            double d = GeometryMath.Distance(path[i - 1], path[i]);
+            if (d >= left)
+            {
+                double f = left / d;
+                return new Vec3(path[i].Easting + (path[i - 1].Easting - path[i].Easting) * f,
+                    path[i].Northing + (path[i - 1].Northing - path[i].Northing) * f, path[i].Heading);
+            }
+            left -= d;
+        }
+        return path[0];
+    }
+
+    /// <summary>Pass 0 (x = 4) north from y = 60, the turn to the right with <paramref name="skip"/> rows skipped.</summary>
+    private static YouTurnCreationService.TurnPathResult Turn(YouTurnCreationService creation, int skip, bool hard = false, double fromY = 60,
+        List<Vec2>? fence = null)
+    {
+        fence ??= Fence();
         var guidance = new GuidanceWorkingState { IsHeadingSameWay = true, HowManyPathsAway = 0 };
         double toEnd = HalfN - FromBoundary - fromY;
         var turn = new YouTurnWorkingState { IsTurnLeft = false, DistanceToHeadland = toEnd, NextTrackTurnOffset = Width * (skip + 1) };
-        return creation.CreateTurnPath(new Position { Easting = PassX, Northing = fromY, Heading = 0 }, track,
-            headingRadians: 0, abHeading: 0, field, turnLine, guidance, turn,
+        return creation.CreateTurnPath(new Position { Easting = PassX, Northing = fromY, Heading = 0 }, Line,
+            headingRadians: 0, abHeading: 0, Field(fence, hard), TurnLine(fence), guidance, turn,
             uTurnSkipRows: skip, headlandCalculatedWidth: 24, headlandDistance: toEnd);
     }
 
@@ -217,6 +264,54 @@ public class FrontToolTurnPlanTests
         Assert.That(late.Path!.Select(p => (p.Easting, p.Northing, p.Heading)), Is.EqualTo(asToday.Path!.Select(p => (p.Easting, p.Northing, p.Heading))),
             "the turn made without the choice, point for point");
         Assert.That(log.Lines, Has.Some.Contains("planning for the pivot"), "and the log says so");
+    }
+
+    [Test]
+    public void Onto_a_short_pass_the_turn_is_planned_for_the_pivot_and_the_turn_at_its_other_end_is_still_made()
+    {
+        // Planned for the implement, the turn's path goes on along the next pass 7 m further than
+        // the pivot's turn (the tractor still has to come onto the pass). On a short pass that left
+        // the turn at its other end no room: beside a hard fence a turn must start 2 m ahead of the
+        // tractor, and it was refused ("U-turn blocked") where the pivot's turn before it left room
+        // (a tester's field, the farm job harness, 26 Nov 2026).
+        // The next pass (x = 20) ends at a hard fence at y = 115: 35 m of it between the two turn lines.
+        const double south = 115;
+        var shortPass = FenceWithShortPasses(south);
+
+        // The scenario, from the same turn on a long pass: where the line takes over from each turn.
+        var forToolOnALongPass = Turn(NewCreation(forTool: true), 1, hard: true, fence: FenceWithShortPasses(-100));
+        Assert.That(forToolOnALongPass.ToolLeavesPassAt, Is.Not.Null, "the scenario: onto a long pass the turn is the implement's");
+        var asToday = Turn(NewCreation(forTool: false), 1, hard: true, fence: shortPass);
+        Assert.That(asToday.Path, Is.Not.Null, "the scenario: a turn planned for the pivot");
+        Vec3 afterTheImplementsTurn = LineTakesOver(forToolOnALongPass.Path!), afterThePivotsTurn = LineTakesOver(asToday.Path!);
+        TestContext.Out.WriteLine($"the line takes over at y {afterTheImplementsTurn.Northing:F1} after the implement's turn, "
+            + $"y {afterThePivotsTurn.Northing:F1} after the pivot's; the pass ends at y {south + FromBoundary:F1}");
+        Assert.That(TurnAtTheOtherEnd(NewCreation(forTool: true), south, afterTheImplementsTurn).Path, Is.Null,
+            "the scenario: after the implement's turn there is no turn at the other end of the pass");
+        Assert.That(TurnAtTheOtherEnd(NewCreation(forTool: true), south, afterThePivotsTurn).Path, Is.Not.Null,
+            "the scenario: after the pivot's turn there is one");
+
+        var log = new ListLogger();
+        var turn = Turn(NewCreation(forTool: true, log: log), 1, hard: true, fence: shortPass);
+        Assert.That(turn.Path, Is.Not.Null, "a turn");
+        Assert.That(turn.ToolLeavesPassAt, Is.Null, "planned for the pivot");
+        Assert.That(turn.Path!.Select(p => (p.Easting, p.Northing, p.Heading)), Is.EqualTo(asToday.Path!.Select(p => (p.Easting, p.Northing, p.Heading))),
+            "the turn made without the choice, point for point");
+        Assert.That(log.Lines, Has.Some.Contains("of the next pass left").And.Contains("planning for the pivot"), "and the log says why");
+        Assert.That(TurnAtTheOtherEnd(NewCreation(forTool: true), south, LineTakesOver(turn.Path!)).Path, Is.Not.Null,
+            "the turn at the other end of the pass is made");
+    }
+
+    [TestCase(80.0, true, TestName = "With 41 m of the next pass left after it, the turn is the implement's")]
+    [TestCase(90.0, false, TestName = "With 31 m of the next pass left after it, the turn is planned for the pivot")]
+    public void The_implement_s_turn_needs_room_for_the_next_turn_on_the_pass_it_lands_on(double south, bool forTool)
+    {
+        // The U-turn radius and the 30 m a turn may be seated back from a hard fence: 35.4 m of the
+        // next pass inside the turn line past the end of the turn's path (the tractor at y 122.7).
+        var turn = Turn(NewCreation(forTool: true), 1, hard: true, fence: FenceWithShortPasses(south));
+        Assert.That(turn.Path, Is.Not.Null, "a turn");
+        TestContext.Out.WriteLine($"the path ends at y {turn.Path![^1].Northing:F1}, the pass at y {south + FromBoundary:F1}");
+        Assert.That(turn.ToolLeavesPassAt != null, Is.EqualTo(forTool));
     }
 
     private static string Describe(IReadOnlyList<Vec3> pivot, IReadOnlyList<Vec3> tool, double next) =>

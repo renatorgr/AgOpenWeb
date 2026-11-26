@@ -177,6 +177,29 @@ public class FrontToolManualTurnTests
         Assert.That(made.Select(p => (p.Easting, p.Northing, p.Heading)), Is.EqualTo(asToday.Select(p => (p.Easting, p.Northing, p.Heading))));
     }
 
+    [Test]
+    public void A_manual_turn_that_ends_near_the_end_of_the_next_pass_is_the_pivot_s()
+    {
+        // The implement's turn goes on along the next pass until the tractor is on it, further than
+        // the pivot's turn does; near the end of that pass it would leave the automatic turn there
+        // no room to start (the U-turn radius and the 30 m a turn may be seated back, 35.4 m, and
+        // the 1.5 m of the turn line: 36.9 m to the fence). Turned from y = -110, the tractor
+        // would be on the pass at y = -118, 32 m from the fence: the turn made without the choice.
+        var field = Field();
+        var asToday = ManualTurn(forTool: false, 1, field, fromY: -110);
+        Assert.That(asToday.Count, Is.GreaterThan(10), "the scenario: a turn planned for the pivot");
+        var made = ManualTurn(forTool: true, 1, field, fromY: -110);
+        Assert.That(PlannedForTheImplement, Is.False, "planned for the pivot");
+        Assert.That(_log.Lines, Has.Some.Contains("of the next pass left"), "and the log says why");
+        Assert.That(made.Select(p => (p.Easting, p.Northing, p.Heading)), Is.EqualTo(asToday.Select(p => (p.Easting, p.Northing, p.Heading))));
+
+        // Turned from 15 m further back, 47 m are left: the implement's turn.
+        var further = ManualTurn(forTool: true, 1, field, fromY: -95);
+        Assert.That(further.Count, Is.GreaterThan(10), "a turn");
+        Assert.That(PlannedForTheImplement, Is.True, "planned for the implement");
+        TestContext.Out.WriteLine($"from y -110 the pivot's turn ends at y {made[^1].Northing:F1}; from y -95 the implement's, the tractor at y {further[^1].Northing:F1} (fence {-HalfN})");
+    }
+
     // ---- the way to the start of a pass: a 30 m headland, the pass north along x = 0 ----
 
     private const double Headland = 30;

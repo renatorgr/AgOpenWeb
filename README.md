@@ -168,6 +168,7 @@ Most of these have been offered to the official project too. When one is merged 
 - The manual U-turn and the way to the start of a pass are worked out the same way.
 - What it costs: the tractor starts turning sooner, about the implement's distance ahead of the rear axle earlier. Rows closer together than the implement's turning circle get a wider turn. The implement comes square to the next pass over about three times that distance.
 - Where such a turn does not fit (too close to a fence or an obstacle), the turn is worked out for the tractor as before, so there is never no turn where there was one. A K-turn is always worked out for the tractor.
+- Onto a short pass too: the implement's turn uses more of the next pass, and the turn at the other end of it still needs room to start. With less than about 35 m of the next pass left after the turn, the turn is worked out for the tractor.
 - In the simulator, an 8 m boom 4.7 m ahead on a 5.4 m turn: worked out for the tractor, the middle of the boom went 1.75 m past the turn line and 1.7 m past the next pass; worked out for the boom, it stays inside both.
 - Simulator only, not tried on a tractor yet. Off unless you turn it on.
 
