@@ -201,5 +201,24 @@ namespace AgOpenWeb.Models.YouTurn
         /// This is the user's UTurnExtension setting.
         /// </summary>
         public double LegLength { get; set; } = 0;
+
+        /// <summary>
+        /// The least the exit leg along the next pass is, in metres; the entry leg keeps
+        /// <see cref="LegLength"/>. A turn planned for a front implement's centre needs a few of its
+        /// reaches of straight after the arc for the tractor behind it to come onto the pass.
+        /// 0: the exit leg is the entry leg's length. Fork only.
+        /// </summary>
+        public double MinExitLegLength { get; set; } = 0;
+
+        /// <summary>
+        /// The turn's shape when it is sized for a trailed implement
+        /// (<see cref="Tool.TrailedOpenTurn"/>): it takes the place of the style's own arc, seated
+        /// and held to the turn line the same way, and where it fits nowhere no turn is made (the
+        /// planner then plans as without it). It ends further along the next pass than the turn
+        /// planned for the tractor (<see cref="Tool.TrailedOpenTurn.Shape.RunsOn"/>), so its exit
+        /// leg is shorter by that much: the path ends at the same place. Null: the style's own
+        /// shape. Fork only.
+        /// </summary>
+        public Tool.TrailedOpenTurn.Shape? OpenShape { get; set; }
     }
 }

@@ -1621,7 +1621,8 @@ public sealed class YouTurnStateMachine
                 g.UTurnCrossGap, g.GoAroundRadius, g.GoAroundMargin),
             HashCode.Combine(c.ActualToolWidth, c.Tool.Width, c.Tool.Overlap,
                 AgOpenWeb.Models.Tool.RigGeometry.Stamp(c.Vehicle, c.Tool), c.Vehicle.TrackWidth),
-            HashCode.Combine(ctx.HeadlandCalculatedWidth, ctx.HeadlandDistance, ctx.IsAlternateSkipMode));
+            HashCode.Combine(ctx.HeadlandCalculatedWidth, ctx.HeadlandDistance, ctx.IsAlternateSkipMode, g.UTurnForFrontTool,
+                g.UTurnForTrailedTool, g.UTurnTrailedOpen));
         return new EndTried(track, guidance.HowManyPathsAway, guidance.IsHeadingSameWay, guidance.NudgeOffset,
             turn.SnakeSequence, fieldStamp, ctx.UTurnSkipRows, turn.NextUTurnDirectionLeftOverride, settings);
     }
@@ -2458,12 +2459,15 @@ public sealed class YouTurnStateMachine
         turn.TurnAtObstacleIndex = result.AtObstacleIndex;
         _plannedObstacleStamp = YouTurnCreationService.ObstacleStamp(ctx.Boundary);
         turn.YouTurnCounter = 0;
-        double startsInside = TurnStartInsideHeadlandLine(result.ArcStart, ctx.WorkHeadlandLine);
+        // Where the work leaves the pass: the pivot's turn-off, or a front implement's when the
+        // turn is planned for it (a reach further on).
+        var workLeavesAt = result.ToolLeavesPassAt ?? result.ArcStart;
+        double startsInside = TurnStartInsideHeadlandLine(workLeavesAt, ctx.WorkHeadlandLine);
         // Seated back for an obstacle: the end of the pass before the turn is left to do, and the
         // operator is told how much (the crop before the headland line, or with no headland the
         // setback itself), not that the headland is too narrow. Fork only.
         double leftToDo = result.ObstacleSetback <= 0 ? 0
-            : ctx.WorkHeadlandLine is { Count: >= 3 } ? PassLeftAhead(result.ArcStart, headingRadians, ctx.WorkHeadlandLine)
+            : ctx.WorkHeadlandLine is { Count: >= 3 } ? PassLeftAhead(workLeavesAt, headingRadians, ctx.WorkHeadlandLine)
             : result.ObstacleSetback;
         if (leftToDo > NarrowHeadlandToleranceM)
         {

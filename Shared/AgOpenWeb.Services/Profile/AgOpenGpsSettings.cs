@@ -92,6 +92,9 @@ public static class AgOpenGpsSettings
         store.Guidance.UTurnDistanceFromBoundary = GetDouble(settings, "set_youTurnDistanceFromBoundary", 2.0);
         store.Guidance.UTurnStyle = GetInt(settings, "set_uTurnStyle", (int)Models.YouTurn.YouTurnType.SagittaStyle);
         store.Guidance.UTurnSmoothing = GetRounded(settings, "setAS_uTurnSmoothing", 14); // a double in AgOpenGPS
+        // AgOpenGPS plans every U-turn for the tractor (fork only): not the choice of the implement open before.
+        store.Guidance.UTurnForFrontTool = false;
+        store.Guidance.SetUTurnForTrailedTool(false, false);
 
         // Tool config
         store.Tool.Width = GetDouble(settings, "setVehicle_toolWidth", 6.0);

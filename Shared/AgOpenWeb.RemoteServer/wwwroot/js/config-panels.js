@@ -78,6 +78,8 @@ function populateToolCfg(force) {
   // Conditional visibility by tool type (0 front, 1 rear, 2 TBT, 3 trailing).
   const trailing = t.type === 3, tbt = t.type === 2, trailtbt = trailing || tbt;
   tcShow('rigid', !trailtbt); tcShow('trailtbt', trailtbt); tcShow('tbt', tbt); tcShow('notrailtbt', !trailtbt);
+  // U-turns planned for the front implement's centre (fork only): a front tool's choice.
+  tcShow('fronttool', t.type === 0);
   // The implement's picture on the map (fork only): the list holds the pictures made for this tool type
   // and vehicle type (a combine's headers, a tractor's implements).
   const picSel = document.getElementById('tc-picsel');

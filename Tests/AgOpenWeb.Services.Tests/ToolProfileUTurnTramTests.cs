@@ -228,6 +228,106 @@ public class ToolProfileUTurnTramTests
     }
 
     [Test]
+    public void UTurnsPlannedForTheFrontImplement_IsSavedWithTheToolProfile_AndOffInOneSavedBeforeIt()
+    {
+        // Fork only: the choice is the implement's (a front boom, a combine's header), and a
+        // profile saved before it, or loaded after one that had it on, plans for the pivot.
+        var boom = new ConfigurationStore();
+        boom.Guidance.UTurnForFrontTool = true;
+        ToolProfileJsonService.Save(_tools, "Boom", boom);
+        ToolProfileJsonService.Save(_tools, "Drill", new ConfigurationStore());
+
+        var d = new ConfigurationStore();
+        Assert.That(ToolProfileJsonService.Load(_tools, "Boom", d), Is.True);
+        Assert.That(d.Guidance.UTurnForFrontTool, Is.True, "saved with the profile");
+        Assert.That(ToolProfileJsonService.Load(_tools, "Drill", d), Is.True);
+        Assert.That(d.Guidance.UTurnForFrontTool, Is.False, "another implement's profile turns it off");
+
+        // A profile from before the setting: the key is not in the file.
+        string file = Path.Combine(_tools, "Boom.json");
+        string text = File.ReadAllText(file);
+        Assert.That(text, Does.Contain("\"forFrontTool\": true"));
+        File.WriteAllText(file, System.Text.RegularExpressions.Regex.Replace(text, "\\s*\"forFrontTool\": true,?", ""));
+        d.Guidance.UTurnForFrontTool = true;
+        Assert.That(ToolProfileJsonService.Load(_tools, "Boom", d), Is.True);
+        Assert.That(d.Guidance.UTurnForFrontTool, Is.False, "off unless the profile says on");
+
+        // An AgOpenGPS profile: AgOpenGPS plans for the tractor, whatever the implement open before had.
+        d.Guidance.UTurnForFrontTool = true;
+        AgOpenWeb.Services.Profile.AgOpenGpsSettings.ApplyToStore(new System.Collections.Generic.Dictionary<string, string>(), "Imported", "Imported.xml", d);
+        Assert.That(d.Guidance.UTurnForFrontTool, Is.False, "an AgOpenGPS profile plans for the tractor");
+    }
+
+    [Test]
+    public void UTurnExitSwungForTheTrailedImplement_IsSavedWithTheToolProfile_AndOffInOneSavedBeforeIt()
+    {
+        // Fork only: the choice is the implement's (a trailed drill), and a profile saved before
+        // it, or loaded after one that had it on, plans the turn for the tractor.
+        var drill = new ConfigurationStore();
+        drill.Guidance.UTurnForTrailedTool = true;
+        ToolProfileJsonService.Save(_tools, "Drill", drill);
+        ToolProfileJsonService.Save(_tools, "Boom", new ConfigurationStore());
+
+        var d = new ConfigurationStore();
+        Assert.That(ToolProfileJsonService.Load(_tools, "Drill", d), Is.True);
+        Assert.That(d.Guidance.UTurnForTrailedTool, Is.True, "saved with the profile");
+        Assert.That(d.Guidance.UTurnForFrontTool, Is.False, "the front implement's choice is another one");
+        Assert.That(ToolProfileJsonService.Load(_tools, "Boom", d), Is.True);
+        Assert.That(d.Guidance.UTurnForTrailedTool, Is.False, "another implement's profile turns it off");
+
+        // A profile from before the setting: the key is not in the file.
+        string file = Path.Combine(_tools, "Drill.json");
+        string text = File.ReadAllText(file);
+        Assert.That(text, Does.Contain("\"forTrailedTool\": true"));
+        File.WriteAllText(file, System.Text.RegularExpressions.Regex.Replace(text, "\\s*\"forTrailedTool\": true,?", ""));
+        d.Guidance.UTurnForTrailedTool = true;
+        Assert.That(ToolProfileJsonService.Load(_tools, "Drill", d), Is.True);
+        Assert.That(d.Guidance.UTurnForTrailedTool, Is.False, "off unless the profile says on");
+
+        // An AgOpenGPS profile: AgOpenGPS plans for the tractor, whatever the implement open before had.
+        d.Guidance.UTurnForTrailedTool = true;
+        AgOpenWeb.Services.Profile.AgOpenGpsSettings.ApplyToStore(new System.Collections.Generic.Dictionary<string, string>(), "Imported", "Imported.xml", d);
+        Assert.That(d.Guidance.UTurnForTrailedTool, Is.False, "an AgOpenGPS profile plans for the tractor");
+    }
+
+    [Test]
+    public void UTurnSizedForTheTrailedImplement_IsSavedWithTheToolProfile_AndOffInOneSavedBeforeIt()
+    {
+        // Fork only: the whole turn sized for the trailed implement is a second choice on top of
+        // the swung exit, saved with the implement's profile and off in one saved before it.
+        var drill = new ConfigurationStore();
+        drill.Guidance.UTurnForTrailedTool = true;
+        drill.Guidance.UTurnTrailedOpen = true;
+        ToolProfileJsonService.Save(_tools, "Drill", drill);
+        var exitOnly = new ConfigurationStore();
+        exitOnly.Guidance.UTurnForTrailedTool = true;
+        ToolProfileJsonService.Save(_tools, "Trailer", exitOnly);
+
+        var d = new ConfigurationStore();
+        Assert.That(ToolProfileJsonService.Load(_tools, "Drill", d), Is.True);
+        Assert.That(d.Guidance.UTurnForTrailedTool, Is.True);
+        Assert.That(d.Guidance.UTurnTrailedOpen, Is.True, "saved with the profile");
+        Assert.That(ToolProfileJsonService.Load(_tools, "Trailer", d), Is.True);
+        Assert.That(d.Guidance.UTurnForTrailedTool, Is.True, "the swung exit alone");
+        Assert.That(d.Guidance.UTurnTrailedOpen, Is.False, "another implement's profile turns it off");
+
+        // A profile from before the setting: the key is not in the file.
+        string file = Path.Combine(_tools, "Drill.json");
+        string text = File.ReadAllText(file);
+        Assert.That(text, Does.Contain("\"trailedOpen\": true"));
+        File.WriteAllText(file, System.Text.RegularExpressions.Regex.Replace(text, "\\s*\"trailedOpen\": true,?", ""));
+        d.Guidance.UTurnTrailedOpen = true;
+        Assert.That(ToolProfileJsonService.Load(_tools, "Drill", d), Is.True);
+        Assert.That(d.Guidance.UTurnTrailedOpen, Is.False, "off unless the profile says on");
+        Assert.That(d.Guidance.UTurnForTrailedTool, Is.True, "the swung exit as the profile has it");
+
+        // An AgOpenGPS profile: AgOpenGPS plans for the tractor, whatever the implement open before had.
+        d.Guidance.UTurnTrailedOpen = true;
+        AgOpenWeb.Services.Profile.AgOpenGpsSettings.ApplyToStore(new System.Collections.Generic.Dictionary<string, string>(), "Imported", "Imported.xml", d);
+        Assert.That(d.Guidance.UTurnTrailedOpen, Is.False, "an AgOpenGPS profile plans for the tractor");
+    }
+
+    [Test]
     public void UTurnRadiusAndExtension_OutOfRangeOrNoNumberInAFile_AreReadInsideTheirLimits()
     {
         // As the Go around radius above: the settings page holds the radius to 2-100 m and the

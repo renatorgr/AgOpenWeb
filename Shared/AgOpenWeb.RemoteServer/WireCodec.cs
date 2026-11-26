@@ -441,6 +441,8 @@ public static class WireCodec
         w.Write(u.CrossGap);           // f64
         w.Write(u.EntryMode);          // i32 — fork only
         w.Write(u.EntryStraight);      // f64
+        w.Write((byte)(u.ForFrontTool ? 1 : 0)); // u8 — fork only
+        w.Write((byte)(u.ForTrailedTool ? (u.TrailedOpen ? 2 : 1) : 0)); // u8 — fork only: 0 the tractor, 1 the exit swung wide, 2 the whole turn sized for the implement
         // Tram tab.
         var tr = c.Tram;
         w.Write(tr.Passes);            // i32

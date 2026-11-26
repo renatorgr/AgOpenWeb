@@ -189,6 +189,9 @@ public static class ToolProfileJsonService
                 CrossGap = store.Guidance.UTurnCrossGap,
                 EntryMode = (int)store.Guidance.LineEntryMode,
                 EntryStraight = store.Guidance.LineEntryStraight,
+                ForFrontTool = store.Guidance.UTurnForFrontTool,
+                ForTrailedTool = store.Guidance.UTurnForTrailedTool,
+                TrailedOpen = store.Guidance.UTurnTrailedOpen,
                 Style = store.Guidance.UTurnStyle,
                 Smoothing = store.Guidance.UTurnSmoothing,
                 GoAroundRadius = store.Guidance.GoAroundRadius,
@@ -328,6 +331,8 @@ public static class ToolProfileJsonService
         store.Guidance.LineEntryMode = dto.YouTurn?.EntryMode is int em && Enum.IsDefined(typeof(LineEntryMode), em)
             ? (LineEntryMode)em : dg.LineEntryMode;
         store.Guidance.LineEntryStraight = GuidanceConfig.InRange(dto.YouTurn?.EntryStraight ?? dg.LineEntryStraight, dg.LineEntryStraight, 0.0, GuidanceConfig.MaxLineEntryStraight);
+        store.Guidance.UTurnForFrontTool = dto.YouTurn?.ForFrontTool ?? dg.UTurnForFrontTool;
+        store.Guidance.SetUTurnForTrailedTool(dto.YouTurn?.ForTrailedTool ?? dg.UTurnForTrailedTool, dto.YouTurn?.TrailedOpen ?? dg.UTurnTrailedOpen);
         store.Guidance.UTurnStyle = dto.YouTurn?.Style ?? dg.UTurnStyle;
         store.Guidance.UTurnSmoothing = dto.YouTurn?.Smoothing ?? dg.UTurnSmoothing;
         store.Guidance.GoAroundRadius = GuidanceConfig.InRange(dto.YouTurn?.GoAroundRadius ?? dg.GoAroundRadius, dg.GoAroundRadius, GuidanceConfig.MinGoAroundRadius, GuidanceConfig.MaxGoAroundRadius);
@@ -421,6 +426,12 @@ public static class ToolProfileJsonService
         // Joining a new line in the headland (fork only): 0 nearest point, 1 ask, 2 start of the pass.
         public int? EntryMode { get; set; }
         public double? EntryStraight { get; set; }
+        // U-turns and the way onto a pass planned for a front implement's centre (fork only).
+        public bool? ForFrontTool { get; set; }
+        // A U-turn's exit swung wide for a trailed implement (fork only).
+        public bool? ForTrailedTool { get; set; }
+        // With it, the whole turn sized for the trailed implement where the passes are far enough apart (fork only).
+        public bool? TrailedOpen { get; set; }
         public int? Style { get; set; }
         public int? Smoothing { get; set; }
     }

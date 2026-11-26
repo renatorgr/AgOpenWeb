@@ -681,6 +681,24 @@
         <label>Straight before the headland line (<span class="u" data-unit="m"></span>)</label><input class="cfg-num" data-unit="m" data-key="uturn.entryStraight" type="number" step="0.5" min="0" inputmode="decimal">
       </div>
       <div class="cfg-note">When AutoSteer is turned on, or the line is moved or changed, with the tractor in the headland facing the field. The way to the start of the pass stays in the headland at the U-turn radius, keeps the implement the distance from a hard boundary and out of obstacles; when it does not fit, the nearest point is used. The tractor is straight on the pass this far before the headland line (a front implement's reach is added).</div>
+      <div data-show="fronttool">
+        <div class="cfg-label" style="margin-top:12px">U-turns planned for</div>
+        <div class="ln-seg cfg-seg-full">
+          <button class="cfg-typebtn" data-key="uturn.frontTool" data-val="0" title="The turn is the tractor's path; the front implement swings outside it">The tractor</button>
+          <button class="cfg-typebtn" data-key="uturn.frontTool" data-val="1" title="The turn is the path of the front implement's centre; the tractor follows behind it">The front implement</button>
+        </div>
+        <div class="cfg-note">With a front implement (a combine's header too). The tractor: the turn is the tractor's path at the U-turn radius, and the implement swings outside it, past the turn line and past the next pass before it comes onto it. The front implement: the turn is the path of the implement's centre, which stays inside the turn line and goes from one pass onto the next along them; the tractor follows behind it, never tighter than the U-turn radius, and starts to turn sooner; the implement comes square to the next pass over about three times its distance ahead of the rear axle. A manual U-turn and the way to the start of a pass are planned the same way. Where such a turn does not fit, and with a K-turn, the turn is planned for the tractor.</div>
+      </div>
+      <!-- The same row for a trailed or TBT implement (fork only): the turn's exit swung wide, or the whole turn sized for it. -->
+      <div data-show="trailtbt">
+        <div class="cfg-label" style="margin-top:12px">U-turns planned for</div>
+        <div class="ln-seg cfg-seg-full">
+          <button class="cfg-typebtn" data-key="uturn.trailedTool" data-val="0" title="The turn ends on the next pass; the trailed implement comes square to it further on">The tractor</button>
+          <button class="cfg-typebtn" data-key="uturn.trailedTool" data-val="1" title="The tractor swings past the next pass and back onto it, so the trailed implement is square on it sooner">Implement: wide exit</button>
+          <button class="cfg-typebtn" data-key="uturn.trailedTool" data-val="2" title="The tractor also turns on a wider arc, so the trailed implement turns at about the U-turn radius">Implement: whole turn</button>
+        </div>
+        <div class="cfg-note">With a trailed implement (TBT too). The tractor: the turn ends where the tractor is on the next pass; the implement, which cuts inside the turn, comes onto the pass well after that (a drill with its wheels 4 m behind the pin: about 17 m past the top of the turn). Implement, wide exit: the tractor goes about 2 m past the next pass and comes back onto it, never tighter than the U-turn radius, so the implement is on the pass and square to it when the tractor is (that drill: 7 to 9 m past the top of the turn). Implement, whole turn: the same, and where the passes are far enough apart (that drill: two 3 m passes skipped, or more) the tractor turns on a wider arc, the one that keeps the implement's working centre on the U-turn radius: less steering lock for the tractor, a wider circle for the implement, and the turn leaves the pass about 1 m earlier; onto nearer passes the turn is the wide exit's. Where that does not fit (the turn line, a hard boundary, an obstacle), and with a K-turn, a manual U-turn and the way to the start of a pass, the turn is planned for the tractor.</div>
+      </div>
       <div class="cfg-label" style="margin-top:12px">Going around obstacles</div>
       <div class="cfg-diaggrid">
         <div class="vc-diagrow"><img src="/icons/ConU_GoAroundRadius.png" class="vc-diag" alt=""><div class="vc-fieldcol"><label>Curve radius (<span class="u" data-unit="m"></span>)</label><input class="cfg-num" data-unit="m" data-key="uturn.goAroundRadius" type="number" step="0.5" title="The tightest the pass bends round a Go around obstacle: smaller starts and ends the curve nearer the obstacle"></div></div>

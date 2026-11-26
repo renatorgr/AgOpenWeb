@@ -998,8 +998,7 @@ tester's simulator, Couto da Ribeira, 26 Nov 2026: "the line drawn is not the bo
 path steered, its checks and `GpsCycleResult` are the pivot's, and the way to a recorded path is drawn as it is.
 In the simulator (the tester's field, a turn from 22R onto 20R at 7.5 km/h) the boom's centre ran 0.28 m from the path
 drawn on average and 0.85 m at worst, where the turn starts (the steering's own error in a tight turn, times the 4.7 m
-to the boom); from the rear axle's track, 0.90 m and 2.13 m. Planning the turn itself for the implement's centre (its
-radius, its distance from the fence, where it joins the pass) is the next step, not done. Tests: `PathOfPointAheadTests` (Models), `FrontToolPathOnMapTests` (RemoteServer).
+to the boom); from the rear axle's track, 0.90 m and 2.13 m. Tests: `PathOfPointAheadTests` (Models), `FrontToolPathOnMapTests` (RemoteServer).
 **A trailed or TBT implement** is drawn the same way (fork only; a tester sowing with a semi-mounted drill asked for
 "the implement's working line, not the tractor's", 26 Nov 2026): the paths are drawn where its working centre goes,
 `ImplementSweptPath.Compute`'s `ToolCenter` for the pivot's path (the model the U-turn's own checks follow the
@@ -1007,8 +1006,154 @@ implement with: in line behind the path's first point, then pulled from point to
 the tool's offset to its side), so the line starts at the implement, runs inside every bend and comes onto the next
 pass gradually. His drill (wheels 4.15 m behind the pin, discs 1.6 m ahead of the wheels, the pin 1.54 m behind the
 rear axle): 1.1 m inside a 6 m turn. The scene's fingerprint holds the hitch, the tool's and the tank's lengths and
-the offset. An implement fixed behind the tractor is drawn as planned. Only the drawing; planning the turn for a
-trailed implement's working line is not done. Tests: `TrailedToolPathOnMapTests` (RemoteServer).
+the offset. An implement fixed behind the tractor is drawn as planned. Only the drawing: the turn is planned for the
+tractor, unless its exit is swung for the implement (*The U-turn's exit swung wide for a trailed implement*, below).
+Tests: `TrailedToolPathOnMapTests` (RemoteServer).
+
+**The U-turn planned for a front implement's centre** (U-turn tab › *U-turns planned for*: The tractor / The front
+implement, shown with a front tool; `GuidanceConfig.UTurnForFrontTool`, `uturn.frontTool`, saved with the tool profile
+as `youTurn.forFrontTool` (an AgOpenGPS profile read in has it off, `AgOpenGpsSettings.ApplyToStore`), the last byte of the Config frame's U-turn part; **off by default**; fork only). With it on and
+a front-fixed tool 0.5 m or more ahead (`YouTurnCreationService.FrontToolPlanFor`, `FrontToolPlan`,
+`YouTurnCreationService.FrontTool.cs`), the automatic turn's shape (the legs along the two passes, the arc, a wide turn's
+run along the turn line) is the path of the point `h` ahead on the tractor's centre line, at √(R² + h²), the radius of its
+circle when the tractor turns at the U-turn radius R: the generator is given that point as its position and that radius
+(`BuildCreationInput`), so the implement's centre is held to the turn line and goes from one pass onto the next along
+them. The pivot's path is the one that takes the implement along it (`RigGeometry.PivotPathBehind`: the pivot follows
+the point as a trailer follows its hitch, never tighter than R, into a bend and out of it gradually), a point for a
+point. That path is the one steered, checked (the implement's sweep against a hard fence, the obstacles, the start
+ahead of the tractor) and kept as `TurnPath`, so the guards, the state machine and the map read it as before
+(`PathOfPointAhead` of it is the implement's path again). `ArcStart` is where the pivot leaves the pass,
+`TurnPathResult.ToolLeavesPassAt` where the implement does (the "Headland too narrow" test and the end of the pass left
+to do read that one). After the implement's arc the tractor is still at an angle to the next pass (41° with h 4.7 m and
+R 5.4 m; 16° a reach on, 6° two reaches on, under 2.5° three), so the exit leg is at least `FrontToolPlan.MinExitLeg`
+(3.5 h + 6 m), and the exit looked at past the path's end is shorter by what the path runs on further
+(`ExitReachFor`: the same place on the next pass). A manual U-turn (`ManualArcPathFor`: the implement's Dubins path at
+that radius, from 4 m ahead of the tractor or half a metre ahead of the implement if that is further on, to the next
+pass, and on along it for `SettleLeg`, 3 h + 4 m) and the way to the start of a pass (`EntryWay`: the implement's centre
+joins the pass where the tractor's way would, a reach more before the crop, and runs on until the tractor is on the
+pass too) are planned the same way. **Never no turn where there was one**: where no such turn is made (it does not fit,
+a hard fence or an obstacle stops it, the implement's centre would leave the field, or the tractor could not drive the
+pivot's path: a bend under 0.9 R, the tolerance `FrontToolLine.TightestBend` is read with, or more than 0.5 m beside the pass where the path ends, `PivotPathFor`), the turn is
+planned for the pivot, as without the choice, and the log says so (`CreateTurnPath`, `CreateManualArcPath` and
+`PlanLineEntry` each try the implement first). **Not onto a short pass** either: the implement's turn goes on along the
+next pass further than the pivot's (7 m on the tester's rig), and the turn at the other end of that pass must still start
+ahead of the tractor. An automatic or manual turn is the implement's only with `FrontToolPlan.NextTurnRoom` (the U-turn
+radius plus the 30 m a turn may be seated back from a hard fence, `MaxExtraSetback`: 35.4 m) of the next pass left
+inside the turn area past the end of its path (`PassLeftAfter`, the turn lines where they are; a manual turn: from the
+fence and the obstacles, the U-turn distance more); on a shorter pass, for the pivot. On a tester's field (Eucaliptal,
+the farm job harness, 26 Nov 2026) the turn onto a very short pass handed over to the line later than the pivot's does,
+the next turn would have started 3.3 m behind the tractor (2 m ahead is the least), and the job stopped with "U-turn
+blocked", where with the choice off both turns were made. A K-turn, the simple fallback and the S onto a line beside a fence are
+planned for the pivot. Rows wider than twice the implement's radius get the wide turn (`PlannedTurnRadius`). An implement
+shifted to one side is planned by the point ahead on the tractor's centre line (the pass lines are the tractor's): its
+own centre runs beside that path by its offset and lands on its own pass (the passes are laid with the offset), and on
+a turn away from the side it is shifted to it goes that much past the turn line; the hard fence is checked with the real
+implement. A turn planned and not yet driven is planned again when the choice or the reach changes (`_youTurnFrontReach`:
+the plan's reach, 0 for the pivot; `EndKey`); a way to the start of a pass being driven is not, as a turn being driven.
+What changes on the ground (a tester's sprayer: an 8 m boom 4.7 m ahead, R 5.4 m, the turn line 1.5 m from the fence):
+planned for the pivot, the boom's centre went 1.75 m past the turn line (over the fence) and 1.7 m past the next pass,
+and came back to it at a 41° kink the steering can't follow; planned for the implement it stays inside the turn line and
+never crosses the next pass. The cost: the tractor turns off the pass a reach before the implement leaves it (a turn has
+to be planned a reach earlier), rows nearer than twice the implement's radius (14.3 m) take a wider bulb, and the boom
+comes square to the next pass over about three reaches (14 m), where planned for the pivot it is square from the arc's
+end. Tests: `PivotPathBehindTests` (Models), `FrontToolTurnPlanTests`, `FrontToolManualTurnTests`,
+`ToolProfileUTurnTramTests`.
+
+**The U-turn's exit swung wide for a trailed implement** (U-turn tab › *U-turns planned for*: The tractor / Implement:
+wide exit / Implement: whole turn (the paragraph below), shown with a trailing or TBT tool; `GuidanceConfig.UTurnForTrailedTool`,
+`uturn.trailedTool` 1, saved with the
+tool profile as `youTurn.forTrailedTool` (off in an AgOpenGPS profile read in, as the front implement's), the Config frame's byte after the front implement's; **off by default**; fork
+only). A turn ends where the tractor is on the next pass; a trailed implement cuts inside the turn and is then still at
+an angle to the pass, which it joins as e^(−s/L) (the tester's drill, wheels 4.15 m behind the pin: within 5 cm of the
+pass 16.5 to 18.7 m past the top of the turn, within 2 cm 20 to 22 m). With the choice on, `CreateTurnPathFor` finds the
+turn exactly as before (the same seat, every check), then `ExitSwingFor` (`YouTurnCreationService.TrailedTool.cs`)
+replaces its exit by the one a driver makes with a trailer (`TrailedExitSwing.Apply`, Models): the path is kept up to
+the top of its last arc; from there a straight, the arc carried on past the pass's direction by the swing angle and a
+counter-arc of that angle back onto the pass, all at the U-turn radius (the tractor never turns tighter than planned),
+then at least 6 m of the pass (`LegAfter`). The straight follows from the angle (the counter-arc must end on the pass;
+from a top square to the passes it is 2R(1 − cos swing), which is also how far the tractor goes past the pass), and the
+angle is the one that leaves the implement's heading on the pass's where the counter-arc ends (a trailer has one state,
+its heading, so one number is enough), found by a scan and a bisection with the implement followed along the path at
+0.1 m (`ToolHeadingAt`: at the path's own half metre the following is a degree or two out). That drill at a 4.3 m
+radius: a swing of 39 to 42°, the tractor 2.0 to 2.2 m past the next pass, the drill on the pass (within 5 cm, square)
+5.2 to 5.7 m past the top of the turn. An omega's own counter-arc is taken off first; a turn that already swings as
+much (a keyhole onto the neighbouring pass at that radius: 48°), or needs under 5° (`MinSwing`) or over 60°, is left
+alone. The new exit is held to the turn's rules: the tractor in the workable part of the turn area
+(`IsPointInsideTurnArea` 0 and not `IsPointBlockedForTurn`; where the tail from the arc's top leaves it, at a slanted
+turn line, it is tried from further round the arc), its leg within 0.3 m of the next pass as steered
+(`_bentDestination`: a curve or a Go around bend there is joined as planned), not past the end of the next line
+(`TurnLanding.PastLineEnd`), the implement the distance from a hard fence and from a hard obstacle the turn is made at
+(`TurnClearance`, given to `Apply` as `fits`: a swung exit that takes the implement nearer is tried from further round
+the arc too, where the straight heads away from the fence; refused outright, the Sagitta turn at Couto da Ribeira's hard
+fence stayed as planned), and `ClearsTurnObstacles` with the exit looked at as far along the pass as the planned turn's
+(`SwingExitReach`). **Never no turn where there was one, and never a turn seated elsewhere**: where the swung exit
+breaks a rule the turn stays as planned for the tractor, and the log says why. `TurnPathResult.ExitSwing` holds what was
+done. A turn planned and not yet driven is planned again when the choice, the implement's lengths or the U-turn radius
+(the swing's arcs are made at it) change (`TrailedSwingStamp`, `_youTurnTrailedSwing`; `EndKey`). A K-turn, the simple fallback, a manual U-turn and the way to
+the start of a pass are planned for the tractor. The map draws the implement's line from the swung path (the paragraph
+above). In the simulator (Couto da Ribeira, a hard fence, 60R onto 62R at 6 km/h, that drill): the drill within 5 cm of
+the next pass 16.5 m past the top of a keyhole turn as planned for the tractor and 7.1 and 9.0 m swung (two drives),
+18.7 m and 8.3 m on a Sagitta turn; the tractor 1.3 to 1.6 m past the pass (2 m planned: the simulated steering cuts
+the swing), the largest angle between tractor and drill 83° and 75° (keyhole), 80° and 69° (Sagitta). Not driven on a
+tractor yet. Tests: `TrailedExitSwingTests` (Models), `TrailedToolTurnPlanTests`, `ToolProfileUTurnTramTests`,
+`YouTurnTrackSwitchTests`.
+
+**The whole U-turn sized for a trailed implement** (the same row's third choice, *Implement: whole turn*;
+`GuidanceConfig.UTurnTrailedOpen` with `UTurnForTrailedTool`, `uturn.trailedTool` 2, saved with the tool profile as
+`youTurn.trailedOpen` (off in an AgOpenGPS profile read in), the Config frame's same byte, 2; **off by default**; fork
+only). The swung exit leaves the turn itself as planned for the tractor: the tractor on the U-turn radius drags the
+implement round a much tighter circle (the tester's drill, the tractor on 4.3 m: the discs on 2.5 m, the drawbar up to
+85° to the tractor on a long arc, beside the rear tyre). The tester saw it in the drawing and gave the rule (26 Nov
+2026): the implement does the work, so the implement commands the turn and the tractor drives what that takes. With
+this choice the U-turn radius is read as the implement's. In a steady turn every part of the rig runs on a circle about
+one centre (the pin √(pivot² + hitch²) from it, the implement's wheels √(pin² − drawbar²), its working centre √(wheels²
++ its distance from them²)), so the tractor's arc is opened to the radius that puts the working centre on the U-turn
+radius (`TrailedOpenTurn.OpenRadius`, Models; that drill: 5.55 m; never more than 1.5 times the U-turn radius,
+`MaxOpenShare`; opened by under 0.25 m, `MinOpen`, it is not used), and the swing back onto the pass is part of the
+turn. By how far apart the passes are (`TrailedOpenPlanFor`, `YouTurnCreationService.TrailedOpen.cs`):
+- **Up to twice the open radius, one shape** (`TrailedOpenTurn.Solve`, `Shape`): a quarter circle out of the pass, a
+  straight along the top when the passes are further apart than the arcs reach, the arc on round to the pass's
+  direction and the swing past it, and a counter-arc of that angle at the U-turn radius onto the pass. The counter-arc
+  must end on the pass, which gives the arc's radius for a swing s, (d + R(1 − cos s)) / (1 + cos s), held to the open
+  radius (the rest is the top straight); the swing is the one that leaves the implement's heading on the pass's where
+  the counter-arc ends, found by a scan and a bisection with the implement followed at 0.1 m. The generator seats that
+  shape as it seats its own arc (`YouTurnCreationInput.OpenShape`, `CreateCurveSagittaTurn`: slid to the turn line, no
+  omega in its place, not started on a Go around bend), with the exit leg shorter by how far the shape runs on along
+  the pass (`Shape.RunsOn`, in `AddCurveSequenceLines`, never under `TrailedExitSwing.LegAfter`; from the operator's
+  extension or, with none set, from the leg the generator works out): the path ends where the planned turn's does.
+- **Further apart, the wide turn** made at the open radius (`TurnRadius`), its exit swung by `ExitSwingFor` with the
+  last arc carried on at the open radius and the counter-arc at the U-turn radius (`TrailedExitSwing.Apply`'s
+  `counterRadius`).
+- **Nearer than the shape exists** (the implement would be past square at the end of every such turn; that drill:
+  under about 6.6 m, so the neighbouring 3 m pass and one row skipped): the turn as with *wide exit*. A keyhole opened
+  to that radius would be about 4 m deeper (12.6 m against 8.9 m with one row skipped), so none is made.
+
+**Never no turn where there was one**: `CreateTurnPath` tries the open turn first (`CreateTurnPathFor`'s `open`: held to
+every check a turn is held to, its refusals logged as detail, not as warnings); with none (it fits nowhere, a hard
+fence, an obstacle, the wide turn not built or its swing refused, a hand-over past the end of the next line, a turn of
+no U-turn's shape, a path whose smoothing leaves a bend under 0.9 of the U-turn radius, `OpenTurnBendsTooTight`, read
+as a front implement's turn is) the turn is planned as with *wide exit*, and that failing, for the tractor.
+`TurnPathResult.OpenRadius` and `OpenShape` hold what was done. `PlannedTurnRadius(config, offset)` is the radius of the
+turn made for passes that far apart (the landing's wide-turn test: the open radius only where the open turn exists for
+them, else the U-turn radius, as nearer than the shape exists or with an implement no swing squares up), and without an
+offset the widest (the opening's room); the shape sized for a spacing is kept (`OpenShapeFor`, by implement, U-turn
+radius and spacing: sizing one follows the implement along some eighty shapes, and the landing test asks on every look
+at a pass). The two flags are set together by `GuidanceConfig.SetUTurnForTrailedTool`, in the order that leaves the
+choice in force the old one or the new one at every moment (the GPS cycle reads them while a screen sets them). A side
+offset of the implement is left out of the open radius on purpose (the drawbar's angle does not depend on it). A turn
+planned and not yet driven is planned again when the choice changes (`TrailedSwingStamp`, `EndKey`). A
+K-turn, the simple fallback, a manual U-turn and the way to the start of a pass are planned for the tractor.
+As planned (the planner's tests, a synthetic field, that drill at 4.3 m): two rows skipped (9 m), the largest angle
+between tractor and drill 76° for the tractor, 77° with the exit swung, 66° whole turn, the drill on the pass 18.3, 5.4
+and 7.1 m below the turn's top; three rows skipped, 74° swung and 61° whole turn. The cost: the turn leaves the pass
+about 1.1 m earlier, and the drill is on the pass 1 to 2 m later than with the exit swung alone. As driven in the
+simulator (Couto da Ribeira, a hard fence, from 60R at 6 km/h, that drill; the whole turn seated 1 m further in, the
+drill kept the distance from the fence): two rows skipped, keyhole and Sagitta alike, 71°, 65° and 65°, the drill
+within 5 cm of the pass 18.5, 8.0 and 7.2 m past the top, the tightest 2 m of the tractor's track 3.7, 3.7 and 4.8 m
+(the simulated steering rounds the swung exit off, so there the two choices differ in the bend the tractor has to
+make, not in the angle); three rows skipped, the swung exit alone was refused at that fence (61°, 19.4 m, as for the
+tractor) and the whole turn was made: 54°, 8.7 m, the tightest 5.0 m against 3.9 m. Not driven on a tractor yet. Tests:
+`TrailedOpenTurnTests` (Models), `TrailedOpenTurnPlanTests`, `ToolProfileUTurnTramTests`, `YouTurnTrackSwitchTests`.
 
 **Following the moved line** (`FrontToolFollower` in `Services/Track`, applied after `CalculateGuidance` in
 `GpsPipelineService.CalculateTrackGuidance`; fork only). Pure Pursuit aims at a goal the look-ahead ahead, so it starts

@@ -170,7 +170,7 @@ Most of these have been offered to the official project too. When one is merged 
 **The green path with a front implement.** The green path of a U-turn, and of the way onto a pass, was drawn where the tractor's rear axle goes. An implement fixed ahead of the tractor swings wider in the turn, so the path on the map was not where the implement went.
 
 - Now, with a front-fixed implement (a front boom, a combine's header), the green path is drawn where the middle of the implement goes. An 8 m boom 4.7 m ahead on a 5.4 m turn: 1.8 m further out.
-- Only the drawing changed. The turn is still worked out for the rear axle; working it out for the implement comes next.
+- Only the drawing changed. The turn is still worked out for the rear axle, unless the setting below is on.
 - A rear-mounted implement is drawn as before.
 - Simulator only, not tried on a tractor yet.
 
@@ -178,8 +178,39 @@ Most of these have been offered to the official project too. When one is merged 
 
 - Now, with a trailed implement (a drill, a trailed sprayer, a tool behind a tank), the green path is drawn where the implement's working line goes.
 - A drill with its discs 2.5 m behind the hitch pin runs 1.1 m inside a 6 m turn.
-- Only the drawing changed. The turn is still worked out for the tractor; working it out for the trailed implement comes next.
+- Only the drawing changed. The turn is still worked out for the tractor, unless the setting for a trailed implement below is on.
 - Not tried on a tractor yet.
+
+**U-turns worked out for a front implement.** A U-turn is worked out for the tractor's rear axle. An implement fixed ahead of the tractor then swings outside the turn: past the turn line, past the next pass, and back onto it with a sudden change of direction the steering can't follow.
+
+- New setting on the U-turn tab, shown with a front implement: *U-turns planned for* The tractor (as before, and the default) or The front implement.
+- With The front implement, the turn is the path of the middle of the implement. It stays inside the turn line and goes from one pass onto the next without crossing it. The tractor follows behind and never turns tighter than the U-turn radius.
+- The manual U-turn and the way to the start of a pass are worked out the same way.
+- What it costs: the tractor starts turning sooner, about the implement's distance ahead of the rear axle earlier. Rows closer together than the implement's turning circle get a wider turn. The implement comes square to the next pass over about three times that distance.
+- Where such a turn does not fit (too close to a fence or an obstacle), the turn is worked out for the tractor as before, so there is never no turn where there was one. A K-turn is always worked out for the tractor.
+- Onto a short pass too: the implement's turn uses more of the next pass, and the turn at the other end of it still needs room to start. With less than about 35 m of the next pass left after the turn, the turn is worked out for the tractor.
+- In the simulator, an 8 m boom 4.7 m ahead on a 5.4 m turn: worked out for the tractor, the middle of the boom went 1.75 m past the turn line and 1.7 m past the next pass; worked out for the boom, it stays inside both.
+- Simulator only, not tried on a tractor yet. Off unless you turn it on.
+
+**U-turns worked out for a trailed implement.** A U-turn ends where the tractor is on the next pass. A trailed implement cuts inside the turn, so it is still crooked then and comes onto the pass only many metres later. A drill with its wheels 4 m behind the hitch pin: about 17 m past the top of the turn.
+
+- New setting on the U-turn tab, shown with a trailed implement: *U-turns planned for* The tractor (as before, and the default), Implement: wide exit, or Implement: whole turn.
+- With Implement: wide exit, the turn is found as before and then its way out is opened: the tractor goes about 2 m past the next pass and comes back onto it, as a driver does with a trailer. It never turns tighter than the U-turn radius.
+- The implement is then on the pass, and square to it, when the tractor is. That drill, driven in the simulator: 7 to 9 m past the top of the turn.
+- Where the wider way out does not fit (the turn line, a hard boundary, an obstacle, a next pass that bends there), the turn stays as it was, so there is never no turn where there was one.
+- A K-turn, a manual U-turn and the way to the start of a pass are still worked out for the tractor.
+- Simulator only, not tried on a tractor yet. Off unless you turn it on.
+
+**The whole U-turn sized for a trailed implement.** With the wide exit the turn itself is still the tractor's: the tractor turns at the U-turn radius and drags the implement round a much tighter circle, the drawbar close to the rear tyre.
+
+- Third choice of the same setting: Implement: whole turn. The implement commands the turn, and the tractor drives what that takes.
+- The U-turn radius is then the implement's. The tractor turns on a wider arc (that drill at 4.3 m: about 5.5 m), and the swing back onto the next pass is part of the turn.
+- It needs passes far enough apart. That drill, 3 m wide: from two rows skipped. Onto nearer passes the turn is the wide exit's.
+- Where it does not fit, the turn is worked out as with the wide exit, and if that does not fit either, for the tractor. There is never no turn where there was one.
+- In the simulator, two rows skipped: the tractor's tightest bend was 4.8 m in place of 3.7 m, and the drill was on the pass 7 m past the top of the turn (8 m with the wide exit, 18 m for the tractor). The angle between tractor and drill was the same as with the wide exit, 65° (71° for the tractor).
+- Three rows skipped, beside a hard boundary: the wide exit alone did not fit there; the whole turn did, with 54° in place of 61°.
+- The cost: the turn leaves the pass about 1 m earlier.
+- Simulator only, not tried on a tractor yet. Off unless you turn it on.
 
 ### Fields
 

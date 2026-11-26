@@ -197,6 +197,62 @@ public class GuidanceConfig : ObservableObject
 
     public const double DefaultLineEntryStraight = 3.0;
 
+    // With a front implement (a combine's header too), U-turns and the way onto a pass are planned
+    // for the implement's centre, the tractor following it as a trailer follows its hitch
+    // (YouTurnCreationService.FrontTool.cs), not for the pivot with the implement swinging
+    // outside it. Off unless the operator turns it on. Fork only.
+    private bool _uTurnForFrontTool;
+    public bool UTurnForFrontTool
+    {
+        get => _uTurnForFrontTool;
+        set => SetProperty(ref _uTurnForFrontTool, value);
+    }
+
+    // With a trailed implement (TBT too), the exit of a U-turn is swung wide: the tractor goes past
+    // the next pass and comes back onto it, so the implement is square on the pass when the
+    // tractor is (TrailedExitSwing, YouTurnCreationService.TrailedTool.cs), not 15 to 20 m on.
+    // Off unless the operator turns it on. Fork only.
+    private bool _uTurnForTrailedTool;
+    public bool UTurnForTrailedTool
+    {
+        get => _uTurnForTrailedTool;
+        set => SetProperty(ref _uTurnForTrailedTool, value);
+    }
+
+    // With that choice, the whole turn sized for the trailed implement where the passes are far
+    // enough apart: the tractor's arc opened to the radius that keeps the implement's working
+    // centre on the U-turn radius, and the exit's swing part of the shape (TrailedOpenTurn,
+    // YouTurnCreationService.TrailedOpen.cs). Has no effect without UTurnForTrailedTool.
+    // Off unless the operator turns it on. Fork only.
+    private bool _uTurnTrailedOpen;
+    public bool UTurnTrailedOpen
+    {
+        get => _uTurnTrailedOpen;
+        set => SetProperty(ref _uTurnTrailedOpen, value);
+    }
+
+    /// <summary>
+    /// Sets the two choices above together. The GPS cycle reads them while a screen or a profile
+    /// sets them, so they are written in the order that leaves the choice in force, at every
+    /// moment, the one before or the one asked for and never a third: the whole-turn flag first
+    /// when the swing is on at the end (alone it does nothing), the swing first when it goes off.
+    /// Set one after the other the other way, a change from the tractor to the whole turn was the
+    /// swung exit alone for a moment, and a turn planned in that moment was that one.
+    /// </summary>
+    public void SetUTurnForTrailedTool(bool swingExit, bool wholeTurn)
+    {
+        if (swingExit)
+        {
+            UTurnTrailedOpen = wholeTurn;
+            UTurnForTrailedTool = true;
+        }
+        else
+        {
+            UTurnForTrailedTool = false;
+            UTurnTrailedOpen = wholeTurn;
+        }
+    }
+
     // The ranges the settings page keeps these to, kept when a profile is read too: a profile
     // written by hand with a huge straight or bend radius held up the GPS cycle (the way onto the
     // pass and the bend round an obstacle are built a point every 0.25 m).

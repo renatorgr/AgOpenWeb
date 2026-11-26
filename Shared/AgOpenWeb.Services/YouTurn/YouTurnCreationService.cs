@@ -459,8 +459,10 @@ namespace AgOpenWeb.Services.YouTurn
 
             // A single sagitta semicircle of radius R reaches at most 2R sideways. Wider rows
             // get AgOpenGPS's wide turn, which follows the turn line between the passes; the
-            // omega turn (one shape, square to the track) is the fallback (#544).
-            if (Math.Abs(turnOffset) > input.TurnRadius * 2.0)
+            // omega turn (one shape, square to the track) is the fallback (#544). An open turn for
+            // a trailed implement (YouTurnCreationInput.OpenShape) is one shape whatever its width.
+            var open = input.OpenShape;
+            if (open == null && Math.Abs(turnOffset) > input.TurnRadius * 2.0)
             {
                 return CreateWideOrOmegaTurn(input, turnOffset);
             }
@@ -499,6 +501,13 @@ namespace AgOpenWeb.Services.YouTurn
 
                 if (stopIfWayOut == 300 || curveIndex < 1 || curveIndex > (input.GuidancePoints.Count - 2))
                 {
+                    // The open turn for a trailed implement has no other shape to fall back on here:
+                    // the planner plans the turn again without it (YouTurnCreationService.TrailedOpen.cs).
+                    if (open != null)
+                    {
+                        FailCreate("the open turn for the trailed implement fits nowhere along the pass");
+                        return false;
+                    }
                     // Nowhere along the pass. The sagitta's lead-in swings to the outside of the turn
                     // first, 4 m at this radius onto a pass one radius over (R(1 - cos 60°)), which a
                     // pass along a fence hasn't got: the fence runs with it, so no start fits. AgOpenGPS's
@@ -527,6 +536,11 @@ namespace AgOpenWeb.Services.YouTurn
                 // the pass, and lands on the next pass at its own (fork only).
                 if (OnGoAroundBend(input, curveIndex, count, out var bendSeat))
                 {
+                    if (open != null)
+                    {
+                        FailCreate("the open turn for the trailed implement would start on a bend round an obstacle");
+                        return false;
+                    }
                     bendNextPass ??= BendNextPass(input);
                     var fromBend = ArcFromBend(input, bendNextPass, bendSeat, isTurningRight);
                     isOutOfBounds = fromBend.Count == 0 || OutsideTurnLineBy(input, fromBend) > 0 || fromBend.Exists(p => Blocked(input, p));
@@ -535,7 +549,9 @@ namespace AgOpenWeb.Services.YouTurn
                     break;
                 }
 
-                ytList = keyhole
+                ytList = open != null
+                    ? Models.Tool.TrailedOpenTurn.Build(currentPos, head, isTurningRight, open, pointSpacing)
+                    : keyhole
                     ? SagittaTurnGeometry.BuildKeyhole(currentPos, head, isTurningRight, input.TurnRadius, Math.Abs(turnOffset))
                     : SagittaTurnGeometry.BuildOffsetArc(currentPos, head, isTurningRight, input.TurnRadius, sagittaPullback, Math.PI);
                 if (ytList.Count == 0)
@@ -1485,9 +1501,16 @@ namespace AgOpenWeb.Services.YouTurn
                 sameWay ? -1 : 1, legLength, insertFront: true);
 
             // Exit leg: walk the destination pass outward from the arc end for legLength METRES.
+            // An open turn for a trailed implement ends further along the next pass than a turn
+            // planned for the tractor (Shape.RunsOn), so its leg is shorter by that much, never under
+            // the straight the line needs to take over on: the path ends where the planned turn's
+            // does, with the operator's extension or with the leg worked out above (extension 0).
             bool outSameWay = isOutSameCurve ? !sameWay : sameWay;
+            double exitLeg = input.OpenShape is { } openShape
+                ? Math.Max(Models.Tool.TrailedExitSwing.LegAfter, legLength - openShape.RunsOn)
+                : Math.Max(legLength, input.MinExitLegLength);
             WalkLegByDistance(nextCurve, ytList[ytList.Count - 1], outClosestTurnPt.CurveIndex,
-                outSameWay ? -1 : 1, legLength, insertFront: false);
+                outSameWay ? -1 : 1, exitLeg, insertFront: false);
 
             return true;
         }

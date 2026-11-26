@@ -136,65 +136,108 @@ public partial class YouTurnCreationService
             && Math.Abs(AngleDiff(pivot.Heading, lineHeading)) <= LineEntryAlignedRad)
             return LineEntryPlan.NotNeeded;
 
+        // For a front implement's centre when the operator chose that (FrontToolPlan); with no
+        // such way, for the pivot, as without the choice.
+        var plan = FrontToolPlanFor(_configStore);
+        var way = plan.On ? EntryWay(plan, pivot, best, headlandLine, boundary) : null;
+        way ??= EntryWay(default, pivot, best, headlandLine, boundary);
+        return way == null ? LineEntryPlan.NoRoom : new LineEntryPlan(LineEntryOutcome.Planned, way, best.SameWay);
+    }
+
+    /// <summary>
+    /// The way from the tractor to the start of the pass <paramref name="line"/>, for the pivot or
+    /// for a front implement's centre (<paramref name="plan"/>); null when none passes the checks.
+    /// Planned for the implement, the Dubins path is its centre's, at the radius of its circle,
+    /// from the implement to where the tractor's way would join the pass (so the implement is
+    /// straight on the pass a reach longer before the crop), and on along the pass until the
+    /// tractor is on it too; the path returned is the pivot's (<see cref="PivotPathFor"/>), and
+    /// both keep to the headland until the implement is on the pass.
+    /// </summary>
+    private List<Vec3>? EntryWay(FrontToolPlan plan, Vec3 pivot, EntryLine line, IReadOnlyList<Vec3> headlandLine, Boundary boundary)
+    {
         var config = _configStore;
         double frontReach = Models.Tool.RigGeometry.Mount(config.Tool) == Models.Tool.ToolMount.FrontFixed
             ? Math.Abs(Models.Tool.RigGeometry.AttachX(config.Vehicle, config.Tool)) : 0.0;
         double lead = Math.Max(0.0, config.Guidance.LineEntryStraight) + frontReach;
-        double goalS = best.StartS - lead;
-        var goalPt = best.PointAt(goalS);
-        var goal = new Vec3(goalPt.Easting, goalPt.Northing, best.HeadingAt(goalS));
+        double goalS = line.StartS - lead;
+        var goalPt = line.PointAt(goalS);
+        var goal = new Vec3(goalPt.Easting, goalPt.Northing, line.HeadingAt(goalS));
 
+        // The path laid out is the pivot's, from the tractor, or the implement's centre, from the
+        // implement: a reach ahead, and with a straight stretch before its turn.
+        double reach = plan.On ? plan.Reach : 0.0;
+        double startLead = plan.On ? Math.Max(LineEntryStartLead, reach + ManualToolLead) : LineEntryStartLead;
         double headingRad = pivot.Heading;
         var start = new Vec3(
-            pivot.Easting + Math.Sin(headingRad) * LineEntryStartLead,
-            pivot.Northing + Math.Cos(headingRad) * LineEntryStartLead,
+            pivot.Easting + Math.Sin(headingRad) * startLead,
+            pivot.Northing + Math.Cos(headingRad) * startLead,
             headingRad);
 
-        // The straight on the pass from the goal to a little past the headland line.
+        // The straight on the pass from the goal to a little past the headland line; for the
+        // implement, on until the tractor is on the pass too.
+        double runTo = line.StartS + LineEntryRunOn;
+        if (plan.On) runTo = Math.Max(runTo + reach, goalS + plan.SettleLeg);
         var straight = new List<Vec3>();
-        for (double s = goalS + LineEntrySpacing; s < best.StartS + LineEntryRunOn + 1e-9; s += LineEntrySpacing)
+        for (double s = goalS + LineEntrySpacing; s < runTo + 1e-9; s += LineEntrySpacing)
         {
-            var p = best.PointAt(s);
-            straight.Add(new Vec3(p.Easting, p.Northing, best.HeadingAt(s)));
+            var p = line.PointAt(s);
+            straight.Add(new Vec3(p.Easting, p.Northing, line.HeadingAt(s)));
         }
 
-        double radius = Math.Max(config.Guidance.UTurnRadius, MinManualTurnRadius);
+        double radius = plan.On ? plan.Radius : Math.Max(config.Guidance.UTurnRadius, MinManualTurnRadius);
         var dubins = new DubinsPathService(radius);
         int tried = 0;
         foreach (var candidate in dubins.GeneratePaths(start, goal))
         {
             tried++;
-            if (PathLength(candidate) + LineEntryStartLead > LineEntryMaxLength) continue;
+            if (PathLength(candidate) + startLead - reach > LineEntryMaxLength) continue;
 
-            // From the tractor straight on to where the turn starts, a point every LineEntrySpacing
-            // as the rest of the way has: the checks below look at points, and 3 m between two of
-            // them could cross a corner of the headland line or the fence unseen.
+            // From the tractor (or the implement) straight on to where the turn starts, a point
+            // every LineEntrySpacing as the rest of the way has: the checks below look at points,
+            // and 3 m between two of them could cross a corner of the headland line or the fence unseen.
             var path = new List<Vec3>(candidate.Count + straight.Count + 16);
-            for (double d = 0; d < LineEntryStartLead - 1e-9; d += LineEntrySpacing)
+            for (double d = reach; d < startLead - 1e-9; d += LineEntrySpacing)
                 path.Add(new Vec3(pivot.Easting + Math.Sin(headingRad) * d, pivot.Northing + Math.Cos(headingRad) * d, headingRad));
             path.AddRange(candidate);
-            int onPassFrom = path.Count - 1; // the goal: from here on the tractor is on the pass
+            int onPassFrom = path.Count - 1; // the goal: from here on it is on the pass
             path.AddRange(straight);
+
+            if (plan.On)
+            {
+                // The implement's centre keeps to the headland until it is on the pass, and to
+                // the field; then the pivot's path is the one checked, as without the choice.
+                if (!KeepsToHeadland(path, onPassFrom, headlandLine) || LeavesField(path, boundary)) continue;
+                var pivotPath = PivotPathFor(path, plan);
+                if (pivotPath == null) continue;
+                path = pivotPath;
+            }
 
             // The pivot keeps to the headland until it is on the pass: the way never cuts across
             // the crop it is about to work.
-            bool inHeadland = true;
-            for (int i = 0; i < onPassFrom && inHeadland; i++)
-                if (GeometryMath.IsPointInPolygon(headlandLine, path[i].Easting, path[i].Northing))
-                    inHeadland = false;
-            if (!inHeadland) continue;
+            if (!KeepsToHeadland(path, onPassFrom, headlandLine)) continue;
 
             if (LeavesField(path, boundary)) continue;
             if (!ManualTurnClearsHardBoundary(path, boundary, config, out _)) continue;
             if (!ClearsTurnObstacles(path, boundary, config, out _, promoted: _goAround.CurrentBlocked)) continue;
 
-            _logger.LogDebug("[LineEntry] Way to the start of the pass: {Count} points, {Len:F1} m, candidate {N}",
-                path.Count, PathLength(path), tried);
-            return new LineEntryPlan(LineEntryOutcome.Planned, path, best.SameWay);
+            _logger.LogDebug("[LineEntry] Way to the start of the pass: {Count} points, {Len:F1} m, candidate {N}{For}",
+                path.Count, PathLength(path), tried, plan.On ? ", planned for the front implement's centre" : "");
+            return path;
         }
 
-        _logger.LogDebug("[LineEntry] No way to the start of the pass fits ({N} tried)", tried);
-        return LineEntryPlan.NoRoom;
+        _logger.LogDebug("[LineEntry] No way to the start of the pass fits ({N} tried){For}", tried,
+            plan.On ? " for the front implement's centre; planning for the pivot" : "");
+        return null;
+    }
+
+    /// <summary>True when no point of <paramref name="path"/> before <paramref name="upTo"/> is in
+    /// the cultivated area.</summary>
+    private static bool KeepsToHeadland(IReadOnlyList<Vec3> path, int upTo, IReadOnlyList<Vec3> headlandLine)
+    {
+        for (int i = 0; i < upTo; i++)
+            if (GeometryMath.IsPointInPolygon(headlandLine, path[i].Easting, path[i].Northing))
+                return false;
+        return true;
     }
 
     private static double PathLength(IReadOnlyList<Vec3> path)

@@ -88,4 +88,35 @@ public class GuidanceConfigTests
         var g = new GuidanceConfig { UTurnCrossGap = 12.5 };
         Assert.That(g.UTurnCrossGap, Is.EqualTo(12.5));
     }
+
+    /// <summary>The choice in force from the two flags: 0 the tractor, 1 the exit swung, 2 the whole turn.</summary>
+    private static int TrailedChoice(GuidanceConfig g) => !g.UTurnForTrailedTool ? 0 : g.UTurnTrailedOpen ? 2 : 1;
+
+    [Test]
+    public void The_trailed_implement_s_turn_choice_is_never_a_third_one_on_the_way_from_one_to_another(
+        [Values(0, 1, 2)] int from, [Values(0, 1, 2)] int to)
+    {
+        // The GPS cycle reads the two flags while a screen sets them: from the tractor to the whole
+        // turn, the swung exit alone was in force for a moment, and a turn planned then was that one.
+        var g = new GuidanceConfig();
+        g.SetUTurnForTrailedTool(from >= 1, from == 2);
+        Assert.That(TrailedChoice(g), Is.EqualTo(from));
+
+        var seen = new System.Collections.Generic.List<int>();
+        g.PropertyChanged += (_, _) => seen.Add(TrailedChoice(g));
+        g.SetUTurnForTrailedTool(to >= 1, to == 2);
+
+        Assert.That(TrailedChoice(g), Is.EqualTo(to));
+        Assert.That(g.UTurnTrailedOpen, Is.EqualTo(to == 2), "the whole-turn flag is as asked, the swing on or off");
+        Assert.That(seen, Is.All.EqualTo(from).Or.EqualTo(to), "every state on the way");
+    }
+
+    [Test]
+    public void The_whole_turn_flag_alone_is_kept_as_a_profile_has_it()
+    {
+        var g = new GuidanceConfig();
+        g.SetUTurnForTrailedTool(swingExit: false, wholeTurn: true);
+        Assert.That(g.UTurnForTrailedTool, Is.False);
+        Assert.That(g.UTurnTrailedOpen, Is.True);
+    }
 }
