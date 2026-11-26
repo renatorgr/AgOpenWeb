@@ -34,43 +34,71 @@ public class WizardStepTouchedThreadTests
         /// <summary>A property changed under another name, as a step with many live fields raises them.</summary>
         public void Raise(string name) => OnPropertyChanged(name);
 
-        public bool LiveTouched => Touched(nameof(Live)) | TouchedInWizard(nameof(Live));
+        public bool LiveTouched => Touched(nameof(Live));
+        public bool LiveTouchedInWizard => TouchedInWizard(nameof(Live));
     }
 
     [Test]
     public void Readings_from_the_module_thread_while_the_host_loop_enters_and_asks_do_not_throw()
     {
         var step = new LiveStep();
-        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var ready = new Barrier(2); // both threads running before the clock starts
+        var run = TimeSpan.FromSeconds(2);
         Exception? failure = null;
+        long moduleSets = 0, hostVisits = 0;
+        bool stop = false;
 
         // Many names, so the set grows and is rehashed while the other thread reads or clears it.
         var module = Task.Run(() =>
         {
+            ready.SignalAndWait();
             int i = 0;
             try
             {
-                while (!stop.IsCancellationRequested)
+                while (!Volatile.Read(ref stop))
                 {
-                    step.Live = i++;
+                    step.Live = ++i;
                     step.Raise("Reading" + (i % 512));
+                    moduleSets++;
                 }
             }
-            catch (Exception ex) { failure ??= ex; stop.Cancel(); }
+            catch (Exception ex) { failure ??= ex; Volatile.Write(ref stop, true); }
         });
 
+        ready.SignalAndWait();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            while (!stop.IsCancellationRequested)
+            while (!Volatile.Read(ref stop) && clock.Elapsed < run)
             {
                 step.IsActive = true;
                 _ = step.LiveTouched;
                 step.IsActive = false;
+                hostVisits++;
             }
         }
-        catch (Exception ex) { failure ??= ex; stop.Cancel(); }
-
+        catch (Exception ex) { failure ??= ex; }
+        Volatile.Write(ref stop, true);
         module.Wait();
+
         Assert.That(failure, Is.Null, failure?.ToString());
+        // Both sides really ran side by side, so the test cannot pass without trying the race.
+        Assert.That(moduleSets, Is.GreaterThan(1000), "module thread readings");
+        Assert.That(hostVisits, Is.GreaterThan(100), "host loop visits");
+        // The tracking itself still works: what the module thread set is counted for the wizard.
+        Assert.That(step.LiveTouchedInWizard, Is.True);
+    }
+
+    [Test]
+    public void A_reading_set_from_another_thread_counts_as_changed_by_the_step()
+    {
+        var step = new LiveStep();
+        step.IsActive = true;
+        Assert.That(step.LiveTouched, Is.False, "entering clears what the step changed");
+
+        Task.Run(() => step.Live = 1.5).Wait();
+
+        Assert.That(step.LiveTouched, Is.True);
+        Assert.That(step.LiveTouchedInWizard, Is.True);
     }
 }
