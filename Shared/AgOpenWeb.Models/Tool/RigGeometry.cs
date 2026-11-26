@@ -145,7 +145,7 @@ namespace AgOpenWeb.Models.Tool
             {
                 double dE = pointPath[i].Easting - pointPath[i - 1].Easting;
                 double dN = pointPath[i].Northing - pointPath[i - 1].Northing;
-                double length = Math.Sqrt(dE * dE + dN * dN);
+                double length = GeometryMath.Distance(pointPath[i - 1], pointPath[i]);
                 int steps = Math.Max(1, (int)Math.Ceiling(length / PullStep));
                 for (int k = 0; k < steps && length > 0; k++)
                 {

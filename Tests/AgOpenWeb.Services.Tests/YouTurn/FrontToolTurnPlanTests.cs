@@ -1,5 +1,5 @@
 // AgOpenWeb
-// Copyright (C) 2026 AgOpenWeb Contributors
+// Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 using System;
@@ -156,7 +156,10 @@ public class FrontToolTurnPlanTests
 
         Assert.That(rear, Has.Count.EqualTo(off.Count));
         for (int i = 0; i < off.Count; i++)
+        {
             Assert.That(GeometryMath.Distance(rear[i], off[i]), Is.LessThan(1e-9), $"point {i}");
+            Assert.That(rear[i].Heading, Is.EqualTo(off[i].Heading).Within(1e-9), $"heading at point {i}");
+        }
     }
 
     [Test]
@@ -211,7 +214,7 @@ public class FrontToolTurnPlanTests
         Assert.That(asToday.Path, Is.Not.Null, "the scenario: planned for the pivot there is still a turn from there");
         Assert.That(late.Path, Is.Not.Null, "1 m before it: a turn all the same");
         Assert.That(late.ToolLeavesPassAt, Is.Null, "planned for the pivot");
-        Assert.That(late.Path!.Select(p => (p.Easting, p.Northing)), Is.EqualTo(asToday.Path!.Select(p => (p.Easting, p.Northing))),
+        Assert.That(late.Path!.Select(p => (p.Easting, p.Northing, p.Heading)), Is.EqualTo(asToday.Path!.Select(p => (p.Easting, p.Northing, p.Heading))),
             "the turn made without the choice, point for point");
         Assert.That(log.Lines, Has.Some.Contains("planning for the pivot"), "and the log says so");
     }

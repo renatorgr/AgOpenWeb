@@ -258,6 +258,57 @@ public class YouTurnTrackSwitchTests
     }
 
     [Test]
+    public void PlanningForTheFrontImplement_PlansTheTurnAgain_AndBackToTheTractorToo()
+    {
+        // The operator's choice alone (U-turns planned for the tractor / the front implement), with
+        // nothing else changed: a turn planned and not yet driven was made for the other point of
+        // the rig, so it is planned again; the order holds.
+        var config = ConfigurationStore.Instance;
+        config.Tool.SetToolType("front");
+        config.Vehicle.FrontHitchLength = 4.5;
+        config.Tool.WorkingPointFromHitch = 0.2;
+        var turn = PlannedOnTrackA();
+        var order = turn.SnakeSequence;
+
+        config.Guidance.UTurnForFrontTool = true;
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null, "the turn planned for the tractor");
+            Assert.That(turn.SnakeSequence, Is.SameAs(order), "the passes did not move: the order holds");
+        });
+
+        // The same choice again: a turn planned since is kept.
+        var planned = new List<Vec3> { new(3, 40, 0), new(0, 50, 0), new(-3, 40, Math.PI) };
+        turn.TurnPath = planned;
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(turn.TurnPath, Is.SameAs(planned));
+
+        config.Guidance.UTurnForFrontTool = false;
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(turn.TurnPath, Is.Null, "the turn planned for the front implement");
+    }
+
+    [Test]
+    public void PlanningForTheFrontImplement_LeavesATurnBeingDrivenAlone()
+    {
+        var config = ConfigurationStore.Instance;
+        config.Tool.SetToolType("front");
+        config.Vehicle.FrontHitchLength = 4.5;
+        config.Tool.WorkingPointFromHitch = 0.2;
+        var turn = PlannedOnTrackA();
+        turn.IsTriggered = turn.IsExecuting = true;
+        config.Guidance.UTurnForFrontTool = true;
+        _gpsService.UpdateGpsData(ValidFix());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.IsExecuting, Is.False, "the turn ended by being driven");
+            Assert.That(Last.Guidance!.HowManyPathsAway, Is.EqualTo(-1), "onto the pass it was made for");
+        });
+    }
+
+    [Test]
     public void TheSameTrackAgain_KeepsThePlannedTurn()
     {
         var turn = PlannedOnTrackA();

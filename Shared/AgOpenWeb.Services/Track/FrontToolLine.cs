@@ -195,8 +195,10 @@ public static class FrontToolLine
     }
 
     /// <summary>An open pass's line bending tighter than this share of the tractor's turning radius
-    /// anywhere is not steered (<see cref="TightestBend"/>).</summary>
-    private const double TightestBendShare = 0.9;
+    /// anywhere is not steered (<see cref="TightestBend"/>), nor is the pivot's path of a turn planned
+    /// for a front implement bending tighter than this share of the U-turn radius. Not 1: the bend
+    /// is read over 2 m chords of a sampled, smoothed path, and reads a few per cent either way.</summary>
+    internal const double TightestBendShare = 0.9;
 
     /// <summary>The chord <see cref="TightestBend"/> measures a bend over, either side, m.</summary>
     private const double BendChord = 2.0;

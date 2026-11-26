@@ -1,5 +1,5 @@
 // AgOpenWeb
-// Copyright (C) 2026 AgOpenWeb Contributors
+// Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 using System;
@@ -68,9 +68,6 @@ public partial class YouTurnCreationService
 
     /// <summary>A front implement nearer the rear axle than this is planned for the pivot, m.</summary>
     internal const double MinFrontToolReach = 0.5;
-
-    /// <summary>A pivot path bending tighter than this share of the U-turn radius is not used.</summary>
-    private const double FrontToolTightestShare = 0.85;
 
     /// <summary>The most the pivot may still be beside the next pass where the turn's path ends, m.</summary>
     private const double FrontToolEndOffPass = 0.5;
@@ -159,7 +156,7 @@ public partial class YouTurnCreationService
         for (int i = 1; i < ahead.Count && want <= length + 1e-9; i++)
         {
             double dE = ahead[i].Easting - ahead[i - 1].Easting, dN = ahead[i].Northing - ahead[i - 1].Northing;
-            double len = Math.Sqrt(dE * dE + dN * dN);
+            double len = GeometryMath.Distance(ahead[i - 1], ahead[i]);
             if (len < 1e-9) continue;
             double heading = NormalizeHeading(Math.Atan2(dE, dN));
             for (; want <= walked + len + 1e-9 && want <= length + 1e-9; want += step)
@@ -212,7 +209,7 @@ public partial class YouTurnCreationService
         if (n < 3) return null;
 
         double tightest = FrontToolLine.TightestBend(pivot);
-        if (tightest < plan.PivotRadius * FrontToolTightestShare)
+        if (tightest < plan.PivotRadius * FrontToolLine.TightestBendShare)
         {
             _logger.LogDebug("[YouTurn] Planned for the front implement, the tractor would turn at {R:F1} m (U-turn radius {U:F1} m); planning for the pivot",
                 tightest, plan.PivotRadius);
@@ -221,7 +218,7 @@ public partial class YouTurnCreationService
 
         // Beside the path's last stretch: the reach times the sine of the tractor's angle to it.
         double dE = toolPath[n - 1].Easting - toolPath[n - 2].Easting, dN = toolPath[n - 1].Northing - toolPath[n - 2].Northing;
-        double len = Math.Sqrt(dE * dE + dN * dN);
+        double len = GeometryMath.Distance(toolPath[n - 2], toolPath[n - 1]);
         if (len > 1e-9)
         {
             double off = Math.Abs((pivot[n - 1].Easting - toolPath[n - 1].Easting) * dN - (pivot[n - 1].Northing - toolPath[n - 1].Northing) * dE) / len;

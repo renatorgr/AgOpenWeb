@@ -1000,12 +1000,15 @@ pass, and on along it for `SettleLeg`, 3 h + 4 m) and the way to the start of a 
 joins the pass where the tractor's way would, a reach more before the crop, and runs on until the tractor is on the
 pass too) are planned the same way. **Never no turn where there was one**: where no such turn is made (it does not fit,
 a hard fence or an obstacle stops it, the implement's centre would leave the field, or the tractor could not drive the
-pivot's path: a bend under 0.85 R, or more than 0.5 m beside the pass where the path ends, `PivotPathFor`), the turn is
+pivot's path: a bend under 0.9 R, the tolerance `FrontToolLine.TightestBend` is read with, or more than 0.5 m beside the pass where the path ends, `PivotPathFor`), the turn is
 planned for the pivot, as without the choice, and the log says so (`CreateTurnPath`, `CreateManualArcPath` and
 `PlanLineEntry` each try the implement first). A K-turn, the simple fallback and the S onto a line beside a fence are
 planned for the pivot. Rows wider than twice the implement's radius get the wide turn (`PlannedTurnRadius`). An implement
-shifted to one side is planned by the point ahead on the tractor's centre line (the pass lines are the tractor's). A
-turn planned and not yet driven is planned again when the choice or the reach changes (`_youTurnFrontReach`, `EndKey`).
+shifted to one side is planned by the point ahead on the tractor's centre line (the pass lines are the tractor's): its
+own centre runs beside that path by its offset and lands on its own pass (the passes are laid with the offset), and on
+a turn away from the side it is shifted to it goes that much past the turn line; the hard fence is checked with the real
+implement. A turn planned and not yet driven is planned again when the choice or the reach changes (`_youTurnFrontReach`:
+the plan's reach, 0 for the pivot; `EndKey`); a way to the start of a pass being driven is not, as a turn being driven.
 What changes on the ground (a tester's sprayer: an 8 m boom 4.7 m ahead, R 5.4 m, the turn line 1.5 m from the fence):
 planned for the pivot, the boom's centre went 1.75 m past the turn line (over the fence) and 1.7 m past the next pass,
 and came back to it at a 41° kink the steering can't follow; planned for the implement it stays inside the turn line and

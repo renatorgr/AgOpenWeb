@@ -1,5 +1,5 @@
 // AgOpenWeb
-// Copyright (C) 2026 AgOpenWeb Contributors
+// Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 using System;
@@ -108,7 +108,9 @@ public class FrontToolManualTurnTests
         Assert.Multiple(() =>
         {
             Assert.That((pivot[0].Easting, pivot[0].Northing), Is.EqualTo((0.0, 0.0)).Within(1e-6), "the path steered starts at the tractor");
-            Assert.That(tool.Max(p => p.Easting), Is.LessThan(next + Math.Max(0, 2 * ToolRadius - next) + 0.15),
+            // Rows nearer than the implement's circle: the bulb is that circle, centred between the
+            // two passes, so half of what the circle is wider than the rows lies past the next pass.
+            Assert.That(tool.Max(p => p.Easting), Is.LessThan(Math.Max(next, next / 2 + ToolRadius) + 0.15),
                 "the implement's centre goes no further across than the next pass (or its own circle, on rows nearer than that)");
             if (next >= 2 * ToolRadius)
                 Assert.That(tool.Max(p => p.Easting), Is.LessThan(next + 0.10), "never past the next pass");
@@ -145,7 +147,7 @@ public class FrontToolManualTurnTests
         var rear = creation.CreateManualArcPath(new Position(), 0, false, null,
             new GuidanceWorkingState { IsHeadingSameWay = true }, 1);
 
-        Assert.That(rear.Select(p => (p.Easting, p.Northing)), Is.EqualTo(off.Select(p => (p.Easting, p.Northing))));
+        Assert.That(rear.Select(p => (p.Easting, p.Northing, p.Heading)), Is.EqualTo(off.Select(p => (p.Easting, p.Northing, p.Heading))));
     }
 
     [Test]
@@ -172,7 +174,7 @@ public class FrontToolManualTurnTests
         var asToday = ManualTurn(forTool: false, 0, field, lastForPivot);
         var made = ManualTurn(forTool: true, 0, field, lastForPivot);
         Assert.That(_log.Lines, Has.Some.Contains("planning for the pivot"), "and the log says so");
-        Assert.That(made.Select(p => (p.Easting, p.Northing)), Is.EqualTo(asToday.Select(p => (p.Easting, p.Northing))));
+        Assert.That(made.Select(p => (p.Easting, p.Northing, p.Heading)), Is.EqualTo(asToday.Select(p => (p.Easting, p.Northing, p.Heading))));
     }
 
     // ---- the way to the start of a pass: a 30 m headland, the pass north along x = 0 ----
@@ -247,7 +249,7 @@ public class FrontToolManualTurnTests
             narrowest = headland;
             var asToday = Entry(forTool: false, -40, n, 0, headland, hard: true);
             Assert.That(asToday.Outcome, Is.EqualTo(LineEntryOutcome.Planned));
-            Assert.That(made.Path!.Select(p => (p.Easting, p.Northing)), Is.EqualTo(asToday.Path!.Select(p => (p.Easting, p.Northing))),
+            Assert.That(made.Path!.Select(p => (p.Easting, p.Northing, p.Heading)), Is.EqualTo(asToday.Path!.Select(p => (p.Easting, p.Northing, p.Heading))),
                 $"a {headland} m headland");
         }
         TestContext.Out.WriteLine($"the pivot's way in headlands down to {narrowest} m");
