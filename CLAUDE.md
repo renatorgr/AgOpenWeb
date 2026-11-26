@@ -1054,21 +1054,27 @@ pass 19 reaches 84 m: the U-turn at the end of the pass handed over 67 m past th
 through the middle of the same obstacle with room only on the other side (the pinned side needs more than
 `ObstacleDetour.MaxOffset`). Pass 17 was "blocked": "No room to go around Inner 5 on this pass: U-turn before it",
 the turn made before the obstacle and 319 m of the pass left to do. Now a pin whose obstacle the tractor has driven
-on past (`Pin.Passed`: all of the grown obstacle behind the pivot along the pass, the way the tractor moves, by
+on past (`Pin.Passed`: all of the grown obstacle behind the pivot along the pass, the way the tractor goes, by
 `PassedSlack`, 2 m, plus how far the rig reaches behind the pivot, `RigBehind`; measured along the way the pass
-runs by the obstacle, `PassHeadingBy`) holds only the pass being driven (a line within half a pass of it: a nudge,
-a snap), so the line under the tractor never changes. It holds no other pass: the planner's next pass is bent on
+runs by the obstacle, `PassHeadingBy`; going forward only: backing up, what trails is the tractor's front and a front
+implement, so the pipeline gives no heading then and nothing is passed) holds only the pass being driven (the line
+steered now, followed through its nudges and snaps: one within half a pass of the last), so the line under the tractor
+never changes. It holds no other pass: the planner's next pass is bent on
 its own side, and the pin is dropped when another pass is steered. `GoAroundPasses.LetGo` is called by the pipeline
 before it asks for the bend it steers, so the first bend on another pass is made without the pins let go there, as
-the planner's is. An obstacle already behind the tractor is not pinned; backed up beside it again, it is not passed any more.
-A turn started before the obstacle is passed keeps the pin, as before. **One object for both**: the pipeline takes
-the planner's `GoAroundPasses` (`YouTurnStateMachine.GoAround`) when the host gives it none. The heads give one to
-both; every scenario rig gave none, so each made its own, the planner never saw a pin, and on the harness host the
-same pass 17 was steered straight (blocked) and planned bent: no turn before the obstacle, and AutoSteer taken off
-by the hard obstacle guard 24 s on. Tests: `GoAroundPassesTests`
-(`A_pin_of_an_obstacle_driven_past_holds_the_pass_driven_and_no_other`,
-`An_obstacle_is_not_passed_while_the_rig_is_still_beside_it`, `An_obstacle_already_behind_the_tractor_is_not_pinned`),
-`GoAroundPinAfterObstaclePipelineTests`.
+the planner's is. An obstacle already behind the tractor is not pinned; backed up until the rig is beside it again, it
+is not passed any more. A turn started before the obstacle is passed keeps the pin, as before. A pin is kept by its
+obstacle's place in the field's list, with the obstacle's outline (`Pin.Outline`): an obstacle deleted, added before
+it, drawn again or given another choice puts another obstacle at that place, and the pin is let go at the next bend
+asked for (`DropPinsOfOtherObstacles`) instead of giving its side to that one. **One object for both**: the pipeline
+takes the planner's `GoAroundPasses` (`YouTurnStateMachine.GoAround`) when the host gives it none. The heads give one
+to both (a host that gives the pipeline another gets a warning in the log); every scenario rig gave none, so each made
+its own, the planner never saw a pin, and on the harness host the same pass 17 was steered straight (blocked) and
+planned bent: no turn before the obstacle, and AutoSteer taken off by the hard obstacle guard 24 s on. Tests:
+`GoAroundPassesTests` (`A_pin_of_an_obstacle_driven_past_holds_the_pass_driven_and_no_other`,
+`A_pin_of_an_obstacle_driven_past_still_holds_a_snap_of_the_pass_driven`,
+`An_obstacle_is_not_passed_while_the_rig_is_still_beside_it`, `An_obstacle_already_behind_the_tractor_is_not_pinned`,
+`A_pin_is_let_go_when_another_obstacle_takes_its_place_in_the_field_s_list`), `GoAroundPinAfterObstaclePipelineTests`.
 
 **Slowing down before a bend** (fork only). With AutoSteer on the line (Pure Pursuit), a bend round a Go
 around obstacle within 6 s of travel ahead (15 m at least) that the tractor is too fast for is told once each time

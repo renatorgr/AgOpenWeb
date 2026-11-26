@@ -371,6 +371,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
         _intents = intents;
         _headingFusion = headingFusion;
         _logger = logger;
+        if (youTurnStateMachine?.GoAround is { } planners && !ReferenceEquals(_goAround, planners))
+            _logger.LogWarning("[Go around] The pipeline and the U-turn planner were given two sets of bent passes: the planner does not see the sides the pipeline holds round an obstacle");
         _configStore = configStore;
         _positionEstimator = positionEstimator;
     }
@@ -2654,7 +2656,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
         var lapPoints = currentTrack.Points; // the pass before the bend: a lap's neck test reads it
         // The pins of obstacles left behind are let go before the bend is asked for: the first bend
         // on another pass is made without them, as the planner's is.
-        double travelHeading = _isReverse ? headingRad + Math.PI : headingRad;
+        // Backing up nothing is passed: what trails then is the tractor's front and a front implement.
+        double? travelHeading = _isReverse ? null : headingRad;
         _goAround.LetGo(track, distAway, driftedEasting, driftedNorthing, travelHeading);
         var bend = GoRoundBend(track, distAway, currentTrack.Points, boundary, report: true, Track.GoAroundPasses.Lap.Whole);
         var bent = bend != null && bend.GoneRound.Count > 0 ? bend.Points : null;

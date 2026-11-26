@@ -45,8 +45,10 @@ public sealed class GoAroundPasses
     // PassHeading: the way the pass runs by the obstacle (PassHeadingBy), and From and To how far the
     // grown obstacle reaches along it, back and on from its centre.
     // Passed: the tractor has driven on past it, and the pin holds only the pass being driven.
+    // Outline: the obstacle's own outline when the pin was taken (BoundaryPolygon.OutlineStamp; 0
+    // when the field was not known), since a pin is kept by the obstacle's place in the field's list.
     private sealed record Pin(int Side, IReadOnlyList<Vec2> Fence, double Reach, double CentreE, double CentreN, double Heading,
-        double PassHeading, double From, double To, bool Passed = false);
+        double PassHeading, double From, double To, long Outline, bool Passed = false);
 
     // A pin lets go when the tractor is this far over on the other side of the obstacle's centre.
     private const double SideSlack = 0.5;
@@ -65,6 +67,8 @@ public sealed class GoAroundPasses
     private IReadOnlyDictionary<int, int>? _pinSides;
     // The pins for any other pass: those of obstacles not passed yet.
     private IReadOnlyDictionary<int, int>? _otherPassPinSides;
+    // The field of the last bend asked for: a pin taken on that bend is of an obstacle of it.
+    private Boundary? _field;
 
     // The Go around obstacles grown by half the tractor's track, for the straight-ahead check.
     private (Boundary? Boundary, long Stamp, double Grow, List<(int Inner, List<Vec2> Ring)> List) _ahead = (null, 0, 0, new());
@@ -183,9 +187,31 @@ public sealed class GoAroundPasses
     {
         if (!HasGoRound(boundary)) return null;
         if (track.IsClosed && lap == Lap.None) return null;
+        _field = boundary;
+        if (_pins.Count > 0) DropPinsOfOtherObstacles(boundary!);
         var pins = !ReferenceEquals(track, _pinsTrack) ? null : IsPassDriven(distAway) ? _pinSides : _otherPassPinSides;
         return _detour.For(track, distAway, pass, boundary, KeepOut, Radius, Margin, pins, track.IsClosed && lap == Lap.Whole);
     }
+
+    // A pin is kept by its obstacle's place in the field's list, and the side it holds is given to
+    // whatever obstacle is at that place. With an obstacle deleted, added before it, drawn again or
+    // given another choice, that is another obstacle, or the same one with another outline: the
+    // pin is let go (the tractor beside it still is pinned again from the bend steered).
+    private void DropPinsOfOtherObstacles(Boundary boundary)
+    {
+        List<int>? gone = null;
+        foreach (var (inner, pin) in _pins)
+            if (pin.Outline != 0 && OutlineOf(boundary, inner) != pin.Outline) (gone ??= new List<int>()).Add(inner);
+        if (gone == null) return;
+        foreach (int inner in gone) _pins.Remove(inner);
+        PinsChanged();
+    }
+
+    // The outline of the Go around obstacle at this place in the field's list; 0 with none there.
+    private static long OutlineOf(Boundary? boundary, int inner) =>
+        boundary != null && inner >= 0 && inner < boundary.InnerBoundaries.Count
+        && boundary.InnerBoundaries[inner] is { IsValid: true, AtObstacle: ObstacleAction.GoRound } obstacle
+            ? obstacle.OutlineStamp : 0;
 
     /// <summary>
     /// The pass bent, or the pass itself: for the planner, which walks whatever line it gets.
@@ -211,8 +237,9 @@ public sealed class GoAroundPasses
     /// (<see cref="PassedSlack"/>) keeps its pin for that pass only (<see cref="LetGo"/>).
     /// </summary>
     /// <param name="distAway">The pass steered: its offset from the track.</param>
-    /// <param name="travelHeading">The way the tractor is moving, radians (its heading, turned
-    /// round in reverse); null when not known, and then no obstacle counts as passed.</param>
+    /// <param name="travelHeading">The tractor's heading going forward, radians; null backing up or
+    /// when not known, and then no obstacle is newly counted as passed (backing up, what trails is
+    /// the tractor's front and a front implement, which <see cref="RigBehind"/> does not hold).</param>
     public void Steered(Models.Track.Track track, double distAway, ObstacleDetour.Bend? bend, double easting, double northing,
         double? travelHeading)
     {
@@ -237,7 +264,7 @@ public sealed class GoAroundPasses
                 if (Lateral(cE, cN, heading, easting, northing) * r.Side <= 0) continue;
                 double passHeading = PassHeadingBy(bend.Points, r.Fence, heading);
                 var (from, to) = Along(r.Fence, cE, cN, passHeading);
-                var pin = new Pin(r.Side, r.Fence, r.Reach, cE, cN, heading, passHeading, from, to);
+                var pin = new Pin(r.Side, r.Fence, r.Reach, cE, cN, heading, passHeading, from, to, OutlineOf(_field, r.InnerIndex));
                 // Past it already, on the way back to the pass: nothing left to hold.
                 if (IsPassed(pin, AlongPass(pin, easting, northing), travelHeading)) continue;
                 _pins[r.InnerIndex] = pin;
@@ -284,9 +311,10 @@ public sealed class GoAroundPasses
                 changed = true;
                 continue;
             }
-            // Passed, until the tractor is back beside the obstacle itself (backed up to it).
+            // Passed, until the rig is back beside the obstacle itself (backed up to it).
             double along = AlongPass(pin, easting, northing);
-            bool passed = pin.Passed ? along < pin.From || along > pin.To : IsPassed(pin, along, travelHeading);
+            double rig = RigBehind;
+            bool passed = pin.Passed ? along < pin.From - rig || along > pin.To + rig : IsPassed(pin, along, travelHeading);
             if (passed != pin.Passed)
             {
                 _pins[inner] = pin with { Passed = passed };
@@ -322,7 +350,8 @@ public sealed class GoAroundPasses
     }
 
     // Whether the tractor has driven on past the pinned obstacle: all of it behind the rig along
-    // the pass, the way the tractor is moving. Across the pass (in a turn) nothing is judged.
+    // the pass, the way the tractor is going, forward. Across the pass (in a turn) and backing up
+    // nothing is judged.
     private bool IsPassed(Pin pin, double along, double? travelHeading)
     {
         if (travelHeading is not { } travel || !double.IsFinite(travel)) return false;
