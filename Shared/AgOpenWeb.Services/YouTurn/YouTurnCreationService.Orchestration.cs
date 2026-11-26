@@ -126,6 +126,10 @@ public partial class YouTurnCreationService
         _ => YouTurnType.SagittaStyle,
     };
 
+    /// <summary>How far a turn may be seated back from the end of its pass to keep the implement off a
+    /// hard fence, m (an obstacle may seat it further back).</summary>
+    private const double MaxExtraSetback = 30.0;
+
     /// <summary>How many times <see cref="CreateTurnPath"/> was called: the tests that hold how often a turn is built.</summary>
     internal int TurnPathBuilds { get; private set; }
 
@@ -218,7 +222,6 @@ public partial class YouTurnCreationService
             config.Tool.Length, clearanceMargin);
 
         const double SetbackStep = 0.5;
-        const double MaxExtraSetback = 30.0;
         // A turn seated back to clear a hard boundary must still start this far ahead of the tractor.
         const double MinArcStartAhead = 2.0;
         // The step a turn is seated further back by when it lands on a bend of the next pass or
@@ -242,6 +245,10 @@ public partial class YouTurnCreationService
         int? turnLineEnd = null;
         // The second try after a wide turn of no U-turn's shape: the omega turn (see below).
         bool omegaOnly = false;
+        // The turn area of the first try, the turn lines where they are: a try with them moved in
+        // moves the other end of the next pass in too, which is not where that pass ends
+        // (FrontToolPlan.NextTurnRoom).
+        Func<Vec3, int>? turnAreaAsItIs = null;
 
         while (true)
         {
@@ -258,6 +265,7 @@ public partial class YouTurnCreationService
             }
             if (extraSetback > 0) input.TurnLineEndIndex = turnLineEnd;
             input.NoWideTurn = omegaOnly;
+            turnAreaAsItIs ??= input.IsPointInsideTurnArea;
 
             var output = CreateTurn(input);
             if (turnLineEnd == null && output.Success && output.TurnLineEndIndex >= 0)
@@ -435,6 +443,15 @@ public partial class YouTurnCreationService
                 {
                     var pivotPath = PivotPathFor(path, plan);
                     if (pivotPath == null) return new TurnPathResult(null, UsedFallback: false);
+                    // The turn at the other end of the next pass must still have its room
+                    // (FrontToolPlan.NextTurnRoom): on a short pass, for the pivot.
+                    double passLeft = PassLeftAfter(pivotPath, _bentDestination, p => turnAreaAsItIs(p) == 0, plan.NextTurnRoom);
+                    if (passLeft < plan.NextTurnRoom)
+                    {
+                        _logger.LogDebug("[YouTurn] Planned for the front implement, the turn would end with {L:F1} m of the next pass left ({N:F1} m needed for the turn at its other end); planning for the pivot",
+                            passLeft, plan.NextTurnRoom);
+                        return new TurnPathResult(null, UsedFallback: false);
+                    }
                     if (output.ArcStart is { } toolArc)
                     {
                         toolLeavesPass = toolArc;
@@ -1549,6 +1566,24 @@ public partial class YouTurnCreationService
             {
                 path.Clear();
                 return path;
+            }
+            // As the automatic turn: the turn at the other end of the next pass must still have
+            // its room (FrontToolPlan.NextTurnRoom), here from the fence and the obstacles a turn
+            // may not drive through, the turn line being the U-turn distance inside them.
+            if (inField != null && inField.IsValid)
+            {
+                double room = plan.NextTurnRoom + Math.Max(0.0, config.Guidance.UTurnDistanceFromBoundary);
+                double passLeft = PassLeftAfter(pivotPath, targetPass?.Points,
+                    p => inField.IsPointInside(p.Easting, p.Northing)
+                        && !boundary!.InnerBoundaries.Any(b => b.IsValid && !b.IsDriveThrough && b.IsPointInside(p.Easting, p.Northing)),
+                    room);
+                if (passLeft < room)
+                {
+                    _logger.LogDebug("[ManualYouTurn] Planned for the front implement, the turn would end with {L:F1} m of the next pass left before the fence or an obstacle ({N:F1} m needed for the turn at its other end)",
+                        passLeft, room);
+                    path.Clear();
+                    return path;
+                }
             }
             path = pivotPath;
         }

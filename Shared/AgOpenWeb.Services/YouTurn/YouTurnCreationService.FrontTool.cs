@@ -35,6 +35,13 @@ namespace AgOpenWeb.Services.YouTurn;
 /// before. After the implement's arc the tractor is still at an angle to the pass (41° above,
 /// 16° a reach on, 6° two reaches on), so the exit leg is at least <see cref="FrontToolPlan.MinExitLeg"/>.
 ///
+/// That longer exit takes its length from the next pass. On a short pass it left the turn at the
+/// other end no room to start ahead of the tractor (a tester's field, the farm job harness: the
+/// next turn would have started 3.3 m behind the tractor, "U-turn blocked", where the pivot's
+/// turn left room). So the turn is planned for the implement only with
+/// <see cref="FrontToolPlan.NextTurnRoom"/> of the next pass left past its end; on a shorter
+/// pass, for the pivot.
+///
 /// An implement shifted to one side is planned by the point ahead on the tractor's centre line:
 /// the pass lines the turn joins are already the tractor's (the tool offset beside them).
 /// A K-turn (it reverses) is planned for the pivot.
@@ -64,6 +71,17 @@ public partial class YouTurnCreationService
         /// before the path's end.
         /// </summary>
         public double SettleLeg => 3.0 * Reach + 4.0;
+
+        /// <summary>
+        /// How much of the next pass must be left inside the turn area past the end of the turn's
+        /// path for the turn to be planned for the implement, m. Its path goes on along the next
+        /// pass further than the pivot's turn does (<see cref="MinExitLeg"/>), and the turn at the
+        /// other end of that pass must still start ahead of the tractor: its arc starts a radius
+        /// before the turn line, seated back from a hard fence by up to
+        /// <see cref="MaxExtraSetback"/>. With less than that left, the turn is planned for the
+        /// pivot, as without the choice.
+        /// </summary>
+        public double NextTurnRoom => PivotRadius + MaxExtraSetback;
     }
 
     /// <summary>A front implement nearer the rear axle than this is planned for the pivot, m.</summary>
@@ -112,12 +130,18 @@ public partial class YouTurnCreationService
     /// heading the way it is driven) for <paramref name="length"/> m, a point every half metre:
     /// along the pass's own points when it is a curve, straight on past its end and along an AB pass.
     /// </summary>
-    private static void RunOnAlongPass(List<Vec3> path, Models.Track.Track? pass, double length)
+    private static void RunOnAlongPass(List<Vec3> path, Models.Track.Track? pass, double length) =>
+        RunOnAlongPass(path, pass?.Points, length);
+
+    /// <summary>The distance between the points <see cref="RunOnAlongPass(List{Vec3}, IReadOnlyList{Vec3}?, double)"/> adds, m.</summary>
+    private const double RunOnStep = 0.5;
+
+    /// <inheritdoc cref="RunOnAlongPass(List{Vec3}, Models.Track.Track?, double)"/>
+    private static void RunOnAlongPass(List<Vec3> path, IReadOnlyList<Vec3>? pts, double length)
     {
-        const double step = 0.5;
+        const double step = RunOnStep;
         var from = path[^1];
         var ahead = new List<Vec3> { from };
-        var pts = pass?.Points;
         if (pts != null && pts.Count > 2)
         {
             // The stretch of the curve beside the point, and which way along it the point heads.
@@ -166,6 +190,31 @@ public partial class YouTurnCreationService
             }
             walked += len;
         }
+    }
+
+    /// <summary>
+    /// How far the next pass goes on, past the end of a turn's <paramref name="path"/>, before it
+    /// leaves the area <paramref name="inside"/> tells (the turn area; for a manual turn the
+    /// field), m; looked at up to <paramref name="upTo"/>, which is the answer when it does not
+    /// leave it within that. Walked along <paramref name="pass"/> the way the path ends
+    /// (<see cref="RunOnAlongPass(List{Vec3}, IReadOnlyList{Vec3}?, double)"/>).
+    /// </summary>
+    private static double PassLeftAfter(IReadOnlyList<Vec3> path, IReadOnlyList<Vec3>? pass, Func<Vec3, bool> inside, double upTo)
+    {
+        var end = path[^1];
+        // The way the path ends: its last stretch that has a length.
+        double heading = end.Heading;
+        for (int i = path.Count - 2; i >= 0; i--)
+        {
+            if (GeometryMath.DistanceSquared(path[i], end) < 1e-6) continue;
+            heading = Math.Atan2(end.Easting - path[i].Easting, end.Northing - path[i].Northing);
+            break;
+        }
+        var ahead = new List<Vec3> { new(end.Easting, end.Northing, heading) };
+        RunOnAlongPass(ahead, pass, upTo);
+        for (int i = 0; i < ahead.Count; i++)
+            if (!inside(ahead[i])) return Math.Max(0, i - 1) * RunOnStep;
+        return upTo;
     }
 
     /// <summary>

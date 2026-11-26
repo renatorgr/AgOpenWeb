@@ -989,7 +989,7 @@ Tests: `TrailedToolPathOnMapTests` (RemoteServer).
 
 **The U-turn planned for a front implement's centre** (U-turn tab › *U-turns planned for*: The tractor / The front
 implement, shown with a front tool; `GuidanceConfig.UTurnForFrontTool`, `uturn.frontTool`, saved with the tool profile
-as `youTurn.forFrontTool`, the last byte of the Config frame's U-turn part; **off by default**; fork only). With it on and
+as `youTurn.forFrontTool` (an AgOpenGPS profile read in has it off, `AgOpenGpsSettings.ApplyToStore`), the last byte of the Config frame's U-turn part; **off by default**; fork only). With it on and
 a front-fixed tool 0.5 m or more ahead (`YouTurnCreationService.FrontToolPlanFor`, `FrontToolPlan`,
 `YouTurnCreationService.FrontTool.cs`), the automatic turn's shape (the legs along the two passes, the arc, a wide turn's
 run along the turn line) is the path of the point `h` ahead on the tractor's centre line, at √(R² + h²), the radius of its
@@ -1012,7 +1012,15 @@ pass too) are planned the same way. **Never no turn where there was one**: where
 a hard fence or an obstacle stops it, the implement's centre would leave the field, or the tractor could not drive the
 pivot's path: a bend under 0.9 R, the tolerance `FrontToolLine.TightestBend` is read with, or more than 0.5 m beside the pass where the path ends, `PivotPathFor`), the turn is
 planned for the pivot, as without the choice, and the log says so (`CreateTurnPath`, `CreateManualArcPath` and
-`PlanLineEntry` each try the implement first). A K-turn, the simple fallback and the S onto a line beside a fence are
+`PlanLineEntry` each try the implement first). **Not onto a short pass** either: the implement's turn goes on along the
+next pass further than the pivot's (7 m on the tester's rig), and the turn at the other end of that pass must still start
+ahead of the tractor. An automatic or manual turn is the implement's only with `FrontToolPlan.NextTurnRoom` (the U-turn
+radius plus the 30 m a turn may be seated back from a hard fence, `MaxExtraSetback`: 35.4 m) of the next pass left
+inside the turn area past the end of its path (`PassLeftAfter`, the turn lines where they are; a manual turn: from the
+fence and the obstacles, the U-turn distance more); on a shorter pass, for the pivot. On a tester's field (Eucaliptal,
+the farm job harness, 26 Nov 2026) the turn onto a very short pass handed over to the line later than the pivot's does,
+the next turn would have started 3.3 m behind the tractor (2 m ahead is the least), and the job stopped with "U-turn
+blocked", where with the choice off both turns were made. A K-turn, the simple fallback and the S onto a line beside a fence are
 planned for the pivot. Rows wider than twice the implement's radius get the wide turn (`PlannedTurnRadius`). An implement
 shifted to one side is planned by the point ahead on the tractor's centre line (the pass lines are the tractor's): its
 own centre runs beside that path by its offset and lands on its own pass (the passes are laid with the offset), and on
