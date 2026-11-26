@@ -174,9 +174,10 @@ public sealed class SceneProjector : System.IDisposable
             ? RecordedPathApproach()?.ToArray() : _state.YouTurn.TurnPath?.ToArray();
         if (tp is { Length: >= 2 })
         {
-            // A U-turn is drawn where a front implement goes; the way to a recorded path as it is.
+            // A U-turn is drawn where a front or a trailed implement goes; the way to a recorded
+            // path as it is.
             IReadOnlyList<AgOpenWeb.Models.Base.Vec3> drawn =
-                _state.RecordedPath.IsDrivingRecordedPath ? tp : WhereTheFrontToolGoes(tp);
+                _state.RecordedPath.IsDrivingRecordedPath ? tp : WhereTheToolGoes(tp);
             uTurnPath = drawn.Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList();
         }
 
@@ -274,7 +275,7 @@ public sealed class SceneProjector : System.IDisposable
             guideLines,
             _state.Guidance.ToolPass?.Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList(),
             _state.Operation.LineEntryPath?.ToArray() is { } entry
-                ? WhereTheFrontToolGoes(entry).Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList() : null,
+                ? WhereTheToolGoes(entry).Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList() : null,
             _state.Operation.LineEntryPath != null ? _state.Operation.LineEntryOfferPass : null,
             _state.FieldTools.AreaSelection?.Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList());
     }
@@ -285,18 +286,31 @@ public sealed class SceneProjector : System.IDisposable
         AgOpenWeb.Models.Tool.RigGeometry.Mount(_config.Tool) == AgOpenWeb.Models.Tool.ToolMount.FrontFixed
             ? (AgOpenWeb.Models.Tool.RigGeometry.FrontToolReach(_config.Vehicle, _config.Tool), _config.Tool.Offset) : null;
 
+    // A trailed or TBT implement's geometry (its working centre is drawn, so no width); null for
+    // an implement fixed to the tractor.
+    private AgOpenWeb.Models.Tool.ToolGeometry? TrailedTool() =>
+        AgOpenWeb.Models.Tool.RigGeometry.Mount(_config.Tool) is AgOpenWeb.Models.Tool.ToolMount.Trailing or AgOpenWeb.Models.Tool.ToolMount.TBT
+            ? AgOpenWeb.Models.Tool.RigGeometry.Geometry(_config.Vehicle, _config.Tool, 0) : null;
+
     /// <summary>
     /// A path planned and driven for the pivot (a U-turn, the way onto a pass, the S onto a line
-    /// beside a fence), as it is drawn: with a front implement (a combine's header too) where the
-    /// implement's working centre goes, ahead of the pivot and outside every bend of the path
-    /// (and beside it, with the tool's offset); with any other implement the path itself. Drawn for the pivot, the line ran through the
+    /// beside a fence), as it is drawn: where the implement's working centre goes. With a front
+    /// implement (a combine's header too) that is ahead of the pivot and outside every bend of the
+    /// path (and beside it, with the tool's offset): drawn for the pivot, the line ran through the
     /// rear axle and an 8 m front boom 4.7 m ahead was 1.8 m beside it round a 5.4 m turn (a
-    /// tester's simulator, 26 Nov 2026). Only the drawing: the path steered is the pivot's.
-    /// Fork only.
+    /// tester's simulator, 26 Nov 2026). With a trailed or TBT implement it is behind the hitch and
+    /// inside every bend, coming onto the next pass gradually (<see cref="AgOpenWeb.Models.Tool.ImplementSweptPath"/>,
+    /// the model the U-turn's own checks follow the implement with, in line behind the path's
+    /// first point): a drill whose discs are 2.55 m behind the hitch pin runs 1.1 m inside a 6 m
+    /// turn. With an implement fixed behind the tractor the path itself. Only the drawing: the
+    /// path steered is the pivot's. Fork only.
     /// </summary>
-    private IReadOnlyList<AgOpenWeb.Models.Base.Vec3> WhereTheFrontToolGoes(IReadOnlyList<AgOpenWeb.Models.Base.Vec3> pivotPath)
+    private IReadOnlyList<AgOpenWeb.Models.Base.Vec3> WhereTheToolGoes(IReadOnlyList<AgOpenWeb.Models.Base.Vec3> pivotPath)
     {
-        if (FrontToolCentre() is not { } c || pivotPath.Count < 2 || (c.Ahead == 0 && c.Right == 0)) return pivotPath;
+        if (pivotPath.Count < 2) return pivotPath;
+        if (TrailedTool() is { } trailed)
+            return AgOpenWeb.Models.Tool.ImplementSweptPath.Compute(pivotPath, trailed).ToolCenter;
+        if (FrontToolCentre() is not { } c || (c.Ahead == 0 && c.Right == 0)) return pivotPath;
         return AgOpenWeb.Models.Tool.RigGeometry.PathOfPointAhead(pivotPath, c.Ahead, c.Right);
     }
 
@@ -1179,6 +1193,14 @@ public sealed class SceneProjector : System.IDisposable
         var ftc = FrontToolCentre();
         h = h * 31 + (ftc is { } fc ? System.BitConverter.DoubleToInt64Bits(fc.Ahead) : -1);
         h = h * 31 + (ftc is { } fo ? System.BitConverter.DoubleToInt64Bits(fo.Right) : -1);
+        // A trailed implement's: the same paths are drawn where its working centre goes.
+        if (TrailedTool() is { } tt)
+        {
+            h = h * 31 + (int)tt.Mount;
+            foreach (double v in new[] { tt.AttachX, tt.TrailingHitchLength, tt.TrailingToolToPivotLength, tt.TankTrailingHitchLength, tt.Offset })
+                h = h * 31 + System.BitConverter.DoubleToInt64Bits(v);
+        }
+        else h = h * 31 - 1;
 
         // The way to the start of the pass (fork only): a new list per plan; offered or driven.
         var lep = _state.Operation.LineEntryPath;

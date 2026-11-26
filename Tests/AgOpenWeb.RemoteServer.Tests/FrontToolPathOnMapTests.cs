@@ -86,12 +86,11 @@ public class FrontToolPathOnMapTests
         Assert.That(drawn[0].N, Is.EqualTo(Reach).Within(1e-9));
     }
 
-    [TestCase("rear")]
-    [TestCase("trailing")]
-    [TestCase("tbt")]
-    public void With_any_other_implement_the_paths_are_drawn_as_planned(string toolType)
+    // A trailed implement's working centre is drawn too: TrailedToolPathOnMapTests.
+    [Test]
+    public void With_an_implement_fixed_behind_the_tractor_the_paths_are_drawn_as_planned()
     {
-        var (projector, state, _) = Make(toolType);
+        var (projector, state, _) = Make("rear");
         state.YouTurn.TurnPath = North();
         state.Operation.LineEntryPath = North();
 
