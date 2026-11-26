@@ -88,18 +88,44 @@ public class GpsIngestTests
     [Test]
     public void A_fix_made_of_several_sentences_carries_the_time_of_its_position_sentences()
     {
-        // GGA + VTG + HPR: the fix goes out on the HPR, eight of them once the family is learned.
+        // GGA + VTG + HPR. While the family is being learned a fix goes out late, on the first
+        // sentence of the next epoch, which carries the next time; once it is learned, each on its
+        // own HPR. Either way the fix has the time of its own GGA.
         for (int e = 0; e < 8; e++)
         {
             Feed(Encoding.ASCII.GetString(NmeaEpochAssemblerTests.Line(NmeaEpochAssemblerTests.Gga(e))) + "\r\n");
             Feed(Encoding.ASCII.GetString(NmeaEpochAssemblerTests.Line(NmeaEpochAssemblerTests.Vtg())) + "\r\n");
             Feed(Encoding.ASCII.GetString(NmeaEpochAssemblerTests.Line(NmeaEpochAssemblerTests.Hpr(e))) + "\r\n");
         }
-        // While the family is being learned a fix goes out late, on the next epoch's first
-        // sentence; once it is learned, each on its own HPR.
-        int last = (12 * 3600 + 34 * 60 + 56) * 100 + 70;
-        Assert.That(_fixTimes.TakeLast(4), Is.EqualTo(new[] { last - 30, last - 20, last - 10, last }),
-            "a tenth of a second from one fix to the next, the last epoch's 12:34:56.70; all: " + string.Join(" ", _fixTimes));
+        int first = (12 * 3600 + 34 * 60 + 56) * 100;
+        Assert.That(_fixTimes, Is.EqualTo(Enumerable.Range(0, 8).Select(e => first + e * 10)),
+            "every epoch's own time, a tenth of a second from one fix to the next");
+    }
+
+    [Test]
+    public void A_fix_closed_by_the_next_epoch_s_first_sentence_carries_its_own_time()
+    {
+        // GGA only, not learned yet: each fix goes out when the next GGA arrives. It took that next
+        // GGA's time, a tenth of a second on.
+        for (int e = 0; e < 3; e++)
+            Feed(Encoding.ASCII.GetString(NmeaEpochAssemblerTests.Line(NmeaEpochAssemblerTests.Gga(e))) + "\r\n");
+        int first = (12 * 3600 + 34 * 60 + 56) * 100;
+        Assert.That(_fixTimes, Is.EqualTo(new[] { first, first + 10 }), "the fixes of 12:34:56.00 and .10, sent on the GGA of .10 and .20");
+    }
+
+    [Test]
+    public void A_fix_with_no_time_does_not_take_the_time_of_a_sentence_before_it()
+    {
+        // A GGA that never becomes a fix (its epoch still open), then a fix whose sentence has no time.
+        Feed(Encoding.ASCII.GetString(NmeaEpochAssemblerTests.Line(NmeaEpochAssemblerTests.Gga(0))) + "\r\n");
+        Feed(WithChecksum("PANDA,,4806.0000,N,01131.0000,E,4,12,0.9,100.0,0.0,5.5,900,12,0,0.00") + "\r\n");
+        Assert.That(_published, Has.Count.EqualTo(1), "the PANDA is the fix");
+        Assert.That(_fixTimes, Is.EqualTo(new[] { -1 }));
+
+        // And a fix with a time, then one without: none again.
+        Feed(Panda(48.1) + "\r\n");
+        Feed(WithChecksum("PANDA,,4806.0000,N,01131.0000,E,4,12,0.9,100.0,0.0,5.5,900,12,0,0.00") + "\r\n");
+        Assert.That(_fixTimes, Is.EqualTo(new[] { -1, (12 * 3600 + 34 * 60 + 56) * 100, -1 }));
     }
 
     [Test]

@@ -27,8 +27,8 @@ public class AutoSteerService : IAutoSteerService
 {
     // Core state - single instance, updated in place
     private VehicleState _state;
-    // The receiver's time of day (1/100 s) on the sentences of the fix being read; -1 = none
-    // (GpsData.FixTimeCentiseconds). Under _gpsIngestLock.
+    // The receiver's time of day (1/100 s) on the position sentence of the fix being published;
+    // -1 = none (GpsData.FixTimeCentiseconds). Set for every fix. Under _gpsIngestLock.
     private int _fixTimeCentiseconds = -1;
 
     // Dependencies
@@ -845,17 +845,11 @@ public class AutoSteerService : IAutoSteerService
                     // position between the simulator's.
                     bool simulatorIsSource = _simulatorIsSource;
                     var probe = simulatorIsSource ? _state : default;
+                    long epochsBefore = GpsEpochs.EpochsEmitted;
                     bool parsed = simulatorIsSource
                         ? NmeaParserServiceFast.TryParseIntoState(line, ref probe, _configStore, GpsEpochs, out var result)
                         : NmeaParserServiceFast.TryParseIntoState(line, ref _state, _configStore, GpsEpochs, out result);
                     GpsSentences.Record(line, result);
-                    // The receiver's own time on this fix's position sentence (a member of its epoch
-                    // too: GGA carries it, the HDT that completes the fix does not). Fork only.
-                    if (result is AgOpenWeb.Models.GPS.NmeaParseResult.Accepted or AgOpenWeb.Models.GPS.NmeaParseResult.EpochMember)
-                    {
-                        int fixTime = DataQuality.FixTimeSensor.TimeOfDay(line);
-                        if (fixTime >= 0) _fixTimeCentiseconds = fixTime;
-                    }
                     if (!parsed)
                     {
                         if (result != AgOpenWeb.Models.GPS.NmeaParseResult.EpochMember) _parseFailures++;
@@ -863,13 +857,16 @@ public class AutoSteerService : IAutoSteerService
                     }
                     if (simulatorIsSource)
                     {
-                        if (probe.FixQuality <= 0)
-                        {
-                            _fixTimeCentiseconds = -1;
-                            continue;
-                        }
+                        if (probe.FixQuality <= 0) continue;
                         _state = probe;
                     }
+                    // The receiver's own time on this fix's position sentence, set for every fix (none
+                    // is -1, never the time of a sentence before). A fix of several sentences has its
+                    // own epoch's time, not this sentence's: an epoch can be closed by the first
+                    // sentence of the next one, which carries the next time. Fork only.
+                    _fixTimeCentiseconds = GpsEpochs.EpochsEmitted != epochsBefore
+                        ? GpsEpochs.LastFixTimeCentiseconds
+                        : DataQuality.FixTimeSensor.TimeOfDay(line);
 
                     // A real fix parsed from inbound NMEA: mark the live-GPS gate so the
                     // internal simulator stays mutually exclusive with a live source (it stops,
@@ -1010,7 +1007,6 @@ public class AutoSteerService : IAutoSteerService
             Timestamp = DateTime.UtcNow,
             FixTimeCentiseconds = _fixTimeCentiseconds,
         };
-        _fixTimeCentiseconds = -1;
         _gpsService.UpdateGpsData(gpsData);
     }
 

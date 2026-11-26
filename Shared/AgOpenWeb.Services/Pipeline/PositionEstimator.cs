@@ -34,6 +34,10 @@ public sealed class PositionEstimator : IPositionEstimator
 
     private const int DayCentiseconds = 24 * 60 * 60 * 100;
 
+    /// <summary>The longest time between two fixes taken from the receiver's clock, in 1/100 s (2 s);
+    /// further apart, the clock was set or fixes were lost, and the time between arrivals stands.</summary>
+    public const int MaxFixIntervalCentiseconds = 200;
+
     public double MaxStaleSeconds { get; set; } = 1.0;
 
     // Low-pass weight for the IMU-less DERIVED yaw rate. The raw rate is a single-pair
@@ -100,7 +104,8 @@ public sealed class PositionEstimator : IPositionEstimator
     /// The seconds between two fixes by the receiver's own clock (<see cref="PoseSnapshot.FixTimeCentiseconds"/>),
     /// or 0 when it is not to be used and the time between their arrivals stands, as before: a fix
     /// with no time, a time that is not newer (the same fix again, an older one, a receiver that does
-    /// not know the time yet), and the first <see cref="TimedFixesToTrust"/> fixes after any of those.
+    /// not know the time yet) or more than <see cref="MaxFixIntervalCentiseconds"/> on (a clock that
+    /// was set, fixes lost), and the first <see cref="TimedFixesToTrust"/> fixes after any of those.
     /// The first rate measured by the receiver's time starts the rate's filter afresh.
     /// </summary>
     private double FixInterval(PoseSnapshot? prev, PoseSnapshot now)
@@ -113,7 +118,10 @@ public sealed class PositionEstimator : IPositionEstimator
         int apart = now.FixTimeCentiseconds - prev.FixTimeCentiseconds;
         // Midnight: the time of day starts again, which is newer.
         if (apart < -DayCentiseconds / 2) apart += DayCentiseconds;
-        if (apart <= 0 || apart > DayCentiseconds / 2)
+        // Not newer, or further on than fixes are apart: a receiver that sets its clock (the time
+        // from the satellites after a start on its own clock) jumps on by seconds or hours, and over
+        // that the turn in a tenth of a second would read as no turn at all.
+        if (apart <= 0 || apart > MaxFixIntervalCentiseconds)
         {
             _timedInARow = 0;
             return 0;

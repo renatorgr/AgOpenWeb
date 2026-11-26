@@ -333,6 +333,46 @@ public class PositionEstimatorTests
     }
 
     [Test]
+    public void A_clock_that_jumps_on_is_not_the_time_between_two_fixes()
+    {
+        // A receiver that starts on its own clock and then takes the satellites' time jumps on by
+        // seconds or hours between two fixes a tenth of a second apart. Over that jump the bend
+        // would read as no turn at all: the arrivals stand for it, and the receiver's time is
+        // used again once ten fixes have followed each other on the new time.
+        var bend = new Bend();
+        bend.Fixes(20, 0.1);
+        Assert.That(bend.Rate, Is.EqualTo(BendRate).Within(Math.Abs(BendRate) * 0.01));
+
+        bend.FixTime += 3 * 360000;   // three hours on
+        bend.Fixes(1, 0.1);
+        Assert.That(bend.Rate, Is.EqualTo(BendRate).Within(Math.Abs(BendRate) * 0.01),
+            "the heading's step over the tenth of a second it took to arrive, not over three hours");
+
+        bend.FixTime += PositionEstimator.MaxFixIntervalCentiseconds;   // 2.1 s on with the next fix's tenth
+        bend.Fixes(1, 0.1);
+        Assert.That(bend.Rate, Is.EqualTo(BendRate).Within(Math.Abs(BendRate) * 0.01), "2.1 s on is a jump too");
+
+        // On the new time, arriving together: over arrivals until ten have followed each other.
+        bend.Fixes(PositionEstimator.TimedFixesToTrust, 0.001);
+        Assert.That(Math.Abs(bend.Rate), Is.GreaterThan(Math.Abs(BendRate) * 10), "counted anew after the jump");
+        bend.Fixes(1, 0.001);
+        Assert.That(bend.Rate, Is.EqualTo(BendRate).Within(Math.Abs(BendRate) * 0.01), "the receiver's time again");
+    }
+
+    [Test]
+    public void Fixes_up_to_two_seconds_apart_are_timed_by_the_receiver()
+    {
+        // A receiver at 1 Hz, or fixes left out while a cycle ran: still the receiver's time.
+        var bend = new Bend();
+        bend.Fixes(20, 0.1);
+        bend.FixTime += PositionEstimator.MaxFixIntervalCentiseconds - 10;   // 2.0 s on with the next fix's tenth
+        bend.Fixes(1, 0.001);
+        double over2s = StepRad / 2.0;
+        Assert.That(bend.Rate, Is.EqualTo(BendRate + 0.3 * (over2s - BendRate)).Within(Math.Abs(BendRate) * 0.01),
+            "the heading's step over the receiver's 2 s, not the 1 ms it took to arrive");
+    }
+
+    [Test]
     public void The_same_fix_again_is_not_a_tenth_of_a_second_on()
     {
         // A module heard twice (two links): the same time again is no interval, and the fixes
