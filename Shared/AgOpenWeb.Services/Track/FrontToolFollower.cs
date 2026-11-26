@@ -1,5 +1,5 @@
 // AgOpenWeb
-// Copyright (C) 2026 AgOpenWeb Contributors
+// Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 using System;
@@ -84,18 +84,17 @@ public static class FrontToolFollower
             else if (i < 0 || i >= segments) continue;
             var a = line[i];
             var b = line[(i + 1) % n];
-            double dx = b.Easting - a.Easting, dy = b.Northing - a.Northing, l2 = dx * dx + dy * dy;
+            double dx = b.Easting - a.Easting, dy = b.Northing - a.Northing, l2 = GeometryMath.DistanceSquared(a, b);
             if (l2 < 1e-12) continue;
             double u = Math.Clamp(((pivotE - a.Easting) * dx + (pivotN - a.Northing) * dy) / l2, 0, 1);
-            double ex = a.Easting + u * dx - pivotE, ey = a.Northing + u * dy - pivotN;
-            double d2 = ex * ex + ey * ey;
+            double d2 = GeometryMath.DistanceSquared(pivotN, pivotE, a.Northing + u * dy, a.Easting + u * dx);
             if (d2 < best) { best = d2; seg = i; t = u; }
         }
         if (seg < 0) return null;
 
         var p = line[seg];
         var q = line[(seg + 1) % n];
-        double sx = q.Easting - p.Easting, sy = q.Northing - p.Northing, len = Math.Sqrt(sx * sx + sy * sy);
+        double sx = q.Easting - p.Easting, sy = q.Northing - p.Northing, len = GeometryMath.Distance(p, q);
         double dir = sameWay ? 1 : -1;
         // Off the line, + right of the way driven; the line's heading the way driven.
         double xte = -dir * (sx * (pivotN - p.Northing) - sy * (pivotE - p.Easting)) / len;
@@ -135,7 +134,7 @@ public static class FrontToolFollower
         {
             var a = line[i];
             var b = line[(i + 1) % n];
-            double l = Math.Sqrt((b.Easting - a.Easting) * (b.Easting - a.Easting) + (b.Northing - a.Northing) * (b.Northing - a.Northing));
+            double l = GeometryMath.Distance(a, b);
             bool openEnd = !closed && (s < 0 && i == 0 || s > l && i == segments - 1);
             if (l > 1e-9 && (s >= 0 && s <= l || openEnd))
                 return Math.Atan2(b.Easting - a.Easting, b.Northing - a.Northing);
@@ -148,9 +147,7 @@ public static class FrontToolFollower
             else
             {
                 i = closed ? (i - 1 + n) % n : i - 1;
-                var pa = line[i];
-                var pb = line[(i + 1) % n];
-                s += Math.Sqrt((pb.Easting - pa.Easting) * (pb.Easting - pa.Easting) + (pb.Northing - pa.Northing) * (pb.Northing - pa.Northing));
+                s += GeometryMath.Distance(line[i], line[(i + 1) % n]);
             }
         }
         var x = line[seg];

@@ -2732,6 +2732,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
             double sideHill = _roll != 88888 ? _roll * -config.AutoSteer.SideHillCompensation : 0;
             double steer = follow.Weight * (follow.SteerDeg + sideHill) + (1 - follow.Weight) * output.SteerAngle;
             output.SteerAngle = Math.Clamp(steer, -config.Vehicle.MaxSteerAngle, config.Vehicle.MaxSteerAngle);
+            output.GuidanceLineSteerAngle = (short)(output.SteerAngle * 100);
         }
 
         // Store state for next iteration
