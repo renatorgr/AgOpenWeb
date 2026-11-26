@@ -55,6 +55,10 @@ public sealed class ObstacleDetour
     /// <summary>A straight pass (an AB line, two points) is taken this far past its ends, metres.</summary>
     private const double LineExtension = 2000.0;
 
+    /// <summary>A bent point nearer its place on the pass than this is on the pass, for the
+    /// field's edge: the last of a bend's rounding, m.</summary>
+    private const double EdgeTail = 0.05;
+
     /// <summary>
     /// The farthest a bend moves the line off its pass, metres: two implement widths (four times
     /// the keep-out less its margin, so a trailed tool's cut-in widens nothing), never under 20 m.
@@ -311,7 +315,13 @@ public sealed class ObstacleDetour
                 continue;
             }
             culprit ??= Nearest(hits, at);
-            if (!culprit.Flipped)
+            // An obstacle with no way round on its other side either is not gone round, and it
+            // alone: the obstacles going round with it keep their side. Sent to the other side
+            // with it, each was "too far" there and none was gone round: an obstacle the pass
+            // clips by 3 m, a few metres before one at the fence with no room on this pass, was
+            // told as one with no room too (a tester's field, 26 Nov 2026). Fork only.
+            bool roomOtherSide = (culprit.Side > 0 ? culprit.NeedRight : culprit.NeedLeft) <= most;
+            if (!culprit.Flipped && roomOtherSide)
             {
                 // The other side, for the obstacle and those going round with it.
                 foreach (var h in hits.Where(h => h.Group == culprit.Group)) { h.Side = -h.Side; h.Flipped = true; }
@@ -421,7 +431,7 @@ public sealed class ObstacleDetour
         }
         double minS = sl.Min(p => p.S), maxS = sl.Max(p => p.S);
         if (!force && (sl.All(p => p.L > 0) || sl.All(p => p.L < 0))) return null;
-        if (maxS < 0 || minS > frame.Length) return null;
+        if (maxS < frame.Start || minS > frame.Length) return null;
 
         int first = (int)Math.Floor(minS / SampleStep), last = (int)Math.Ceiling(maxS / SampleStep);
         int count = last - first + 1;
@@ -441,7 +451,7 @@ public sealed class ObstacleDetour
             }
             if (lo > hi) { minL[i] = maxL[i] = double.NaN; continue; }
             minL[i] = lo; maxL[i] = hi;
-            if (lo < 0 && hi > 0 && s >= 0 && s <= frame.Length) runsInto = true;
+            if (lo < 0 && hi > 0 && s >= frame.Start && s <= frame.Length) runsInto = true;
             needLeft = Math.Max(needLeft, hi);
             needRight = Math.Max(needRight, -lo);
         }
@@ -549,7 +559,9 @@ public sealed class ObstacleDetour
             for (int k = start; k <= end; k++)
             {
                 double s = (first + k) * SampleStep;
-                if (s < 0 || s > frame.Length) continue;
+                // Only where the pass is: a station before its first point (the first point's
+                // own station is not 0 on a straight pass) is no place on it.
+                if (s < frame.Start || s > frame.Length) continue;
                 var (e, nn, ue, un) = frame.At(s);
                 result.Add(new Vec3(e - un * offsets[k], nn + ue * offsets[k], 0));
                 bases.Add((e, nn));
@@ -600,6 +612,13 @@ public sealed class ObstacleDetour
                 if (near < edge && near < DistanceToRing(o.Ring, b.E, b.N) - 0.01) return (null, p, side);
             }
             if (outer == null) continue;
+            // The end of a bend dies away over its last metres. Where the pass leaves the field
+            // just after an obstacle, the bend is back on the pass at the fence but for a few
+            // millimetres, and such a point outside the fence (as the pass is there) is not a
+            // bend out of the field: 4.7 mm of one took the bend round two obstacles away on a
+            // tester's field (26 Nov 2026). Fork only.
+            double de = p.Easting - b.E, dn = p.Northing - b.N;
+            if (de * de + dn * dn < EdgeTail * EdgeTail) continue;
             if (!GeometryMath.IsPointInPolygon(outer, p.Easting, p.Northing)) return (null, p, side);
             double d = DistanceToRing(outer, p.Easting, p.Northing);
             if (d < edge && d < DistanceToRing(outer, b.E, b.N) - 0.01) return (null, p, side);
@@ -644,6 +663,7 @@ public sealed class ObstacleDetour
         {
             _p = points;
             _cum = new double[points.Count];
+            _cum[0] = StraightStart(points);
             for (int i = 1; i < points.Count; i++)
             {
                 double de = points[i].Easting - points[i - 1].Easting, dn = points[i].Northing - points[i - 1].Northing;
@@ -651,7 +671,31 @@ public sealed class ObstacleDetour
             }
         }
 
+        // A straight pass is measured from a fixed place on its own line, not from its first
+        // point, so the stations (every SampleStep) fall on the same places whatever points the
+        // pass is given by. The pipeline asks with an AB pass's two points and the U-turn planner
+        // with a point every 2 m across the field: measured each from its first point, their
+        // stations lay up to a SampleStep apart, and near a limit (a bend ending at the fence)
+        // the two decided differently for the same pass: no room for the one, which then steered
+        // the pass straight, and a bend for the other, which planned no U-turn before the
+        // obstacle (a tester's field, 26 Nov 2026). A curve is given by the same points to both.
+        // Fork only.
+        private static double StraightStart(IReadOnlyList<Vec3> p)
+        {
+            Vec3 a = p[0], b = p[^1];
+            double de = b.Easting - a.Easting, dn = b.Northing - a.Northing, len = Math.Sqrt(de * de + dn * dn);
+            if (len < 1e-6) return 0;
+            double ue = de / len, un = dn / len;
+            for (int i = 1; i < p.Count - 1; i++)
+                if (Math.Abs(ue * (p[i].Northing - a.Northing) - un * (p[i].Easting - a.Easting)) > 1e-3) return 0;
+            double along = a.Easting * ue + a.Northing * un;
+            return along - Math.Floor(along / SampleStep) * SampleStep;
+        }
+
         public int Count => _p.Count;
+        /// <summary>The station of the first point: 0, or under a SampleStep on a straight pass.</summary>
+        public double Start => _cum[0];
+        /// <summary>The station of the last point.</summary>
         public double Length => _cum[^1];
         public double Station(int i) => _cum[i];
         public Vec3 Vertex(int i) => _p[i];

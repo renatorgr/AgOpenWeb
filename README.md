@@ -48,6 +48,13 @@ Most of these have been offered to the official project too. When one is merged 
 - The Go around curve radius and safety margin are on the U-turn tab.
 - Go around is still being tested: don't use it with AutoSteer on a real tractor yet.
 
+**Go around beside the fence.** A pass that clipped one obstacle and, a few metres before the fence, the tip of another was steered straight through both, while the U-turn was planned as if the pass went round them. So there was no turn before the first obstacle, and AutoSteer went off with the alarm in front of it.
+
+- Now the line steered and the U-turn get the same bend for a pass.
+- A bend that is back on the pass at the fence but for its last millimetres is made.
+- An obstacle with no room on either side no longer takes away the bend round the obstacle before it.
+- Simulator only, not tried on a tractor yet.
+
 **Headland gaps.** With "Drive across a headland gap up to" set on the U-turn tab, a pass that crosses a narrow tip of the field is driven on with the sections off, and the turn is made at the far end.
 
 **U-turns with no room.**

@@ -263,6 +263,145 @@ public class ObstacleDetourTests
         Assert.That(ObstacleDetour.MaxOffset(6.25 + 7.0, 7.0), Is.EqualTo(25.0), "a 12.5 m rake: its margin and 6 m cut-in widen nothing");
     }
 
+    // An obstacle with corners, chosen as Go around or as U-turn.
+    private static BoundaryPolygon Block(double x0, double y0, double x1, double y1, ObstacleAction action = ObstacleAction.GoRound)
+    {
+        var poly = Rect(x0, y0, x1, y1);
+        poly.AtObstacle = action;
+        return poly;
+    }
+
+    [Test]
+    public void An_obstacle_with_no_room_either_side_does_not_take_away_the_bend_round_the_one_before_it()
+    {
+        // Two obstacles 70 m apart on the pass, near enough for one bend, both reaching 40 m to
+        // the right: the pass clips 3 m of the first and 1 m of the second, so left is the way
+        // round both. Left of the second lies an obstacle chosen as U-turn, so there is no way
+        // round the second, and right of it is further than a bend may move the line. Sent to the
+        // right with it, the first had no room there either and neither was gone round (a
+        // tester's field, 26 Nov 2026: the pass was then steered straight at the first).
+        var field = Field(-100, 100,
+            Block(-3, 90, 40, 110), Block(-1, 180, 40, 182), Block(-12, 176, -4, 186, ObstacleAction.Turn));
+        var bend = Detour.Compute(North, field, KeepOut, Radius)!;
+        Assert.That(bend.GoneRound, Is.EqualTo(new[] { 0 }), "the first is gone round");
+        Assert.That(bend.Blocked, Is.EqualTo(new[] { 1 }), "the second has no room: a U-turn before it");
+        Assert.That(bend.Rounds.Single().Side, Is.EqualTo(1), "on the left, the side it needs the smaller move on");
+        var beside = bend.Points.Where(p => p.Northing >= 90 && p.Northing <= 110).ToList();
+        Assert.That(beside, Is.Not.Empty);
+        Assert.That(beside.Max(p => p.Easting), Is.LessThanOrEqualTo(-3 - KeepOut + 0.05), "the implement kept out of the first");
+        foreach (var p in bend.Points.Where(p => p.Northing > 170))
+            Assert.That(Math.Abs(p.Easting), Is.LessThan(1e-6), $"back on the pass before the second, at {p.Northing:F1}");
+    }
+
+    private static Boundary FieldTo(double top, params BoundaryPolygon[] obstacles)
+    {
+        var b = new Boundary { OuterBoundary = Rect(-100, -100, 100, top) };
+        b.InnerBoundaries.AddRange(obstacles);
+        return b;
+    }
+
+    [Test]
+    public void A_bend_back_on_the_pass_at_the_fence_but_for_its_last_millimetres_is_made()
+    {
+        // Where the bend round the tree ends, with the fence far away.
+        var open = Detour.Compute(North, Field(-100, 100, Tree(1, 100, 6)), KeepOut, Radius)!;
+        double end = open.Points.Where(p => Math.Abs(p.Easting) > 1e-6).Max(p => p.Northing);
+
+        // The pass leaves the field half a metre before that, where the bend's rounding is 15 mm
+        // off the pass: not a bend out of the field.
+        var bend = Detour.Compute(North, FieldTo(end - 0.5, Tree(1, 100, 6)), KeepOut, Radius)!;
+        Assert.That(bend.GoneRound, Is.EqualTo(new[] { 0 }));
+        Assert.That(bend.Blocked, Is.Empty);
+        Assert.That(ClearanceFrom(bend.Points, 1, 100), Is.GreaterThanOrEqualTo(3.0 + KeepOut - 0.05));
+
+        // Three metres before it the bend is still half a metre off the pass at the fence: it
+        // would leave the field beside the pass, and is not made.
+        bend = Detour.Compute(North, FieldTo(end - 3.0, Tree(1, 100, 6)), KeepOut, Radius)!;
+        Assert.That(bend.GoneRound, Is.Empty);
+        Assert.That(bend.Blocked, Is.EqualTo(new[] { 0 }));
+    }
+
+    // The same pass as the U-turn planner gives it: a point every 2 m across the field, from
+    // wherever the field starts along the line.
+    private static List<Vec3> NorthEvery2m(double from) =>
+        Enumerable.Range(0, 200).Select(i => new Vec3(0, from + 2.0 * i, 0)).ToList();
+
+    [TestCase(-110.12)]
+    [TestCase(-110.07)]
+    [TestCase(-109.8)]
+    public void A_straight_pass_gets_the_same_bend_whatever_points_it_is_given_by(double from)
+    {
+        var field = Field(-100, 100, Tree(1, 100, 6));
+        var two = Detour.Compute(North, field, KeepOut, Radius)!;
+        var many = Detour.Compute(NorthEvery2m(from), field, KeepOut, Radius)!;
+
+        Assert.That(many.GoneRound, Is.EqualTo(two.GoneRound));
+        var moved = many.Points.Where(p => Math.Abs(p.Easting) > 1e-6).ToList();
+        Assert.That(moved, Is.Not.Empty);
+        // The bend is the same points: the line steered (two points) and the line the U-turn is
+        // planned on (many) are measured from one place on the line, not each from its first point.
+        foreach (var p in moved)
+            Assert.That(two.Points.Min(q => Dist(p, q)), Is.LessThan(1e-6), $"a point of its own at {p.Northing:F2}");
+    }
+
+    [TestCase(85.07)]
+    [TestCase(85.24)]
+    [TestCase(86.0)]
+    public void A_bend_never_starts_before_the_first_point_of_the_pass(double from)
+    {
+        // The pass starts inside the bend round the obstacle. Its stations are measured from a
+        // fixed place on the line, so the first point is not at station 0: the stations before
+        // it are no place on the pass, and the bent line does not run on back past its start.
+        var pass = NorthEvery2m(from);
+        var bend = Detour.Compute(pass, Field(-100, 100, Block(-3, 90, 40, 110)), KeepOut, Radius)!;
+
+        Assert.That(bend.GoneRound, Is.EqualTo(new[] { 0 }));
+        Assert.That(bend.Points.Min(p => p.Northing), Is.GreaterThanOrEqualTo(from - 1e-6), "before the first point");
+        Assert.That(bend.Points.Max(p => p.Northing), Is.LessThanOrEqualTo(pass[^1].Northing + 1e-6), "past the last point");
+    }
+
+    [Test]
+    public void A_straight_pass_gets_the_same_bend_whichever_way_its_points_run()
+    {
+        // The stations are where the distance along the line's direction is a whole number of
+        // steps: the same places for A to B and for B to A.
+        var field = Field(-100, 100, Tree(1, 100, 6));
+        var there = Detour.Compute(NorthEvery2m(-110.07), field, KeepOut, Radius)!;
+        var back = Detour.Compute(Enumerable.Reverse(NorthEvery2m(-110.07)).ToList(), field, KeepOut, Radius)!;
+
+        Assert.That(back.GoneRound, Is.EqualTo(there.GoneRound));
+        var moved = back.Points.Where(p => Math.Abs(p.Easting) > 1e-6).ToList();
+        Assert.That(moved, Is.Not.Empty);
+        foreach (var p in moved)
+            Assert.That(there.Points.Min(q => Dist(p, q)), Is.LessThan(1e-6), $"a point of its own at {p.Northing:F2}");
+    }
+
+    [Test]
+    public void A_bend_ending_at_the_fence_is_judged_the_same_whatever_points_the_pass_is_given_by()
+    {
+        // The fence across the pass moved a few centimetres at a time through the end of the
+        // bend, where "back on the pass" is decided: the two-point pass and the dense one, its
+        // first point anywhere, give the same answer at every place. They did not: on a tester's
+        // field (26 Nov 2026) the line steered had no room round two obstacles and stayed
+        // straight, the U-turn planner's had a bend round both and planned no turn before them.
+        var open = Detour.Compute(North, Field(-100, 100, Tree(1, 100, 6)), KeepOut, Radius)!;
+        double end = open.Points.Where(p => Math.Abs(p.Easting) > 1e-6).Max(p => p.Northing);
+        for (int k = 0; k < 70; k++)
+        {
+            // Never a whole number of stations from the bend's end: a point on the fence itself
+            // is inside or outside by the last bit of its place.
+            double back = 0.011 + 0.03 * k;
+            var field = FieldTo(end - back, Tree(1, 100, 6));
+            var two = Detour.Compute(North, field, KeepOut, Radius)!;
+            foreach (double from in new[] { -110.12, -110.07, -109.8 })
+            {
+                var many = Detour.Compute(NorthEvery2m(from), field, KeepOut, Radius)!;
+                Assert.That(many.GoneRound, Is.EqualTo(two.GoneRound), $"the fence {back:F2} m before the bend's end, the pass from {from}");
+                Assert.That(many.Blocked, Is.EqualTo(two.Blocked), $"the fence {back:F2} m before the bend's end, the pass from {from}");
+            }
+        }
+    }
+
     [Test]
     public void A_curved_pass_is_bent_too()
     {

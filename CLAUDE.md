@@ -1003,6 +1003,25 @@ is built once per pass and cached (the key holds every corner of every obstacle 
 steered (`CalculateTrackGuidance`), the line shown and the light bar's line, AutoSteer on or off.
 U-turn planning and pass numbering keep the straight pass.
 
+**One answer for a pass, whoever asks** (fork only). The pipeline asks for an AB pass's bend with its two points,
+the U-turn planner with a point every 2 m across the field, and each gets a bend of its own. The stations along the
+pass (every `SampleStep`, 0.25 m) were counted from the first point given, so the two sets lay up to 0.25 m apart,
+and where the answer hangs on one point they differed. On a tester's field (Couto da Ribeira, 26 Nov 2026, the
+simulator, an 8 m front boom) pass 25R clips 3 m of one obstacle and, 14 m before the fence, the tip of another: the
+second one's bend was 4.7 mm off the pass at a station 14 mm outside the fence for the pipeline (a bend out of the
+field: no room, and no room on the other side) and back on the pass there for the planner. The pipeline steered the
+pass straight, the planner had a bend round both and planned no U-turn before them, and the hard obstacle guard took
+AutoSteer off ("the implement is heading into Inner 1"). Three changes in `ObstacleDetour`: a straight pass is
+measured from a fixed place on its own line (`Frame.StraightStart`), so both get the same stations and the same
+bend; a bent point within 5 cm of its place on the pass is on the pass for the field's edge (`EdgeTail`: the last of
+a bend's rounding where the pass itself leaves the field); and an obstacle with no room on its other side either is
+not gone round, it alone, the obstacles going round with it keeping their side (sent to the other side with it, the
+first obstacle had no room there and was not gone round either). Tests: `ObstacleDetourTests`
+(`A_straight_pass_gets_the_same_bend_whatever_points_it_is_given_by`,
+`A_bend_ending_at_the_fence_is_judged_the_same_whatever_points_the_pass_is_given_by`,
+`A_bend_back_on_the_pass_at_the_fence_but_for_its_last_millimetres_is_made`,
+`An_obstacle_with_no_room_either_side_does_not_take_away_the_bend_round_the_one_before_it`).
+
 **Slowing down before a bend** (fork only). With AutoSteer on the line (Pure Pursuit), a bend round a Go
 around obstacle within 6 s of travel ahead (15 m at least) that the tractor is too fast for is told once each time
 it comes to it, with a sound (`SoundEffect.GoAroundSlowDown`): "Slow down to N km/h for the bend round Inner X"
