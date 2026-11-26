@@ -173,7 +173,12 @@ public sealed class SceneProjector : System.IDisposable
         var tp = _state.RecordedPath.IsDrivingRecordedPath
             ? RecordedPathApproach()?.ToArray() : _state.YouTurn.TurnPath?.ToArray();
         if (tp is { Length: >= 2 })
-            uTurnPath = tp.Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList();
+        {
+            // A U-turn is drawn where a front implement goes; the way to a recorded path as it is.
+            IReadOnlyList<AgOpenWeb.Models.Base.Vec3> drawn =
+                _state.RecordedPath.IsDrivingRecordedPath ? tp : WhereTheFrontToolGoes(tp);
+            uTurnPath = drawn.Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList();
+        }
 
         // The next pass the tractor will pick up after the turn (cyan while the turn
         // is planned; once the turn is driven the highlighted line is on it too).
@@ -268,9 +273,29 @@ public sealed class SceneProjector : System.IDisposable
             _state.Operation.IsContourOn && _state.Operation.IsContourLocked,
             guideLines,
             _state.Guidance.ToolPass?.Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList(),
-            _state.Operation.LineEntryPath?.ToArray().Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList(),
+            _state.Operation.LineEntryPath?.ToArray() is { } entry
+                ? WhereTheFrontToolGoes(entry).Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList() : null,
             _state.Operation.LineEntryPath != null ? _state.Operation.LineEntryOfferPass : null,
             _state.FieldTools.AreaSelection?.Select(p => new Vec2Dto(p.Easting, p.Northing)).ToList());
+    }
+
+    // How far ahead of the pivot a front implement works; 0 for any other.
+    private double FrontToolReach() => AgOpenWeb.Models.Tool.RigGeometry.FrontToolReach(_config.Vehicle, _config.Tool);
+
+    /// <summary>
+    /// A path planned and driven for the pivot (a U-turn, the way onto a pass, the S onto a line
+    /// beside a fence), as it is drawn: with a front implement (a combine's header too) where the
+    /// implement's working centre goes, ahead of the pivot and outside every bend of the path;
+    /// with any other implement the path itself. Drawn for the pivot, the line ran through the
+    /// rear axle and an 8 m front boom 4.7 m ahead was 1.8 m beside it round a 5.4 m turn (a
+    /// tester's simulator, 26 Nov 2026). Only the drawing: the path steered is the pivot's.
+    /// Fork only.
+    /// </summary>
+    private IReadOnlyList<AgOpenWeb.Models.Base.Vec3> WhereTheFrontToolGoes(IReadOnlyList<AgOpenWeb.Models.Base.Vec3> pivotPath)
+    {
+        double ahead = FrontToolReach();
+        return ahead > 0 && pivotPath.Count >= 2
+            ? AgOpenWeb.Models.Tool.RigGeometry.PathOfPointAhead(pivotPath, ahead) : pivotPath;
     }
 
     /// <summary>The way to the recorded path while it is driven, else null (the VM's list:
@@ -1144,6 +1169,9 @@ public sealed class SceneProjector : System.IDisposable
         var states = _sections.SectionStates;
         for (int i = 0; i < nSec && i < states.Count; i++)
             h = h * 31 + (long)System.Math.Round((states[i].PositionLeft + states[i].PositionRight) * 100);
+
+        // A front implement's reach: the U-turn and the way onto a pass are drawn where it goes.
+        h = h * 31 + (long)System.Math.Round(FrontToolReach() * 100);
 
         // The way to the start of the pass (fork only): a new list per plan; offered or driven.
         var lep = _state.Operation.LineEntryPath;
