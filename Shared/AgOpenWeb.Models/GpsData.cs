@@ -83,6 +83,14 @@ public class GpsData
     public long MotionTimestamp { get; set; }
 
     /// <summary>
+    /// The receiver's own time of day on the position sentence this fix came from, in 1/100 s;
+    /// under 0 = none (the simulator, a sentence with no time). The pose estimator takes the time
+    /// between two fixes from it: two fixes that reach the app together (a Wi-Fi link) are still a
+    /// tenth of a second of driving apart. Fork only.
+    /// </summary>
+    public int FixTimeCentiseconds { get; set; } = -1;
+
+    /// <summary>
     /// Whether GPS data is currently valid (can be overridden by parser for quality filtering)
     /// </summary>
     private bool? _isValidOverride;
