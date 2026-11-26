@@ -154,6 +154,13 @@ Most of these have been offered to the official project too. When one is merged 
 - Joining a line from the side is steered as before. A rear or trailed implement is not changed.
 - Simulator only, not tried on a tractor yet.
 
+**The green path with a front implement.** The green path of a U-turn, and of the way onto a pass, was drawn where the tractor's rear axle goes. An implement fixed ahead of the tractor swings wider in the turn, so the path on the map was not where the implement went.
+
+- Now, with a front-fixed implement (a front boom, a combine's header), the green path is drawn where the middle of the implement goes. An 8 m boom 4.7 m ahead on a 5.4 m turn: 1.8 m further out.
+- Only the drawing changed. The turn is still worked out for the rear axle; working it out for the implement comes next.
+- A rear or trailed implement is drawn as before.
+- Simulator only, not tried on a tractor yet.
+
 ### Fields
 
 **Closing a field.**
