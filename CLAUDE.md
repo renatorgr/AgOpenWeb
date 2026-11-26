@@ -549,9 +549,10 @@ A tester asked for it (25 Nov 2026). Tests: `RollingWheels_OnByDefault_AndForSet
 lights on the tyre behind each mudguard, so from above they stood in the air behind it, and over a rolling tyre they
 floated (the tester, 26 Nov 2026). They are taken out of the picture (`VEH_LIGHTS`: left out with rolling wheels, else
 painted with the tyre round them) and drawn on the mudguards' rear ends (`tailLightsSk`, `TAIL_LIGHT` in the picture's
-pixels). The red ones are brake lights (`brakeLightsLit`, from the Tick's speed, smoothed): lit, with a glow on the
-ground behind, while the tractor slows down (the speed 0.1 m/s under the highest of the last 0.5 s, held 1 s after,
-so one tap of the simulator's speed down shows), dark at a steady speed or speeding up, off below 0.1 m/s. The
+pixels). The red ones are brake lights (`brakeSample` on every Tick's speed, smoothed; `brakeLightsLit`): lit, with a
+glow on the ground behind, while the tractor slows down (the speed falling and 0.1 m/s under the highest of the last
+0.5 s, held 1 s after, so one tap of the simulator's speed down shows), dark at a steady speed, off as soon as it
+speeds up again (0.03 m/s in one Tick) and below 0.1 m/s. The
 simulator's Stop stops at once, so it lights nothing. Drawing only. **The 3-point links**: an implement drawn on the
 lower links (`iLowerLinks`: the shapes' headstocks, the front sprayer's rear tank) draws the links from under the
 tractor's axle housing to its own pins, and the tractor is drawn without the links in its picture (`VEH_LINKS`,

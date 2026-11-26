@@ -815,26 +815,27 @@ function tailLightsSk(canvas, half, top, bH, lit) {
 }
 // Brake lights (fork only; a tester asked, 26 Nov 2026): the red lights light up while the tractor slows down
 // (it brakes, or eases off) and are dark while it keeps its speed or speeds up, and off once it stands still. From
-// the Tick's speed (m/s, forward or reverse), smoothed: slowing down is the smoothed speed BRAKE_DROP below the
-// highest it was in the last BRAKE_WINDOW ms; the lights stay on BRAKE_HOLD ms after the last such drop, so one tap
-// of the simulator's speed down (0.5 km/h) shows, and under BRAKE_STOPPED (0.36 km/h) the tractor stands still.
-const BRAKE_WINDOW = 500, BRAKE_DROP = 0.1, BRAKE_HOLD = 1000, BRAKE_STOPPED = 0.1;
-let brakeTick = null, brakeSpeed = null, brakeUntil = 0, brakeStill = true;
+// every Tick's speed (m/s, forward or reverse; brakeSample, from onTick, so none is missed between two frames),
+// smoothed: slowing down is the smoothed speed falling and BRAKE_DROP below the highest it was in the last
+// BRAKE_WINDOW ms; the lights stay on BRAKE_HOLD ms after the last such Tick, so one tap of the simulator's speed
+// down (0.5 km/h) shows, unless the tractor stands still (under BRAKE_STOPPED, 0.36 km/h) or speeds up (the smoothed
+// speed up BRAKE_RISE in one Tick, 0.3 m/s² at 10 Hz: more than a receiver's noise), which end the hold.
+const BRAKE_WINDOW = 500, BRAKE_DROP = 0.1, BRAKE_HOLD = 1000, BRAKE_STOPPED = 0.1, BRAKE_RISE = 0.03;
+let brakeSpeed = null, brakeUntil = 0, brakeStill = true;
 const brakeHist = [];
+function brakeSample(t) {
+  const v = Math.abs(t.speed || 0), before = brakeSpeed;
+  brakeSpeed = before === null ? v : before + 0.5 * (v - before);
+  brakeStill = v < BRAKE_STOPPED;
+  brakeHist.push({ t: t.t, v: brakeSpeed });
+  while (brakeHist.length && brakeHist[0].t < t.t - BRAKE_WINDOW) brakeHist.shift();
+  if (brakeStill) { brakeUntil = 0; return; } // stopped: a later start does not light them again
+  if (before !== null && brakeSpeed > before + BRAKE_RISE) { brakeUntil = 0; return; } // speeding up again
+  let hi = 0;
+  for (const h of brakeHist) if (h.v > hi) hi = h.v;
+  if (before !== null && brakeSpeed < before && hi - brakeSpeed >= BRAKE_DROP) brakeUntil = t.t + BRAKE_HOLD;
+}
 function brakeLightsLit() {
-  const t = lastTick;
-  if (!t) return false;
-  if (t !== brakeTick) { // a new Tick
-    brakeTick = t;
-    const v = Math.abs(t.speed || 0);
-    brakeSpeed = brakeSpeed === null ? v : brakeSpeed + 0.5 * (v - brakeSpeed);
-    brakeStill = v < BRAKE_STOPPED;
-    brakeHist.push({ t: t.t, v: brakeSpeed });
-    while (brakeHist.length && brakeHist[0].t < t.t - BRAKE_WINDOW) brakeHist.shift();
-    let hi = 0;
-    for (const h of brakeHist) if (h.v > hi) hi = h.v;
-    if (hi - brakeSpeed >= BRAKE_DROP) brakeUntil = t.t + BRAKE_HOLD;
-  }
   return !brakeStill && performance.now() < brakeUntil;
 }
 // Display > Rolling Wheels (display.rollingWheels, fork only): the tyres' tread moves as the wheels roll. Each tyre
