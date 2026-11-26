@@ -511,7 +511,9 @@ public record DisplayConfigDto(
     // UI size in percent (100/115/130/150): the client zooms its controls, not the map.
     int UiScale,
     // The field's aerial imagery shown on the map (#500).
-    bool ImageryVisible);
+    bool ImageryVisible,
+    // Rolling wheels on the map (fork only): the tyres' tread turns as the wheels roll.
+    bool RollingWheels = true);
 
 /// <summary>Tool/Implement tab (ConfigStore.Tool + NumSections). Type: 0 front, 1 rear,
 /// 2 TBT, 3 trailing. Arrays fixed-size (16 widths/colours, 9 zone ranges).</summary>

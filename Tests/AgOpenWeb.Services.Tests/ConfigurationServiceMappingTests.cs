@@ -66,6 +66,7 @@ public class ConfigurationServiceMappingTests
         d.SvennArrowVisible = true;
         d.StartFullscreen = true;
         d.ImageryVisible = false; // default on
+        d.RollingWheels = false; // default on
         d.ElevationLogEnabled = true;
         d.FieldTextureVisible = false;
         d.FieldTextureMoveable = true;
@@ -104,6 +105,7 @@ public class ConfigurationServiceMappingTests
             Assert.That(r.SvennArrowVisible, Is.True);
             Assert.That(r.StartFullscreen, Is.True);
             Assert.That(r.ImageryVisible, Is.False);
+            Assert.That(r.RollingWheels, Is.False);
             Assert.That(r.ElevationLogEnabled, Is.True);
             Assert.That(r.FieldTextureVisible, Is.False);
             Assert.That(r.FieldTextureMoveable, Is.True);
@@ -124,6 +126,33 @@ public class ConfigurationServiceMappingTests
             Assert.That(r.NightStartHour, Is.EqualTo(22));
             Assert.That(r.DisplayResolutionMultiplier, Is.EqualTo(2.5));
         });
+    }
+
+    [Test]
+    public void RollingWheels_OnByDefault_AndForSettingsSavedBeforeIt()
+    {
+        // Rolling wheels on the map (fork): on for a new install and for an AppSettings file written before it.
+        var old = System.Text.Json.JsonSerializer.Deserialize<AppSettings>("{\"ImageryVisible\":true}");
+        Assert.Multiple(() =>
+        {
+            Assert.That(new DisplayConfig().RollingWheels, Is.True);
+            Assert.That(new AppSettings().RollingWheels, Is.True);
+            Assert.That(old!.RollingWheels, Is.True);
+        });
+    }
+
+    [Test]
+    public void RollingWheels_LoadAndSave_MapTheSetting()
+    {
+        // The round trip above reads back the store it saved from (the service keeps its own store), so the
+        // load and the save are checked here on their own, each against the default (on).
+        _settings.RollingWheels = false;
+        _service.LoadAppSettings();
+        Assert.That(_service.Store.Display.RollingWheels, Is.False, "load");
+
+        _settings.RollingWheels = true;
+        _service.SaveAppSettings();
+        Assert.That(_settings.RollingWheels, Is.False, "save");
     }
 
     [Test]
