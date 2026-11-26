@@ -431,7 +431,7 @@ public sealed class ObstacleDetour
         }
         double minS = sl.Min(p => p.S), maxS = sl.Max(p => p.S);
         if (!force && (sl.All(p => p.L > 0) || sl.All(p => p.L < 0))) return null;
-        if (maxS < 0 || minS > frame.Length) return null;
+        if (maxS < frame.Start || minS > frame.Length) return null;
 
         int first = (int)Math.Floor(minS / SampleStep), last = (int)Math.Ceiling(maxS / SampleStep);
         int count = last - first + 1;
@@ -451,7 +451,7 @@ public sealed class ObstacleDetour
             }
             if (lo > hi) { minL[i] = maxL[i] = double.NaN; continue; }
             minL[i] = lo; maxL[i] = hi;
-            if (lo < 0 && hi > 0 && s >= 0 && s <= frame.Length) runsInto = true;
+            if (lo < 0 && hi > 0 && s >= frame.Start && s <= frame.Length) runsInto = true;
             needLeft = Math.Max(needLeft, hi);
             needRight = Math.Max(needRight, -lo);
         }
@@ -559,7 +559,9 @@ public sealed class ObstacleDetour
             for (int k = start; k <= end; k++)
             {
                 double s = (first + k) * SampleStep;
-                if (s < 0 || s > frame.Length) continue;
+                // Only where the pass is: a station before its first point (the first point's
+                // own station is not 0 on a straight pass) is no place on it.
+                if (s < frame.Start || s > frame.Length) continue;
                 var (e, nn, ue, un) = frame.At(s);
                 result.Add(new Vec3(e - un * offsets[k], nn + ue * offsets[k], 0));
                 bases.Add((e, nn));
@@ -691,7 +693,9 @@ public sealed class ObstacleDetour
         }
 
         public int Count => _p.Count;
-        /// <summary>The station of the last point (the first one's is under a SampleStep).</summary>
+        /// <summary>The station of the first point: 0, or under a SampleStep on a straight pass.</summary>
+        public double Start => _cum[0];
+        /// <summary>The station of the last point.</summary>
         public double Length => _cum[^1];
         public double Station(int i) => _cum[i];
         public Vec3 Vertex(int i) => _p[i];

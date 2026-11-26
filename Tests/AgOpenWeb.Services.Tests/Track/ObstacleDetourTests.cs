@@ -344,6 +344,38 @@ public class ObstacleDetourTests
             Assert.That(two.Points.Min(q => Dist(p, q)), Is.LessThan(1e-6), $"a point of its own at {p.Northing:F2}");
     }
 
+    [TestCase(85.07)]
+    [TestCase(85.24)]
+    [TestCase(86.0)]
+    public void A_bend_never_starts_before_the_first_point_of_the_pass(double from)
+    {
+        // The pass starts inside the bend round the obstacle. Its stations are measured from a
+        // fixed place on the line, so the first point is not at station 0: the stations before
+        // it are no place on the pass, and the bent line does not run on back past its start.
+        var pass = NorthEvery2m(from);
+        var bend = Detour.Compute(pass, Field(-100, 100, Block(-3, 90, 40, 110)), KeepOut, Radius)!;
+
+        Assert.That(bend.GoneRound, Is.EqualTo(new[] { 0 }));
+        Assert.That(bend.Points.Min(p => p.Northing), Is.GreaterThanOrEqualTo(from - 1e-6), "before the first point");
+        Assert.That(bend.Points.Max(p => p.Northing), Is.LessThanOrEqualTo(pass[^1].Northing + 1e-6), "past the last point");
+    }
+
+    [Test]
+    public void A_straight_pass_gets_the_same_bend_whichever_way_its_points_run()
+    {
+        // The stations are where the distance along the line's direction is a whole number of
+        // steps: the same places for A to B and for B to A.
+        var field = Field(-100, 100, Tree(1, 100, 6));
+        var there = Detour.Compute(NorthEvery2m(-110.07), field, KeepOut, Radius)!;
+        var back = Detour.Compute(Enumerable.Reverse(NorthEvery2m(-110.07)).ToList(), field, KeepOut, Radius)!;
+
+        Assert.That(back.GoneRound, Is.EqualTo(there.GoneRound));
+        var moved = back.Points.Where(p => Math.Abs(p.Easting) > 1e-6).ToList();
+        Assert.That(moved, Is.Not.Empty);
+        foreach (var p in moved)
+            Assert.That(there.Points.Min(q => Dist(p, q)), Is.LessThan(1e-6), $"a point of its own at {p.Northing:F2}");
+    }
+
     [Test]
     public void A_bend_ending_at_the_fence_is_judged_the_same_whatever_points_the_pass_is_given_by()
     {
