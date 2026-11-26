@@ -73,15 +73,16 @@ namespace AgOpenWeb.Models.Tool
             new(pivot.Easting + Math.Sin(heading) * x, pivot.Northing + Math.Cos(heading) * x, heading);
 
         /// <summary>
-        /// Where the point <paramref name="x"/> along the tractor (+ ahead of the rear axle) goes
-        /// while the pivot drives <paramref name="pivotPath"/>: each point of the path moved x
-        /// along the path's own direction there (from the point before to the point after it).
+        /// Where the point <paramref name="x"/> along the tractor (+ ahead of the rear axle) and
+        /// <paramref name="right"/> across it (+ to the right) goes while the pivot drives
+        /// <paramref name="pivotPath"/>: each point of the path moved x along the path's own
+        /// direction there (from the point before to the point after it) and right across it.
         /// A U-turn and the way onto a pass are planned and driven for the pivot; a front
         /// implement's working centre runs ahead of it and swings outside every bend of the path
         /// (4.7 m ahead on a 5.4 m turn: on a 7.2 m circle, 1.8 m outside), so drawn for the
         /// pivot the path is not where the implement goes. Fork only.
         /// </summary>
-        public static List<Vec3> PathOfPointAhead(IReadOnlyList<Vec3> pivotPath, double x)
+        public static List<Vec3> PathOfPointAhead(IReadOnlyList<Vec3> pivotPath, double x, double right = 0)
         {
             int n = pivotPath.Count;
             var result = new List<Vec3>(n);
@@ -92,9 +93,11 @@ namespace AgOpenWeb.Models.Tool
                 int a = i, b = i;
                 while (a > 0 && SamePlace(pivotPath[a], pivotPath[i])) a--;
                 while (b < n - 1 && SamePlace(pivotPath[b], pivotPath[i])) b++;
-                double de = pivotPath[b].Easting - pivotPath[a].Easting, dn = pivotPath[b].Northing - pivotPath[a].Northing;
-                if (de * de + dn * dn > 1e-12) heading = Math.Atan2(de, dn);
-                result.Add(AlongTractor(pivotPath[i], heading, x));
+                if (GeometryMath.DistanceSquared(pivotPath[a], pivotPath[b]) > 1e-12)
+                    heading = Math.Atan2(pivotPath[b].Easting - pivotPath[a].Easting, pivotPath[b].Northing - pivotPath[a].Northing);
+                var p = AlongTractor(pivotPath[i], heading, x);
+                // To the right of the way it goes: (cos, -sin) of the heading.
+                result.Add(new Vec3(p.Easting + Math.Cos(heading) * right, p.Northing - Math.Sin(heading) * right, heading));
             }
             return result;
         }
@@ -104,10 +107,11 @@ namespace AgOpenWeb.Models.Tool
 
         /// <summary>
         /// How far ahead of the pivot a front implement works (a combine's header too: its tool
-        /// is a front one), 0 for any other mount.
+        /// is a front one), 0 for any other mount. Negative if its working point is set behind
+        /// the rear axle.
         /// </summary>
         public static double FrontToolReach(VehicleConfig vehicle, ToolConfig tool) =>
-            Mount(tool) == ToolMount.FrontFixed ? Math.Max(0, AttachX(vehicle, tool)) : 0;
+            Mount(tool) == ToolMount.FrontFixed ? AttachX(vehicle, tool) : 0;
 
         /// <summary>
         /// How far a trailed tool's working centre is behind what pulls it (the hitch, or the TBT

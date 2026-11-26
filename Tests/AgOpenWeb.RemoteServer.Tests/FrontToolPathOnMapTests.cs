@@ -74,6 +74,18 @@ public class FrontToolPathOnMapTests
         Assert.That(drawn[^1].N, Is.EqualTo(10 + Reach).Within(1e-9));
     }
 
+    [Test]
+    public void A_front_implement_set_to_one_side_is_drawn_on_that_side()
+    {
+        var (projector, state, config) = Make("front");
+        config.Tool.Offset = 0.5; // to the right
+        state.YouTurn.TurnPath = North();
+
+        var drawn = projector.BuildScene(1).UTurnPath!;
+        Assert.That(drawn.All(p => System.Math.Abs(p.E - 2.5) < 1e-9), "0.5 m east of a path going north");
+        Assert.That(drawn[0].N, Is.EqualTo(Reach).Within(1e-9));
+    }
+
     [TestCase("rear")]
     [TestCase("trailing")]
     [TestCase("tbt")]
@@ -97,6 +109,14 @@ public class FrontToolPathOnMapTests
 
         config.Vehicle.FrontHitchLength = 5.0;
         Assert.That(projector.SceneFingerprint(), Is.Not.EqualTo(before), "the front hitch moved");
+
+        before = projector.SceneFingerprint();
+        config.Vehicle.FrontHitchLength = 5.001;
+        Assert.That(projector.SceneFingerprint(), Is.Not.EqualTo(before), "a millimetre counts");
+
+        before = projector.SceneFingerprint();
+        config.Tool.Offset = 0.3;
+        Assert.That(projector.SceneFingerprint(), Is.Not.EqualTo(before), "the implement moved to one side");
 
         before = projector.SceneFingerprint();
         config.Tool.SetToolType("rear");

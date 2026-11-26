@@ -953,8 +953,9 @@ Tests: `FrontToolLineTests` (`Round_a_go_around_tree_the_implement_stays_on_the_
 **The U-turn and the way onto a pass, drawn for the implement** (fork only). Those paths (the Scene's `UTurnPath`
 and `EntryPath`: a U-turn, the way to the start of a pass driven or offered, the S onto a line beside a fence) are
 planned and driven for the pivot. With a front implement (a combine's header too) the map draws them where the
-implement's working centre goes: each point `RigGeometry.FrontToolReach` ahead along the path's own direction
-(`RigGeometry.PathOfPointAhead`, from `SceneProjector.WhereTheFrontToolGoes`), so the line starts at the implement
+implement's working centre goes: each point `RigGeometry.FrontToolReach` ahead along the path's own direction, and the
+tool's offset to its side (`RigGeometry.PathOfPointAhead`, from `SceneProjector.WhereTheFrontToolGoes`; the scene's
+fingerprint holds both values, not rounded), so the line starts at the implement
 and runs outside every bend of the pivot's path (4.7 m ahead on a 5.4 m turn: a 7.2 m circle, 1.8 m outside). Drawn
 for the pivot, the green line ran through the rear axle and the boom's centre was beside it all the way round (a
 tester's simulator, Couto da Ribeira, 26 Nov 2026: "the line drawn is not the boom's centre"). Only the drawing: the

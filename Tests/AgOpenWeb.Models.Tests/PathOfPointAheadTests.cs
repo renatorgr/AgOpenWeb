@@ -69,6 +69,33 @@ public class PathOfPointAheadTests
     }
 
     [Test]
+    public void A_point_to_one_side_stays_on_that_side_of_the_path()
+    {
+        // North, then east: 1 m to the right is 1 m east of the first leg and 1 m south of the second.
+        var path = new List<Vec3> { new(0, 0, 0), new(0, 5, 0), new(0, 10, 0) };
+        var right = RigGeometry.PathOfPointAhead(path, Reach, 1.0);
+        Assert.That(right[1].Easting, Is.EqualTo(1).Within(1e-9));
+        Assert.That(right[1].Northing, Is.EqualTo(5 + Reach).Within(1e-9));
+
+        var east = new List<Vec3> { new(0, 0, 0), new(5, 0, 0), new(10, 0, 0) };
+        var south = RigGeometry.PathOfPointAhead(east, Reach, 1.0);
+        Assert.That(south[1].Easting, Is.EqualTo(5 + Reach).Within(1e-9));
+        Assert.That(south[1].Northing, Is.EqualTo(-1).Within(1e-9));
+    }
+
+    [Test]
+    public void A_working_point_set_behind_the_rear_axle_is_drawn_behind_it()
+    {
+        var vehicle = new VehicleConfig { FrontHitchLength = 0.5 };
+        var tool = new ToolConfig { WorkingPointFromHitch = -1.5 };
+        tool.SetToolType("front");
+        Assert.That(RigGeometry.FrontToolReach(vehicle, tool), Is.EqualTo(-1.0).Within(1e-9));
+
+        var path = new List<Vec3> { new(0, 0, 0), new(0, 5, 0), new(0, 10, 0) };
+        Assert.That(RigGeometry.PathOfPointAhead(path, -1.0)[1].Northing, Is.EqualTo(4).Within(1e-9));
+    }
+
+    [Test]
     public void Only_a_front_implement_has_a_reach_ahead()
     {
         var vehicle = new VehicleConfig { FrontHitchLength = 4.5, ThreePointHitchLength = 0.9, HitchLength = 0.9 };
