@@ -290,6 +290,44 @@ public class YouTurnTrackSwitchTests
     }
 
     [Test]
+    public void SwingingTheExitForTheTrailedImplement_PlansTheTurnAgain_AndBackToTheTractorToo()
+    {
+        // The operator's choice alone (U-turns planned for the tractor / the trailed implement):
+        // a turn planned and not yet driven has the other exit, so it is planned again; the order
+        // holds. The same when the drill's length changes with the choice on.
+        var config = ConfigurationStore.Instance;
+        config.Tool.SetToolType("trailing");
+        config.Tool.TrailingHitchLength = 4.15;
+        var turn = PlannedOnTrackA();
+        var order = turn.SnakeSequence;
+
+        config.Guidance.UTurnForTrailedTool = true;
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.Multiple(() =>
+        {
+            Assert.That(turn.TurnPath, Is.Null, "the turn planned for the tractor");
+            Assert.That(turn.SnakeSequence, Is.SameAs(order), "the passes did not move: the order holds");
+        });
+
+        // The same choice again: a turn planned since is kept.
+        var planned = new List<Vec3> { new(3, 40, 0), new(0, 50, 0), new(-3, 40, Math.PI) };
+        turn.TurnPath = planned;
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(turn.TurnPath, Is.SameAs(planned));
+
+        config.Tool.TrailingHitchLength = 5.0;
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(turn.TurnPath, Is.Null, "the exit swung for a shorter drill");
+
+        turn.TurnPath = planned;
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(turn.TurnPath, Is.SameAs(planned));
+        config.Guidance.UTurnForTrailedTool = false;
+        _gpsService.UpdateGpsData(ValidFix());
+        Assert.That(turn.TurnPath, Is.Null, "the turn with its exit swung");
+    }
+
+    [Test]
     public void PlanningForTheFrontImplement_LeavesATurnBeingDrivenAlone()
     {
         var config = ConfigurationStore.Instance;

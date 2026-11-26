@@ -928,7 +928,7 @@ public sealed class SceneProjector : System.IDisposable
                 (int)t.PaintedArea),
             new UturnConfigDto(g.UTurnStyle, g.UTurnExtension, g.UTurnSmoothing, g.UTurnRadius, g.UTurnDistanceFromBoundary,
                 g.GoAroundRadius, g.GoAroundMargin, g.UTurnCrossGap, (int)g.LineEntryMode, g.LineEntryStraight,
-                g.UTurnForFrontTool),
+                g.UTurnForFrontTool, g.UTurnForTrailedTool),
             // Line = the field's actual start pass (tram settings live with the field), 1-based.
             new TramConfigDto(g.TramPasses, g.TramDisplay, _config.Tram.StartPass + 1, _config.Tram.TramWidth,
                 _config.Tram.IsOuterInverted),
@@ -1043,7 +1043,7 @@ public sealed class SceneProjector : System.IDisposable
         h = h * 31 + (int)t.SingleCoverageColor;
         h = h * 31 + g.UTurnStyle * 7 + g.UTurnSmoothing * 11 + g.TramPasses * 13 + (g.TramDisplay ? 1 : 0) + g.TramLine * 17;
         h = h * 31 + (int)g.LineEntryMode;
-        h = h * 31 + (g.UTurnForFrontTool ? 1 : 0); // fork only
+        h = h * 31 + (g.UTurnForFrontTool ? 1 : 0) + (g.UTurnForTrailedTool ? 2 : 0); // fork only
         h = h * 31 + _config.Tram.StartPass * 19 + _config.Tram.TramWidth.GetHashCode(); // #110
         h = h * 31 + (_config.Tram.IsOuterInverted ? 1 : 0); // #451
         h = h * 31 + (mc.HydraulicLiftEnabled ? 1 : 0) + mc.RaiseTime * 7 + mc.LowerTime * 11 + (mc.InvertRelay ? 64 : 0)

@@ -254,6 +254,33 @@ public class ToolProfileUTurnTramTests
     }
 
     [Test]
+    public void UTurnExitSwungForTheTrailedImplement_IsSavedWithTheToolProfile_AndOffInOneSavedBeforeIt()
+    {
+        // Fork only: the choice is the implement's (a trailed drill), and a profile saved before
+        // it, or loaded after one that had it on, plans the turn for the tractor.
+        var drill = new ConfigurationStore();
+        drill.Guidance.UTurnForTrailedTool = true;
+        ToolProfileJsonService.Save(_tools, "Drill", drill);
+        ToolProfileJsonService.Save(_tools, "Boom", new ConfigurationStore());
+
+        var d = new ConfigurationStore();
+        Assert.That(ToolProfileJsonService.Load(_tools, "Drill", d), Is.True);
+        Assert.That(d.Guidance.UTurnForTrailedTool, Is.True, "saved with the profile");
+        Assert.That(d.Guidance.UTurnForFrontTool, Is.False, "the front implement's choice is another one");
+        Assert.That(ToolProfileJsonService.Load(_tools, "Boom", d), Is.True);
+        Assert.That(d.Guidance.UTurnForTrailedTool, Is.False, "another implement's profile turns it off");
+
+        // A profile from before the setting: the key is not in the file.
+        string file = Path.Combine(_tools, "Drill.json");
+        string text = File.ReadAllText(file);
+        Assert.That(text, Does.Contain("\"forTrailedTool\": true"));
+        File.WriteAllText(file, System.Text.RegularExpressions.Regex.Replace(text, "\\s*\"forTrailedTool\": true,?", ""));
+        d.Guidance.UTurnForTrailedTool = true;
+        Assert.That(ToolProfileJsonService.Load(_tools, "Drill", d), Is.True);
+        Assert.That(d.Guidance.UTurnForTrailedTool, Is.False, "off unless the profile says on");
+    }
+
+    [Test]
     public void UTurnRadiusAndExtension_OutOfRangeOrNoNumberInAFile_AreReadInsideTheirLimits()
     {
         // As the Go around radius above: the settings page holds the radius to 2-100 m and the

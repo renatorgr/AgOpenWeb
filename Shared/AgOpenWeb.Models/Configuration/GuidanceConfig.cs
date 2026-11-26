@@ -208,6 +208,17 @@ public class GuidanceConfig : ObservableObject
         set => SetProperty(ref _uTurnForFrontTool, value);
     }
 
+    // With a trailed implement (TBT too), the exit of a U-turn is swung wide: the tractor goes past
+    // the next pass and comes back onto it, so the implement is square on the pass when the
+    // tractor is (TrailedExitSwing, YouTurnCreationService.TrailedTool.cs), not 15 to 20 m on.
+    // Off unless the operator turns it on. Fork only.
+    private bool _uTurnForTrailedTool;
+    public bool UTurnForTrailedTool
+    {
+        get => _uTurnForTrailedTool;
+        set => SetProperty(ref _uTurnForTrailedTool, value);
+    }
+
     // The ranges the settings page keeps these to, kept when a profile is read too: a profile
     // written by hand with a huge straight or bend radius held up the GPS cycle (the way onto the
     // pass and the bend round an obstacle are built a point every 0.25 m).

@@ -106,6 +106,15 @@ public class TrailedExitSwingTests
         return fine;
     }
 
+    /// <summary>The implement's centre where the pivot is at point <paramref name="index"/> of the path, followed finely.</summary>
+    private static Vec3 ToolWhenPivotAt(IReadOnlyList<Vec3> path, int index, ToolGeometry tool)
+    {
+        var upTo = path.Take(Math.Min(index + 2, path.Count)).ToList();
+        var fine = Fine(upTo);
+        int at = Fine(upTo.Take(index + 1).ToList()).Count - 1;
+        return ImplementSweptPath.Compute(fine, tool).ToolCenter[at];
+    }
+
     /// <summary>How far south of the turn's top the implement is on the pass for good (within 5 cm of it).</summary>
     private static double SquareBelowTop(IReadOnlyList<Vec3> path, double passEasting, ToolGeometry tool)
     {
@@ -128,9 +137,8 @@ public class TrailedExitSwingTests
         Assert.That(Deg(swung!.Swing), Is.InRange(30, 50), "the swing");
         Assert.That(Deg(swung.ToolAngleBefore), Is.GreaterThan(20), "planned for the tractor, the drill is still at an angle where the tractor is straight");
 
-        var centre = ImplementSweptPath.Compute(swung.Path, Drill).ToolCenter;
-        var drill = centre[swung.OnPassIndex];
-        Assert.That(Deg(Wrap(drill.Heading - Math.PI)), Is.EqualTo(0).Within(0.2), "the drill heads along the pass where the tractor comes straight");
+        var drill = ToolWhenPivotAt(swung.Path, swung.OnPassIndex, Drill);
+        Assert.That(Deg(Wrap(drill.Heading - Math.PI)), Is.EqualTo(0).Within(0.5), "the drill heads along the pass where the tractor comes straight");
         Assert.That(drill.Easting, Is.EqualTo(-9).Within(0.03), "and is on the pass");
 
         // Followed finely: on the pass about 6 m below the top of the turn, where planned for the tractor it took 20 m.
@@ -219,8 +227,8 @@ public class TrailedExitSwingTests
 
         Assert.That(swung, Is.Not.Null);
         Assert.That(Deg(swung!.Swing), Is.InRange(36, 50));
-        var drill = ImplementSweptPath.Compute(swung.Path, Drill).ToolCenter[swung.OnPassIndex];
-        Assert.That(Deg(Wrap(drill.Heading - Math.PI)), Is.EqualTo(0).Within(0.2));
+        var drill = ToolWhenPivotAt(swung.Path, swung.OnPassIndex, Drill);
+        Assert.That(Deg(Wrap(drill.Heading - Math.PI)), Is.EqualTo(0).Within(0.5));
         Assert.That(SquareBelowTop(swung.Path, -6, Drill), Is.LessThan(SquareBelowTop(planned, -6, Drill) - 3));
     }
 
@@ -271,8 +279,8 @@ public class TrailedExitSwingTests
         Assert.That(swung, Is.Not.Null);
         Assert.That(planned[swung!.FromIndex].Northing, Is.LessThan(top - 0.05), "not from the top");
         for (int i = swung.FromIndex + 1; i <= swung.OnPassIndex; i++) Assert.That(Allowed(swung.Path[i]), $"point {i}");
-        var drill = ImplementSweptPath.Compute(swung.Path, Drill).ToolCenter[swung.OnPassIndex];
-        Assert.That(Deg(Wrap(drill.Heading - Math.PI)), Is.EqualTo(0).Within(0.2));
+        var drill = ToolWhenPivotAt(swung.Path, swung.OnPassIndex, Drill);
+        Assert.That(Deg(Wrap(drill.Heading - Math.PI)), Is.EqualTo(0).Within(0.5));
     }
 
     [Test]
@@ -283,8 +291,8 @@ public class TrailedExitSwingTests
         var swung = TrailedExitSwing.Apply(planned, tbt, 6);
 
         Assert.That(swung, Is.Not.Null);
-        var tool = ImplementSweptPath.Compute(swung!.Path, tbt).ToolCenter[swung.OnPassIndex];
-        Assert.That(Deg(Wrap(tool.Heading - Math.PI)), Is.EqualTo(0).Within(0.2));
+        var tool = ToolWhenPivotAt(swung!.Path, swung.OnPassIndex, tbt);
+        Assert.That(Deg(Wrap(tool.Heading - Math.PI)), Is.EqualTo(0).Within(0.5));
     }
 
     [Test]

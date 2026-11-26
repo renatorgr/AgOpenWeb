@@ -542,9 +542,10 @@ public record ToolConfigDto(
 /// <param name="EntryMode">How AutoSteer joins a new line in the headland: 0 nearest point, 1 ask, 2 start of the pass (fork only).</param>
 /// <param name="EntryStraight">How far the implement runs straight on the pass before the headland line when it joins at the start, m.</param>
 /// <param name="ForFrontTool">U-turns and the way onto a pass are planned for a front implement's centre, not the pivot (fork only).</param>
+/// <param name="ForTrailedTool">A U-turn's exit is swung wide so a trailed implement is square on the next pass when the tractor is (fork only).</param>
 public record UturnConfigDto(int Style, double Extension, int Smoothing, double Radius, double DistanceFromBoundary,
     double GoAroundRadius, double GoAroundMargin, double CrossGap, int EntryMode = 0, double EntryStraight = 3.0,
-    bool ForFrontTool = false);
+    bool ForFrontTool = false, bool ForTrailedTool = false);
 
 /// <summary>Tram Lines tab (ConfigStore.Guidance tram fields).</summary>
 public record TramConfigDto(int Passes, bool Display, int Line, double Width, bool OuterInverted);

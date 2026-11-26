@@ -44,6 +44,9 @@ namespace AgOpenWeb.Models.Tool
         /// <summary>An implement nearer than this to square where the planned turn ends is left alone, rad.</summary>
         public const double SquareEnough = 1.0 * Math.PI / 180.0;
 
+        /// <summary>The spacing the implement is followed at while the swing is sized, m.</summary>
+        public const double FollowStep = 0.1;
+
         /// <summary>A swing under this is not made, rad: a short implement follows the tractor closely enough.</summary>
         public const double MinSwing = 5.0 * Math.PI / 180.0;
 
@@ -120,8 +123,7 @@ namespace AgOpenWeb.Models.Tool
             }
 
             // The implement where the planned turn ends: nothing to gain when it is square there.
-            var planned = ImplementSweptPath.Compute(path, tool);
-            double angleBefore = Wrap(planned.ToolCenter[onPass].Heading - passHeading);
+            double angleBefore = Wrap(ToolHeadingAt(path, onPass, tool) - passHeading);
             if (dir * angleBefore > -SquareEnough) return null;       // square, or swung too far already
 
             // Tried from the top; where the tail leaves the allowed ground, from further round the
@@ -138,6 +140,32 @@ namespace AgOpenWeb.Models.Tool
             return null;
         }
 
+        /// <summary>
+        /// The implement's heading where the pivot is at point <paramref name="index"/> of
+        /// <paramref name="path"/>, followed at <see cref="FollowStep"/>: at the path's own spacing
+        /// (half a metre) the following is a degree or two out after a tight arc, which is what the
+        /// swing is sized by.
+        /// </summary>
+        private static double ToolHeadingAt(IReadOnlyList<Vec3> path, int index, ToolGeometry tool)
+        {
+            int last = Math.Min(index + 1, path.Count - 1);     // one stretch on: the pivot's direction at the point
+            var fine = new List<Vec3>(last * 6 + 1) { path[0] };
+            int at = 0;
+            for (int i = 1; i <= last; i++)
+            {
+                var a = path[i - 1];
+                var b = path[i];
+                int pieces = Math.Max(1, (int)Math.Ceiling(Dist(a, b) / FollowStep));
+                for (int k = 1; k <= pieces; k++)
+                {
+                    double t = (double)k / pieces;
+                    fine.Add(new Vec3(a.Easting + (b.Easting - a.Easting) * t, a.Northing + (b.Northing - a.Northing) * t, b.Heading));
+                }
+                if (i == index) at = fine.Count - 1;
+            }
+            return ImplementSweptPath.Compute(fine, tool).ToolCenter[at].Heading;
+        }
+
         /// <summary>The swing from one point of the last arc: the angle that leaves the implement square.</summary>
         private static Result? Solve(IReadOnlyList<Vec3> path, int from, double arriving, Vec3 end, double passHeading, int dir,
             double radius, ToolGeometry tool, double angleBefore, Func<Vec3, bool>? allowed, out bool outside)
@@ -148,8 +176,7 @@ namespace AgOpenWeb.Models.Tool
             {
                 candidate = Build(path, from, arriving, end, passHeading, dir, radius, swing, out onPassIndex, out straight);
                 if (candidate == null) return double.NaN;
-                var swept = ImplementSweptPath.Compute(candidate, tool);
-                return dir * Wrap(swept.ToolCenter[onPassIndex].Heading - passHeading);
+                return dir * Wrap(ToolHeadingAt(candidate, onPassIndex, tool) - passHeading);
             }
 
             // The first swing that fits (the straight not negative), then the first that is enough.

@@ -231,6 +231,8 @@ public static partial class RemoteServerWiring
             case "uturn.entryStraight": if (D(out var u10)) gd.LineEntryStraight = Math.Clamp(u10, 0.0, AgOpenWeb.Models.Configuration.GuidanceConfig.MaxLineEntryStraight); return;
             // U-turns and the way onto a pass planned for a front implement's centre, not the pivot (fork only).
             case "uturn.frontTool": gd.UTurnForFrontTool = B(); return;
+            // A U-turn's exit swung wide so a trailed implement is square on the next pass when the tractor is (fork only).
+            case "uturn.trailedTool": gd.UTurnForTrailedTool = B(); return;
             // --- Tram (ConfigStore.Guidance + Tram.TramWidth; saved with the tool profile, #330) ---
             case "tram.passes": if (I(out var tp)) gd.TramPasses = tp; return;
             case "tram.display": gd.TramDisplay = B(); return;

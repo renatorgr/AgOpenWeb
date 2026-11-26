@@ -76,6 +76,13 @@ public partial class YouTurnCreationService
         public Vec3? ToolLeavesPassAt { get; init; }
 
         /// <summary>
+        /// With a trailed implement and the operator's choice (<see cref="GuidanceConfig.UTurnForTrailedTool"/>):
+        /// the exit of <see cref="Path"/> was swung wide so the implement is square on the next pass
+        /// when the tractor is, and this is what was done. Null for a turn as planned for the tractor.
+        /// </summary>
+        public TrailedExitSwing.Result? ExitSwing { get; init; }
+
+        /// <summary>
         /// The pass runs into an obstacle whose choice is a U-turn before it reaches the outer
         /// turn line: the turn is made there. With no <see cref="Path"/>, no turn fits before the
         /// obstacle and none is planned elsewhere; the operator has to take over.
@@ -536,11 +543,24 @@ public partial class YouTurnCreationService
                     }
                 }
 
+                // The turn is made. With a trailed implement and the operator's choice, its exit is
+                // swung wide so the implement is square on the next pass when the tractor is
+                // (TrailedExitSwing); where the swung exit breaks a rule the turn is held to, the
+                // turn stays as it is. Fork only.
+                TrailedExitSwing.Result? swing = null;
+                if (!plan.On && SwingsExitForTrailedTool(config, input.TurnType == YouTurnType.KStyle))
+                {
+                    swing = ExitSwingFor(path, input, boundary, config, obstacles, obstacle, hardOuter ? outerPolygon : null,
+                        clearanceMargin, arcIndex, turn.NextTrack);
+                    if (swing != null) path = swing.Path;
+                }
+
                 _logger.LogDebug("[YouTurn] Path created with {Count} points, net={Net:F0}° cumulative={Cum:F0}° (setback {S:F2}m){At}",
                     path.Count, netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI, extraSetback,
                     atObstacle ? $", before obstacle {obstacle!.InnerIndex + 1}" : "");
                 return new TurnPathResult(path, UsedFallback: false)
                 {
+                    ExitSwing = swing,
                     ArcStart = leavesPass, ToolLeavesPassAt = toolLeavesPass,
                     AtObstacle = atObstacle, AtObstacleIndex = atObstacle ? obstacle!.InnerIndex : -1,
                     ObstacleSetback = obstacleSetback ? extraSetback : 0, SetbackObstacleIndex = obstacleSetback ? setbackObstacle : -1,
