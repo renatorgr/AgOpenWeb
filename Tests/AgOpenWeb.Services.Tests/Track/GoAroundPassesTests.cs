@@ -231,4 +231,232 @@ public class GoAroundPassesTests
                 Is.EqualTo(new[] { 0 }), "a piece of it, as an open line");
         });
     }
+
+    // ── A pin after its obstacle is passed (fork only) ──────────────────────────────────────────
+
+    private const int East = -1, West = 1; // of a pass driven north: right and left
+
+    /// <summary>
+    /// A long obstacle across the passes of the AB 0° line (6 m apart, pass k at 6k + 3 east): a
+    /// round body in the west, 2 to 8 m east, with nearly all the outline's corners, and a thin
+    /// spike out to 42 m east. Pass 6 (39 m) crosses the spike 3 m from its tip and goes round the
+    /// tip, east. Pass 2 (15 m) has 17 m to go round the body, west, and 31 m round the tip, more
+    /// than a bend may move a pass (<see cref="ObstacleDetour.MaxOffset"/>, 20 m), and it runs
+    /// east of the middle of the outline's corners, where a tractor is on the east side of the
+    /// obstacle for the pins.
+    /// </summary>
+    private static (GoAroundPasses Passes, Boundary Field, Models.Track.Track Track) SpikeField()
+    {
+        var (passes, _, track) = Setup();
+        return (passes, SpikeBoundary(), track);
+    }
+
+    /// <summary>The field of <see cref="SpikeField"/>: 600 m square, soft, the one obstacle in it.</summary>
+    internal static Boundary SpikeBoundary()
+    {
+        var ring = new List<(double E, double N)>();
+        // The body, from just above the spike round by the west to just below it.
+        for (int i = 0; i <= 120; i++)
+        {
+            double a = (10 + i * 340.0 / 120) * System.Math.PI / 180; // anticlockwise from east
+            ring.Add((5 + 3 * System.Math.Cos(a), 3 * System.Math.Sin(a)));
+        }
+        ring.Add((42, -0.5));
+        ring.Add((42, 0.5));
+        var obstacle = ObstacleTestField.Polygon(ring.ToArray());
+        obstacle.AtObstacle = ObstacleAction.GoRound;
+        var field = new Boundary
+        {
+            OuterBoundary = ObstacleTestField.Polygon(new[] { (-300.0, -300.0), (-300.0, 300.0), (300.0, 300.0), (300.0, -300.0) }),
+        };
+        field.InnerBoundaries.Add(obstacle);
+        return field;
+    }
+
+    [Test]
+    public void A_pin_of_an_obstacle_driven_past_holds_the_pass_driven_and_no_other()
+    {
+        // The tester's case (Couto da Ribeira, 26 Nov 2026, simulator): the side pinned going round
+        // an obstacle on one pass was held until the bend's own reach was behind (84 m there). The
+        // U-turn at the end of the pass, 67 m on, landed on a pass through the middle of the same
+        // obstacle with room only on the other side: "No room to go around Inner 5 on this pass", a
+        // U-turn before it and 319 m of the pass left to do.
+        var (passes, field, track) = SpikeField();
+        var (d6, p6) = PassOf(track, 6);
+        var (d2, p2) = PassOf(track, 2);
+        Assert.That((d6, d2), Is.EqualTo((39.0, 15.0)));
+        var own2 = passes.For(track, d2, p2, field)!;
+        Assert.That(own2.Rounds.Single().Side, Is.EqualTo(West), "pass 2 by itself goes round the body");
+        Assert.That(own2.Blocked, Is.Empty);
+
+        // North along pass 6, beside the spike: the tip's side is pinned, and it holds pass 2 too.
+        var b6 = passes.For(track, d6, p6, field)!;
+        Assert.That(b6.Rounds.Single().Side, Is.EqualTo(East));
+        passes.LetGo(track, d6, EastingAt(b6.Points, 0), 0, travelHeading: 0);
+        passes.Steered(track, d6, b6, EastingAt(b6.Points, 0), 0, travelHeading: 0);
+        Assert.That(passes.PinnedSide(0), Is.EqualTo(East));
+        Assert.That(passes.PinIsPassed(0), Is.False);
+        Assert.That(passes.For(track, d2, p2, field)!.Blocked, Is.EqualTo(new[] { 0 }),
+            "beside the obstacle the tractor's side holds every pass: pass 2 has no room on it");
+
+        // 40 m on, the obstacle behind the rig, still inside the bend's reach: the pin is kept for
+        // the pass driven (a snap 2 m over is that pass) and no longer holds pass 2.
+        passes.LetGo(track, d6, EastingAt(b6.Points, 40), 40, travelHeading: 0);
+        passes.Steered(track, d6, b6, EastingAt(b6.Points, 40), 40, travelHeading: 0);
+        Assert.That(passes.PinnedSide(0), Is.EqualTo(East), "still pinned");
+        Assert.That(passes.PinIsPassed(0), Is.True);
+        var snapped = passes.For(track, d6 - 2, CurveProcessing.CreateOffsetCurve(track.Points, d6 - 2), field)!;
+        Assert.That(snapped.Rounds.Single().Side, Is.EqualTo(East));
+        var planned2 = passes.For(track, d2, p2, field)!;
+        Assert.That(planned2.Blocked, Is.Empty, "the planner's pass 2, with the obstacle behind the tractor");
+        Assert.That(planned2.Rounds.Single().Side, Is.EqualTo(West));
+
+        // After the U-turn, south on pass 2 at 60 m: the pin is let go before the bend is asked for.
+        passes.LetGo(track, d2, 15, 60, travelHeading: System.Math.PI);
+        Assert.That(passes.PinnedSide(0), Is.EqualTo(0), "let go on another pass");
+        var b2 = passes.For(track, d2, p2, field)!;
+        passes.Steered(track, d2, b2, 15, 60, travelHeading: System.Math.PI);
+        Assert.Multiple(() =>
+        {
+            Assert.That(b2.Blocked, Is.Empty);
+            Assert.That(b2.GoneRound, Is.EqualTo(new[] { 0 }));
+            Assert.That(EastingAt(b2.Points, 0), Is.LessThan(-2 + 0.5), "round the body, west of it");
+            Assert.That(passes.PinnedSide(0), Is.Not.EqualTo(East));
+        });
+    }
+
+    [Test]
+    public void Without_the_way_the_tractor_moves_no_obstacle_is_passed_and_the_pin_holds_the_next_pass()
+    {
+        // The same drive with the way the tractor moves not known: as it was before. It also shows
+        // the field of these tests is the tester's case: on pass 2 the tractor is still on the
+        // pinned side of the obstacle for the pins, and inside the bend's reach.
+        var (passes, field, track) = SpikeField();
+        var (d6, p6) = PassOf(track, 6);
+        var (d2, p2) = PassOf(track, 2);
+        var b6 = passes.For(track, d6, p6, field)!;
+        passes.Steered(track, d6, b6, EastingAt(b6.Points, 0), 0, travelHeading: null);
+        passes.Steered(track, d6, b6, EastingAt(b6.Points, 40), 40, travelHeading: null);
+        Assert.That(passes.PinIsPassed(0), Is.False);
+
+        passes.LetGo(track, d2, 15, 60, travelHeading: null);
+        Assert.That(passes.PinnedSide(0), Is.EqualTo(East));
+        Assert.That(passes.For(track, d2, p2, field)!.Blocked, Is.EqualTo(new[] { 0 }));
+    }
+
+    [Test]
+    public void An_obstacle_is_not_passed_while_the_rig_is_still_beside_it()
+    {
+        var (passes, field, track) = SpikeField();
+        var c = ConfigurationStore.Instance;
+        var (d6, p6) = PassOf(track, 6);
+        var b6 = passes.For(track, d6, p6, field)!;
+        passes.Steered(track, d6, b6, EastingAt(b6.Points, 0), 0, travelHeading: 0);
+
+        // The grown obstacle ends 7 m north of its middle (the body, 3 m, and the 4 m kept from
+        // it). A drill on wheels 4 m behind the drawbar pin, the pin 1.5 m behind the axle: the rig
+        // reaches 5.5 m back, so the pivot must be 7 + 2 + 5.5 m on. (The pin keeps the outline it
+        // was taken with, so the line driven here is the one bent before the drill was hitched.)
+        c.Tool.SetToolType("trailing");
+        c.Vehicle.HitchLength = 1.5;
+        c.Tool.TrailingHitchLength = -4;
+        c.Tool.TrailingToolToPivotLength = 0;
+        Assert.That(passes.RigBehind, Is.EqualTo(5.5).Within(0.01));
+        passes.Steered(track, d6, b6, EastingAt(b6.Points, 13), 13, travelHeading: 0);
+        Assert.That(passes.PinIsPassed(0), Is.False, "13 m on: the drill is still beside it");
+        passes.Steered(track, d6, b6, EastingAt(b6.Points, 17), 17, travelHeading: 0);
+        Assert.That(passes.PinIsPassed(0), Is.True, "17 m on: all of the rig is past it");
+
+        // Backing up (no way forward is given then): passed while the drill is still clear of it,
+        // not any more once the drill is beside it again, the pivot still 3 m past it.
+        passes.Steered(track, d6, b6, EastingAt(b6.Points, 14), 14, travelHeading: null);
+        Assert.That(passes.PinIsPassed(0), Is.True, "backed up to 14 m: the drill is still past it");
+        passes.Steered(track, d6, b6, EastingAt(b6.Points, 10), 10, travelHeading: null);
+        Assert.That(passes.PinIsPassed(0), Is.False, "backed up to 10 m: the drill is beside it again");
+        Assert.That(passes.PinnedSide(0), Is.EqualTo(East));
+
+        // And backing up on past it the other way, nothing is passed: what trails then is the
+        // tractor's front (and a front implement), which the rig's reach behind does not hold.
+        passes.Steered(track, d6, b6, EastingAt(b6.Points, -30), -30, travelHeading: null);
+        Assert.That(passes.PinIsPassed(0), Is.False);
+        Assert.That(passes.PinnedSide(0), Is.EqualTo(East));
+    }
+
+    [Test]
+    public void A_pin_of_an_obstacle_driven_past_still_holds_a_snap_of_the_pass_driven()
+    {
+        // The tree between passes 12 and 13: pass 12 goes round it west. With the tree behind the
+        // rig, a snap of the line 2.9 m east (under half a pass: the pass driven) puts it east of
+        // the tree's middle, where a line by itself goes round the tree east; the way back from
+        // the bend is still under the tractor, so the pin keeps it west.
+        var (passes, field, track) = Setup();
+        var (d12, p12) = PassOf(track, 12);
+        var b12 = passes.For(track, d12, p12, field.Boundary)!;
+        passes.Steered(track, d12, b12, EastingAt(b12.Points, 74.5), 74.5, travelHeading: 0);
+        int side = passes.PinnedSide(Tree18);
+        Assert.That(side, Is.Not.EqualTo(0), "the scenario: pinned alongside the tree");
+
+        double north = 74.5;
+        while (!passes.PinIsPassed(Tree18) && passes.PinnedSide(Tree18) != 0 && north < 120)
+        {
+            north += 1;
+            passes.LetGo(track, d12, EastingAt(b12.Points, north), north, travelHeading: 0);
+            passes.Steered(track, d12, b12, EastingAt(b12.Points, north), north, travelHeading: 0);
+        }
+        Assert.That(passes.PinIsPassed(Tree18), Is.True, "the scenario: the tree is passed inside the bend's reach");
+        TestContext.Out.WriteLine($"the tree at 74.5 m north is passed at {north:F1} m");
+
+        double dSnap = d12 + 2.9;
+        var pSnap = CurveProcessing.CreateOffsetCurve(track.Points, dSnap);
+        var byItself = new GoAroundPasses(ConfigurationStore.Instance, new PolygonOffsetService()).For(track, dSnap, pSnap, field.Boundary)!;
+        Assert.That(byItself.Rounds.Single(r => r.InnerIndex == Tree18).Side, Is.EqualTo(-side), "the scenario: by itself the snapped line goes round the other side");
+
+        var snapped = passes.For(track, dSnap, pSnap, field.Boundary)!;
+        Assert.That(snapped.Rounds.Single(r => r.InnerIndex == Tree18).Side, Is.EqualTo(side), "the pin holds the line under the tractor");
+        var (d13, p13) = PassOf(track, 13);
+        Assert.That(EastingAt(passes.For(track, d13, p13, field.Boundary)!.Points, 74.5), Is.GreaterThan(81 + 1), "and not the next pass");
+    }
+
+    [Test]
+    public void A_pin_is_let_go_when_another_obstacle_takes_its_place_in_the_field_s_list()
+    {
+        // A pin is kept by its obstacle's place in the field's list. An obstacle added before it
+        // (or one deleted) puts another obstacle at that place: the side held is not given to it.
+        var (passes, field, track) = SpikeField();
+        var (d6, p6) = PassOf(track, 6);
+        var b6 = passes.For(track, d6, p6, field)!;
+        passes.Steered(track, d6, b6, EastingAt(b6.Points, 0), 0, travelHeading: 0);
+        Assert.That(passes.PinnedSide(0), Is.EqualTo(East));
+
+        passes.For(track, d6, p6, field);
+        Assert.That(passes.PinnedSide(0), Is.EqualTo(East), "the field as it was: the pin holds");
+
+        var tree = new BoundaryPolygon { AtObstacle = ObstacleAction.GoRound };
+        tree.SetCircle(new ObstacleCircle(-150, 150, 3));
+        field.InnerBoundaries.Insert(0, tree);
+        var after = passes.For(track, d6, p6, field)!;
+        Assert.That(passes.PinnedSide(0), Is.EqualTo(0), "the tree now at that place is not pinned");
+        Assert.That(after.Rounds.Single().InnerIndex, Is.EqualTo(1), "the long obstacle is the second of the list now");
+
+        // The tractor is still beside the long obstacle: pinned again, at its new place.
+        passes.Steered(track, d6, after, EastingAt(after.Points, 0), 0, travelHeading: 0);
+        Assert.That((passes.PinnedSide(0), passes.PinnedSide(1)), Is.EqualTo((0, East)));
+    }
+
+    [Test]
+    public void An_obstacle_already_behind_the_tractor_is_not_pinned()
+    {
+        // Engaged, or moved onto the pass, in the bend's way back to the pass: nothing to hold.
+        var (passes, field, track) = SpikeField();
+        var (d6, p6) = PassOf(track, 6);
+        var b6 = passes.For(track, d6, p6, field)!;
+        double e = EastingAt(b6.Points, 12);
+        Assert.That(e, Is.GreaterThan(39 + 0.5), "still off the pass, on the bend");
+
+        passes.Steered(track, d6, b6, e, 12, travelHeading: 0);
+        Assert.That(passes.PinnedSide(0), Is.EqualTo(0), "going away from it");
+
+        passes.Steered(track, d6, b6, e, 12, travelHeading: System.Math.PI);
+        Assert.That(passes.PinnedSide(0), Is.EqualTo(East), "going towards it");
+    }
 }

@@ -55,6 +55,12 @@ Most of these have been offered to the official project too. When one is merged 
 - An obstacle with no room on either side no longer takes away the bend round the obstacle before it.
 - Simulator only, not tried on a tractor yet.
 
+**Go around after a U-turn.** After going round an obstacle on one pass, the U-turn at the end could land on a pass that runs through the same obstacle. The app then said "No room to go around Inner N on this pass: U-turn before it", turned before the obstacle and left the rest of the pass to do.
+
+- The side the tractor went round an obstacle now counts only for the pass being driven, once the obstacle is behind the tractor.
+- The next pass goes round the obstacle on its own best side.
+- Simulator only, not tried on a tractor yet.
+
 **Headland gaps.** With "Drive across a headland gap up to" set on the U-turn tab, a pass that crosses a narrow tip of the field is driven on with the sections off, and the turn is made at the far end.
 
 **U-turns with no room.**
