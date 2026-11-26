@@ -385,6 +385,7 @@ const transport = RemoteTransport.create({
         e: t.pose.e, n: t.pose.n, heading: t.pose.heading, speed: t.pose.speed,
         tool: t.tool, goal: t.goal, t: performance.now(), hostT: t.hostMs,
       };
+      brakeSample(lastTick); // the tractor's brake lights (js/map-draw.js), from every Tick
       // Keep the buffer strictly increasing in host time. The 30 Hz render-pull vs 10 Hz
       // broadcast can occasionally resend the same pose (equal hostT) — a duplicate/
       // backward stamp would break the bracket search, so replace rather than append.

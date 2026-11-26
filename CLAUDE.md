@@ -539,12 +539,25 @@ the track width stays as set. A tester asked for it (25 Nov 2026). Tests: `Vehic
 in AppSettings, on by default; the Display part of the Config frame ends with it; fork only): the tyres' tread moves as
 the wheels roll (`js/map-draw.js`). Each tyre is drawn under its picture as a cylinder seen from above
 (`rollingTyreSk`: one `drawVertices` mesh of 12 bands, the tread repeating along it, bunched and darker towards its
-ends) and the picture leaves its own tyres out (`vehicleTinted` with roll: the dark pixels in `VEH_TYRES` holes, the
-tractor's tail lights kept). The top of a tyre moves forward by the distance its wheel rolled (`rollDist`: each frame's
+ends) and the picture leaves its own tyres out (`vehicleTinted` with roll: the dark pixels in `VEH_TYRES` holes). The top of a tyre moves forward by the distance its wheel rolled (`rollDist`: each frame's
 move taken at the wheel, so outer and steered wheels roll further in a turn, a jump of 5 m or 0.5 rad not rolled), and
 the tread is drawn at the tyre's width, so a big rear tyre's lugs pass slower than a front's. The big tyres use the
 articulated outer tyre's tread, the front wheels their own (`TREADS`); the combine's rear wheels stay as they are.
 A tester asked for it (25 Nov 2026). Tests: `RollingWheels_OnByDefault_AndForSettingsSavedBeforeIt`.
+
+**The tractor's tail lights and brake lights** (fork only, `js/map-draw.js`): the tractor picture has its red and amber
+lights on the tyre behind each mudguard, so from above they stood in the air behind it, and over a rolling tyre they
+floated (the tester, 26 Nov 2026). They are taken out of the picture (`VEH_LIGHTS`: left out with rolling wheels, else
+painted with the tyre round them) and drawn on the mudguards' rear ends (`tailLightsSk`, `TAIL_LIGHT` in the picture's
+pixels). The red ones are brake lights (`brakeSample` on every Tick's speed, smoothed; `brakeLightsLit`): lit, with a
+glow on the ground behind, while the tractor slows down (the speed falling and 0.1 m/s under the highest of the last
+0.5 s, held 1 s after, so one tap of the simulator's speed down shows), dark at a steady speed, off as soon as it
+speeds up again (0.03 m/s in one Tick) and below 0.1 m/s. The
+simulator's Stop stops at once, so it lights nothing. Drawing only. **The 3-point links**: an implement drawn on the
+lower links (`iLowerLinks`: the shapes' headstocks, the front sprayer's rear tank) draws the links from under the
+tractor's axle housing to its own pins, and the tractor is drawn without the links in its picture (`VEH_LINKS`,
+`implOwnLinks`): they ended about 1 m behind the rear axle whatever the Rear 3-point hitch, short of the tank's pins
+at 1.2 m (the tester's sprayer, 26 Nov 2026), and showed beside the shapes' own links.
 
 **The implement's colour on the map** (Tool › Type › *Colour on the map*, shown with a picture chosen; `ToolConfig.PictureColor`
 0xRRGGBB, red by default (`ToolConfig.DefaultPictureColor`), `tool.pictureColor` as hex, saved with the tool profile, the

@@ -702,32 +702,56 @@ function vehInTyreBox(boxes, x, y) {
   for (const b of boxes) if (x >= b[0] && x < b[2] && y >= b[1] && y < b[3]) return true;
   return false;
 }
+// The tractor picture's own tail lights (fork only): a red and an amber light in a dark rim (the left pair; the right
+// is its mirror), drawn on the tyre behind the mudguard, so from above they stood in the air behind it, and over the
+// rolling tyre they floated (a tester, 26 Nov 2026). They are taken out of the picture (left out with rolling wheels,
+// the tyre rolling under them; else painted with the tyre, each pixel between the rows above and below the box) and
+// drawn on the mudguards' rear ends by tailLightsSk, as brake lights.
+const VEH_LIGHTS = { tractor: [56, 222, 74, 237] };
+// The tractor picture's 3-point linkage (its lower links and top link, behind the axle housing): left out when the
+// implement's picture draws its own links to its pins (implOwnLinks), so they meet the implement where it hangs.
+const VEH_LINKS = { tractor: [98, 206, 158, 239] };
 // The loaded picture `img` in the vehicle's colour and, with `roll` (rolling wheels), without its tyres: their dark
 // pixels inside VEH_TYRES' holes are left out, so the rolling tyres drawn under the picture show through them.
-// Made once per colour and roll; null when it would be the picture as it is (white and not rolling).
-function vehicleTinted(img, kind, roll) {
+// Without its own tail lights (VEH_LIGHTS) and, with `noLinks`, without its 3-point linkage (VEH_LINKS).
+// Made once per colour, roll and links; null when it would be the picture as it is.
+function vehicleTinted(img, kind, roll, noLinks) {
   const c = config && config.vehicle && typeof config.vehicle.color === 'number' ? config.vehicle.color & 0xFFFFFF : 0xFFFFFF;
   const spec = c === 0xFFFFFF ? null : VEH_TINT[kind], tyres = roll ? VEH_TYRES[kind] : null;
-  if ((!spec && !tyres) || !img || !img.naturalWidth) return null;
+  const lightBox = VEH_LIGHTS[kind], linkBox = noLinks ? VEH_LINKS[kind] : null;
+  if ((!spec && !tyres && !lightBox && !linkBox) || !img || !img.naturalWidth) return null;
   const t = vehTinted[kind];
-  if (t && t.rgb === c && t.roll === !!tyres) return t.sk;
+  if (t && t.rgb === c && t.roll === !!tyres && t.links === !!linkBox) return t.sk;
   const w = img.naturalWidth, h = img.naturalHeight;
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
   const g2 = cv.getContext('2d');
   g2.drawImage(img, 0, 0);
-  const data = g2.getImageData(0, 0, w, h), px = data.data;
+  const data = g2.getImageData(0, 0, w, h), px = data.data, src = lightBox && !tyres ? px.slice() : null;
   const kr = spec ? ((c >> 16) & 255) / spec.grey : 1, kg = spec ? ((c >> 8) & 255) / spec.grey : 1;
   const kb = spec ? (c & 255) / spec.grey : 1;
-  const holes = tyres && vehTyreBoxes(tyres, 'holes'), keep = tyres && vehTyreBoxes(tyres, 'keep');
+  const holes = tyres && vehTyreBoxes(tyres, 'holes');
+  const lights = lightBox ? vehTyreBoxes({ b: lightBox }, 'b') : null, links = linkBox ? [linkBox] : null;
   const sx = 256 / w, sy = 256 / h;
+  // The rows just above and below the lights' box, whose colours the tyre under them is painted with.
+  const ly0 = lightBox ? Math.max(0, Math.floor(lightBox[1] / sy) - 1) : 0;
+  const ly1 = lightBox ? Math.min(h - 1, Math.ceil(lightBox[3] / sy)) : 0;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 4;
       if (!px[i + 3]) continue;
+      if (lights && vehInTyreBox(lights, x * sx, y * sy)) {
+        if (tyres) { px[i + 3] = 0; continue; } // the tyre rolls under where they were
+        const f = (y - ly0) / (ly1 - ly0), a = (ly0 * w + x) * 4, b = (ly1 * w + x) * 4;
+        for (let k = 0; k < 4; k++) px[i + k] = src[a + k] + (src[b + k] - src[a + k]) * f;
+      }
       const r = px[i], g = px[i + 1], b = px[i + 2], hi = Math.max(r, g, b);
-      if (hi - Math.min(r, g, b) > 16) continue; // a light or a reflector
-      if (hi < VEH_TYRE_MAX && holes && vehInTyreBox(holes, x * sx, y * sy) && !vehInTyreBox(keep, x * sx, y * sy)) {
+      if (hi - Math.min(r, g, b) > 16) continue; // a reflector
+      if (hi < VEH_TYRE_MAX && links && vehInTyreBox(links, x * sx, y * sy)) {
+        px[i + 3] = 0; // a lower link or the top link, drawn by the implement's picture
+        continue;
+      }
+      if (hi < VEH_TYRE_MAX && holes && vehInTyreBox(holes, x * sx, y * sy)) {
         px[i + 3] = 0; // a tyre, drawn rolling under the picture
         continue;
       }
@@ -739,18 +763,90 @@ function vehicleTinted(img, kind, roll) {
   g2.putImageData(data, 0, 0);
   if (t && t.sk) t.sk.delete();
   const sk = CK.MakeImageFromCanvasImageSource(cv);
-  vehTinted[kind] = { rgb: c, roll: !!tyres, sk };
+  vehTinted[kind] = { rgb: c, roll: !!tyres, links: !!linkBox, sk };
   return sk;
+}
+// The tail lights on the rear ends of the tractor picture's mudguards (fork only), in the picture's 256 px (the left
+// pair; the right is its mirror): a dark housing just over the mudguard's rear edge (row 212) with the red light on
+// the outside and the amber one inside it, where the picture had them on the tyre behind. The red lights are brake
+// lights: lit (brighter, with a glow on the ground behind) while the tractor slows down (brakeLightsLit), else dark.
+const TAIL_LIGHT = { housing: [57, 204, 73, 213.5], red: [58, 205, 64.6, 212.6], amber: [65.6, 205, 72, 212.6] };
+const TAIL_RED_DARK = [128, 18, 16], TAIL_RED_LIT = [255, 46, 34], TAIL_AMBER = [214, 146, 12];
+let tailGlow = null;
+function tailLightPaint(key, rgb) {
+  const k = 'tail' + key;
+  if (!SKP[k]) { SKP[k] = new CK.Paint(); SKP[k].setAntiAlias(true); SKP[k].setColor(CK.Color(rgb[0], rgb[1], rgb[2], 1)); }
+  return SKP[k];
+}
+// x from -half to half and y from top (row 0) down to top - bH: the tractor picture's rectangle in the vehicle frame.
+function tailLightsSk(canvas, half, top, bH, lit) {
+  const X = (c) => -half + c * half / 128, Y = (r) => top - r * bH / 256, L = TAIL_LIGHT;
+  const rect = (b, m) => m ? CK.LTRBRect(X(256 - b[2]), Y(b[3]), X(256 - b[0]), Y(b[1])) : CK.LTRBRect(X(b[0]), Y(b[3]), X(b[2]), Y(b[1]));
+  if (lit) {
+    if (!tailGlow) {
+      tailGlow = new CK.Paint();
+      tailGlow.setAntiAlias(true);
+      tailGlow.setShader(CK.Shader.MakeRadialGradient([0, 0], 1,
+        [CK.Color(255, 40, 24, 0.55), CK.Color(255, 40, 24, 0.22), CK.Color(255, 40, 24, 0)], [0, 0.45, 1], CK.TileMode.Clamp));
+    }
+    const gr = 0.45; // m: the glow's radius on the ground behind each light
+    for (const m of [false, true]) {
+      const c = rect(L.red, m);
+      canvas.save();
+      canvas.translate((c[0] + c[2]) / 2, (c[1] + c[3]) / 2 - 0.12);
+      canvas.scale(gr, gr);
+      canvas.drawCircle(0, 0, 1, tailGlow);
+      canvas.restore();
+    }
+  }
+  const housing = tailLightPaint('Housing', [24, 24, 24]), amber = tailLightPaint('Amber', TAIL_AMBER);
+  const red = lit ? tailLightPaint('RedLit', TAIL_RED_LIT) : tailLightPaint('RedDark', TAIL_RED_DARK);
+  const hot = lit && tailLightPaint('RedHot', [255, 170, 150]);
+  const rr = Math.min(0.025, bH / 256);
+  for (const m of [false, true]) {
+    canvas.drawRRect(CK.RRectXY(rect(L.housing, m), rr, rr), housing);
+    canvas.drawRect(rect(L.red, m), red);
+    canvas.drawRect(rect(L.amber, m), amber);
+    if (hot) { // the bulb's bright middle
+      const c = rect(L.red, m), dx = (c[2] - c[0]) * 0.28, dy = (c[3] - c[1]) * 0.3;
+      canvas.drawRect(CK.LTRBRect(c[0] + dx, c[1] + dy, c[2] - dx, c[3] - dy), hot);
+    }
+  }
+}
+// Brake lights (fork only; a tester asked, 26 Nov 2026): the red lights light up while the tractor slows down
+// (it brakes, or eases off) and are dark while it keeps its speed or speeds up, and off once it stands still. From
+// every Tick's speed (m/s, forward or reverse; brakeSample, from onTick, so none is missed between two frames),
+// smoothed: slowing down is the smoothed speed falling and BRAKE_DROP below the highest it was in the last
+// BRAKE_WINDOW ms; the lights stay on BRAKE_HOLD ms after the last such Tick, so one tap of the simulator's speed
+// down (0.5 km/h) shows, unless the tractor stands still (under BRAKE_STOPPED, 0.36 km/h) or speeds up (the smoothed
+// speed up BRAKE_RISE in one Tick, 0.3 m/s² at 10 Hz: more than a receiver's noise), which end the hold.
+const BRAKE_WINDOW = 500, BRAKE_DROP = 0.1, BRAKE_HOLD = 1000, BRAKE_STOPPED = 0.1, BRAKE_RISE = 0.03;
+let brakeSpeed = null, brakeUntil = 0, brakeStill = true;
+const brakeHist = [];
+function brakeSample(t) {
+  const v = Math.abs(t.speed || 0), before = brakeSpeed;
+  brakeSpeed = before === null ? v : before + 0.5 * (v - before);
+  brakeStill = v < BRAKE_STOPPED;
+  brakeHist.push({ t: t.t, v: brakeSpeed });
+  while (brakeHist.length && brakeHist[0].t < t.t - BRAKE_WINDOW) brakeHist.shift();
+  if (brakeStill) { brakeUntil = 0; return; } // stopped: a later start does not light them again
+  if (before !== null && brakeSpeed > before + BRAKE_RISE) { brakeUntil = 0; return; } // speeding up again
+  let hi = 0;
+  for (const h of brakeHist) if (h.v > hi) hi = h.v;
+  if (before !== null && brakeSpeed < before && hi - brakeSpeed >= BRAKE_DROP) brakeUntil = t.t + BRAKE_HOLD;
+}
+function brakeLightsLit() {
+  return !brakeStill && performance.now() < brakeUntil;
 }
 // Display > Rolling Wheels (display.rollingWheels, fork only): the tyres' tread moves as the wheels roll. Each tyre
 // is drawn as a turning cylinder seen from above (rollingTyreSk) under its picture, which leaves its own tyres out
 // (vehicleTinted with roll). VEH_TYRES, in a 256 px picture's pixels, the left tyre (the right one is its mirror,
 // unless `one`): `tyre` its whole extent, where the rolling tyre is drawn, `holes` where the picture's dark pixels
-// are left out, but not in `keep` (the tractor's tail lights, on its mudguards). The front wheel's picture is
+// are left out (the tractor's tail lights are drawn on its mudguards, tailLightsSk). The front wheel's picture is
 // 128 px (its tyre is 49-80 by 42-81): only the tread in front of its mudguard is a hole. The harvester's rear
 // wheels are drawn nearly black and stay as they are.
 const VEH_TYRES = {
-  tractor: { tyre: [41, 140, 89, 238], holes: [36, 134, 92, 242], keep: [57, 223, 73, 237] },
+  tractor: { tyre: [41, 140, 89, 238], holes: [36, 134, 92, 242] },
   harvester: { tyre: [50, 109, 78, 147], holes: [46, 104, 80, 150] },
   articulatedRear: { tyre: [41, 78, 82, 177], holes: [41, 74, 84, 181] },
   articulatedFront: { tyre: [41, 78, 82, 177], holes: [41, 74, 84, 181] },
@@ -1026,12 +1122,13 @@ function vehicleSk(canvas, p) {
       // Body sprite (scale 1,-1 = bitmap rows top-down → world N up).
       canvas.save();
       canvas.scale(1, -1);
-      const body = vehicleTinted(tractorImg, 'tractor', roll) || skTractor;
+      const body = vehicleTinted(tractorImg, 'tractor', roll, implOwnLinks) || skTractor;
       canvas.drawImageRectOptions(body,
         CK.LTRBRect(0, 0, body.width(), body.height()),
         CK.LTRBRect(-half, -top, half, -bot),
         CK.FilterMode.Linear, CK.MipmapMode.None, null);
       canvas.restore();
+      if (body !== skTractor) tailLightsSk(canvas, half, top, bH, brakeLightsLit()); // taken out of the picture
       // Steerable front wheels: one sprite drawn at both front-axle ends, rotated by the
       // live wheel angle (translate ±trackWidth/2, wheelbase −0.05; rotate −steer;
       // scale 1,-1; centred dst).
@@ -1194,6 +1291,9 @@ function boundaryMenuSelectedRing() {
 const implPics = {}; // loaded the first time a picture is drawn
 function implSprite(src) { return skSprite(implPics[src] || (implPics[src] = loadSprite(src))); }
 let implementPictureOn = false, implPicFailed = false;
+// The implement's picture drew the tractor's lower links to its own pins this frame (iLowerLinks), so the tractor is
+// drawn without the links in its picture (vehicleTinted's noLinks): drawn before the tractor, in the same frame.
+let implOwnLinks = false;
 let implementStrip = { half: 1.0, ahead: 0 }; // the strip's half depth and its move ahead of the tool point (m)
 // The implement's colour (Tool > Type > Colour on the map, tool.pictureColor 0xRRGGBB, red by default; fork only): while a
 // picture drawn from shapes is drawn, its paint (the reds, greens and yellows of IC) is drawn in that colour and its
@@ -1207,6 +1307,7 @@ function implColour(tl) {
 }
 function implementPictureSk(canvas) {
   implementPictureOn = false;
+  implOwnLinks = false;
   try { implWorkLeft(); } catch (e) { } // the way the work goes, followed with no picture shown too; never the map
   const tl = config && config.tool, veh = config && config.vehicle;
   if (!tl || !veh) return false;
@@ -1220,7 +1321,7 @@ function implementPictureSk(canvas) {
   try { drawn = pic.draw(canvas, tl, veh); }
   catch (e) { if (!implPicFailed) { implPicFailed = true; console.warn('implement picture:', e); } }
   finally { canvas.restoreToCount(saves); implRecolour = null; }
-  if (!drawn) return false;
+  if (!drawn) { implOwnLinks = false; return false; }
   implementStrip = drawn;
   implementPictureOn = true;
   return true;
@@ -1266,8 +1367,12 @@ function frontSprayerPictureSk(canvas, tl, veh) {
   if (!boom || !tank) return null;
   beginVehicleFrame(canvas, p);
   canvas.save();
-  canvas.translate(0, -Math.abs(veh.threePointHitchLength));
   canvas.scale(1, -1);
+  // The lower links to the tank frame's pins (in SprayerTank, 0.415 m either side, on its front bar at y = 0), the
+  // top link to that bar's middle; the pins drawn over the links' ends.
+  const L = Math.abs(veh.threePointHitchLength);
+  iLowerLinks(canvas, L, 0.415, L - 0.025);
+  canvas.translate(0, L);
   drawImplPic(canvas, tank, -0.80, -0.12, 0.80, 1.10);
   canvas.restore();
   canvas.translate(0, Math.abs(veh.frontHitchLength) + tl.workingPointFromHitch);
@@ -1448,10 +1553,14 @@ function iDisc(c, x, y, r, deg, fill = ip(IC.disc), line = ip(0x3C4146, 1, 0.015
   c.drawOval(R, line);
   c.restore();
 }
-// The tractor's lower links from under the rear axle to the pins L behind it, and the top link.
-function iLowerLinks(c, L) {
-  for (const s of [-1, 1]) iBar(c, s * 0.42, 0.25, s * 0.43, L, IC.dark, 0.08);
-  iBar(c, 0, 0.35, 0, L - 0.05, 0x55595E, 0.07);
+// The tractor's lower links from under its axle housing to the implement's pins L behind the rear axle and pin
+// either side of the middle, and the top link to topEnd. They take the place of the links in the tractor's picture
+// (implOwnLinks), which end where its picture does, not at the pins: drawn under the tractor, they come out from
+// under its housing as the picture's did.
+function iLowerLinks(c, L, pin = 0.43, topEnd = L - 0.05) {
+  for (const s of [-1, 1]) iBar(c, s * 0.25, 0.2, s * pin, L, IC.dark, 0.08);
+  iBar(c, 0, 0.2, 0, topEnd, 0x55595E, 0.07);
+  implOwnLinks = true;
 }
 // A 3-point headstock (an A-frame) from the lower-link pins at y = L back to the frame at L + depth.
 function iHeadstock(c, L, depth, rgb, rgbD) {
