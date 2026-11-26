@@ -320,7 +320,11 @@ public class TrailedToolTurnPlanTests
         Assert.That(on, Is.Not.EqualTo(0));
 
         c.Tool.TrailingHitchLength = 5.0;
-        Assert.That(YouTurnCreationService.TrailedSwingStamp(c), Is.Not.EqualTo(on).And.Not.EqualTo(0), "a longer drill swings further");
+        int longer = YouTurnCreationService.TrailedSwingStamp(c);
+        Assert.That(longer, Is.Not.EqualTo(on).And.Not.EqualTo(0), "a longer drill swings further");
+
+        c.Guidance.UTurnRadius += 1.0;
+        Assert.That(YouTurnCreationService.TrailedSwingStamp(c), Is.Not.EqualTo(longer).And.Not.EqualTo(0), "the swing's arcs are made at the U-turn radius");
 
         c.Tool.SetToolType("rear");
         Assert.That(YouTurnCreationService.TrailedSwingStamp(c), Is.EqualTo(0), "a fixed implement is not swung for");

@@ -1038,7 +1038,7 @@ end. Tests: `PivotPathBehindTests` (Models), `FrontToolTurnPlanTests`, `FrontToo
 
 **The U-turn's exit swung wide for a trailed implement** (U-turn tab › *U-turns planned for*: The tractor / The trailed
 implement, shown with a trailing or TBT tool; `GuidanceConfig.UTurnForTrailedTool`, `uturn.trailedTool`, saved with the
-tool profile as `youTurn.forTrailedTool`, the Config frame's byte after the front implement's; **off by default**; fork
+tool profile as `youTurn.forTrailedTool` (off in an AgOpenGPS profile read in, as the front implement's), the Config frame's byte after the front implement's; **off by default**; fork
 only). A turn ends where the tractor is on the next pass; a trailed implement cuts inside the turn and is then still at
 an angle to the pass, which it joins as e^(−s/L) (the tester's drill, wheels 4.15 m behind the pin: within 5 cm of the
 pass 16.5 to 18.7 m past the top of the turn, within 2 cm 20 to 22 m). With the choice on, `CreateTurnPathFor` finds the
@@ -1064,8 +1064,8 @@ the arc too, where the straight heads away from the fence; refused outright, the
 fence stayed as planned), and `ClearsTurnObstacles` with the exit looked at as far along the pass as the planned turn's
 (`SwingExitReach`). **Never no turn where there was one, and never a turn seated elsewhere**: where the swung exit
 breaks a rule the turn stays as planned for the tractor, and the log says why. `TurnPathResult.ExitSwing` holds what was
-done. A turn planned and not yet driven is planned again when the choice or the implement's lengths change
-(`TrailedSwingStamp`, `_youTurnTrailedSwing`; `EndKey`). A K-turn, the simple fallback, a manual U-turn and the way to
+done. A turn planned and not yet driven is planned again when the choice, the implement's lengths or the U-turn radius
+(the swing's arcs are made at it) change (`TrailedSwingStamp`, `_youTurnTrailedSwing`; `EndKey`). A K-turn, the simple fallback, a manual U-turn and the way to
 the start of a pass are planned for the tractor. The map draws the implement's line from the swung path (the paragraph
 above). In the simulator (Couto da Ribeira, a hard fence, 60R onto 62R at 6 km/h, that drill): the drill within 5 cm of
 the next pass 16.5 m past the top of a keyhole turn as planned for the tractor and 7.1 and 9.0 m swung (two drives),

@@ -88,8 +88,8 @@ namespace AgOpenWeb.Models.Tool
 
             // The pass the path ends along: the direction of its last metre.
             int back = n - 2;
-            while (back > 0 && Dist(path[back], end) < 1.0) back--;
-            if (Dist(path[back], end) < 1e-6) return null;
+            while (back > 0 && GeometryMath.Distance(path[back], end) < 1.0) back--;
+            if (GeometryMath.Distance(path[back], end) < 1e-6) return null;
             double passHeading = Math.Atan2(end.Easting - path[back].Easting, end.Northing - path[back].Northing);
 
             // Where the path comes onto that line: the first point of its straight end.
@@ -159,7 +159,7 @@ namespace AgOpenWeb.Models.Tool
             {
                 var a = path[i - 1];
                 var b = path[i];
-                int pieces = Math.Max(1, (int)Math.Ceiling(Dist(a, b) / FollowStep));
+                int pieces = Math.Max(1, (int)Math.Ceiling(GeometryMath.Distance(a, b) / FollowStep));
                 for (int k = 1; k <= pieces; k++)
                 {
                     double t = (double)k / pieces;
@@ -330,12 +330,6 @@ namespace AgOpenWeb.Models.Tool
         /// <summary>How far <paramref name="p"/> is along the line from <paramref name="from"/> heading <paramref name="heading"/>.</summary>
         private static double Along(Vec3 p, Vec3 from, double heading) =>
             (p.Easting - from.Easting) * Math.Sin(heading) + (p.Northing - from.Northing) * Math.Cos(heading);
-
-        private static double Dist(Vec3 a, Vec3 b)
-        {
-            double dE = a.Easting - b.Easting, dN = a.Northing - b.Northing;
-            return Math.Sqrt(dE * dE + dN * dN);
-        }
 
         private static double Wrap(double angle)
         {

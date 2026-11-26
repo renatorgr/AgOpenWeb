@@ -56,12 +56,12 @@ public partial class YouTurnCreationService
 
     /// <summary>
     /// 0 with no swung exit; else a value that changes when a turn planned with one would come
-    /// out otherwise (the implement's lengths, its hitch, the choice itself): a turn planned and
-    /// not yet driven is planned again then.
+    /// out otherwise (the implement's lengths, its hitch, the U-turn radius the swing's arcs are
+    /// made at, the choice itself): a turn planned and not yet driven is planned again then.
     /// </summary>
     internal static int TrailedSwingStamp(ConfigurationStore config) =>
         SwingsExitForTrailedTool(config, MapTurnStyle(config.Guidance.UTurnStyle) == YouTurnType.KStyle)
-            ? HashCode.Combine(RigGeometry.Stamp(config.Vehicle, config.Tool), 1) | 1
+            ? HashCode.Combine(RigGeometry.Stamp(config.Vehicle, config.Tool), config.Guidance.UTurnRadius) | 1
             : 0;
 
     /// <summary>
