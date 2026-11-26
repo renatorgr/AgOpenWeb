@@ -967,7 +967,7 @@ Tests: `FrontToolLineTests` (`Round_a_go_around_tree_the_implement_stays_on_the_
 and `EntryPath`: a U-turn, the way to the start of a pass driven or offered, the S onto a line beside a fence) are
 planned and driven for the pivot. With a front implement (a combine's header too) the map draws them where the
 implement's working centre goes: each point `RigGeometry.FrontToolReach` ahead along the path's own direction, and the
-tool's offset to its side (`RigGeometry.PathOfPointAhead`, from `SceneProjector.WhereTheFrontToolGoes`; the scene's
+tool's offset to its side (`RigGeometry.PathOfPointAhead`, from `SceneProjector.WhereTheToolGoes`; the scene's
 fingerprint holds both values, not rounded), so the line starts at the implement
 and runs outside every bend of the pivot's path (4.7 m ahead on a 5.4 m turn: a 7.2 m circle, 1.8 m outside). Drawn
 for the pivot, the green line ran through the rear axle and the boom's centre was beside it all the way round (a
@@ -977,6 +977,15 @@ In the simulator (the tester's field, a turn from 22R onto 20R at 7.5 km/h) the 
 drawn on average and 0.85 m at worst, where the turn starts (the steering's own error in a tight turn, times the 4.7 m
 to the boom); from the rear axle's track, 0.90 m and 2.13 m. Planning the turn itself for the implement's centre (its
 radius, its distance from the fence, where it joins the pass) is the next step, not done. Tests: `PathOfPointAheadTests` (Models), `FrontToolPathOnMapTests` (RemoteServer).
+**A trailed or TBT implement** is drawn the same way (fork only; a tester sowing with a semi-mounted drill asked for
+"the implement's working line, not the tractor's", 26 Nov 2026): the paths are drawn where its working centre goes,
+`ImplementSweptPath.Compute`'s `ToolCenter` for the pivot's path (the model the U-turn's own checks follow the
+implement with: in line behind the path's first point, then pulled from point to point; the tank first for a TBT tool,
+the tool's offset to its side), so the line starts at the implement, runs inside every bend and comes onto the next
+pass gradually. His drill (wheels 4.15 m behind the pin, discs 1.6 m ahead of the wheels, the pin 1.54 m behind the
+rear axle): 1.1 m inside a 6 m turn. The scene's fingerprint holds the hitch, the tool's and the tank's lengths and
+the offset. An implement fixed behind the tractor is drawn as planned. Only the drawing; planning the turn for a
+trailed implement's working line is not done. Tests: `TrailedToolPathOnMapTests` (RemoteServer).
 
 **Following the moved line** (`FrontToolFollower` in `Services/Track`, applied after `CalculateGuidance` in
 `GpsPipelineService.CalculateTrackGuidance`; fork only). Pure Pursuit aims at a goal the look-ahead ahead, so it starts
