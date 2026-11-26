@@ -1051,13 +1051,19 @@ alone. The new exit is held to the turn's rules: the tractor in the workable par
 turn line, it is tried from further round the arc), its leg within 0.3 m of the next pass as steered
 (`_bentDestination`: a curve or a Go around bend there is joined as planned), not past the end of the next line
 (`TurnLanding.PastLineEnd`), the implement the distance from a hard fence and from a hard obstacle the turn is made at
-(`TurnClearance`), and `ClearsTurnObstacles` with the exit looked at as far along the pass as the planned turn's
+(`TurnClearance`, given to `Apply` as `fits`: a swung exit that takes the implement nearer is tried from further round
+the arc too, where the straight heads away from the fence; refused outright, the Sagitta turn at Couto da Ribeira's hard
+fence stayed as planned), and `ClearsTurnObstacles` with the exit looked at as far along the pass as the planned turn's
 (`SwingExitReach`). **Never no turn where there was one, and never a turn seated elsewhere**: where the swung exit
 breaks a rule the turn stays as planned for the tractor, and the log says why. `TurnPathResult.ExitSwing` holds what was
 done. A turn planned and not yet driven is planned again when the choice or the implement's lengths change
 (`TrailedSwingStamp`, `_youTurnTrailedSwing`; `EndKey`). A K-turn, the simple fallback, a manual U-turn and the way to
 the start of a pass are planned for the tractor. The map draws the implement's line from the swung path (the paragraph
-above). Tests: `TrailedExitSwingTests` (Models), `TrailedToolTurnPlanTests`, `ToolProfileUTurnTramTests`,
+above). In the simulator (Couto da Ribeira, a hard fence, 60R onto 62R at 6 km/h, that drill): the drill within 5 cm of
+the next pass 16.5 m past the top of a keyhole turn as planned for the tractor and 7.1 and 9.0 m swung (two drives),
+18.7 m and 8.3 m on a Sagitta turn; the tractor 1.3 to 1.6 m past the pass (2 m planned: the simulated steering cuts
+the swing), the largest angle between tractor and drill 83° and 75° (keyhole), 80° and 69° (Sagitta). Not driven on a
+tractor yet. Tests: `TrailedExitSwingTests` (Models), `TrailedToolTurnPlanTests`, `ToolProfileUTurnTramTests`,
 `YouTurnTrackSwitchTests`.
 
 **Following the moved line** (`FrontToolFollower` in `Services/Track`, applied after `CalculateGuidance` in

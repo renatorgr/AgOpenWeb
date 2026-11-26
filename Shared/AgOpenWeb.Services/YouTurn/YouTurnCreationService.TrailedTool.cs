@@ -79,11 +79,25 @@ public partial class YouTurnCreationService
         int arcFrom, Models.Track.Track? nextTrack)
     {
         var tool = BuildToolGeometry(config);
+        // The implement against the hard outer boundary and a hard obstacle the turn is made at: a
+        // swung exit that takes it nearer than the distance from boundary is tried from further
+        // round the arc (TrailedExitSwing.Apply's fits), where the straight heads away from the fence.
+        bool hardAt = turnedAt?.IsHard == true;
+        bool nearFence = false;
+        Func<TrailedExitSwing.Result, bool>? clearOfFences = hardOuter == null && !hardAt ? null : candidate =>
+        {
+            var swept = ImplementSweptPath.Compute(candidate.Path, tool);
+            bool clear = (hardOuter == null || TurnClearance.Evaluate(swept, hardOuter, TurnClearance.KeepSide.Inside, clearanceMargin).IsClear)
+                && (!hardAt || TurnClearance.Evaluate(swept, turnedAt!.Fence, TurnClearance.KeepSide.Outside, clearanceMargin).IsClear);
+            if (!clear) nearFence = true;
+            return clear;
+        };
         var swing = TrailedExitSwing.Apply(path, tool, config.Guidance.UTurnRadius,
-            p => input.IsPointInsideTurnArea(p) == 0 && input.IsPointBlockedForTurn?.Invoke(p) != true);
+            p => input.IsPointInsideTurnArea(p) == 0 && input.IsPointBlockedForTurn?.Invoke(p) != true, clearOfFences);
         if (swing == null)
         {
-            _logger.LogDebug("[YouTurn] No swung exit for the trailed implement here (square already, or no room inside the turn line); the turn as planned for the tractor");
+            _logger.LogDebug("[YouTurn] No swung exit for the trailed implement here ({Why}); the turn as planned for the tractor",
+                nearFence ? "the implement would come too near a hard boundary or a hard obstacle" : "square already, or no room inside the turn line");
             return null;
         }
 
@@ -98,18 +112,6 @@ public partial class YouTurnCreationService
         }
         if (broken == null && TurnLanding.PastLineEnd(swing.Path, nextTrack))
             broken = "it would hand over past the end of the next pass's line";
-
-        // The implement against the hard outer boundary and a hard obstacle the turn is made at.
-        if (broken == null && (hardOuter != null || turnedAt?.IsHard == true))
-        {
-            var swept = ImplementSweptPath.Compute(swing.Path, tool);
-            if (hardOuter != null
-                && !TurnClearance.Evaluate(swept, hardOuter, TurnClearance.KeepSide.Inside, clearanceMargin).IsClear)
-                broken = "the implement would come too near the hard boundary";
-            else if (turnedAt?.IsHard == true
-                && !TurnClearance.Evaluate(swept, turnedAt.Fence, TurnClearance.KeepSide.Outside, clearanceMargin).IsClear)
-                broken = "the implement would come too near the hard obstacle";
-        }
 
         // The path and its exit against every obstacle, as the planned turn was. The swung path
         // may run on further along the next pass: the same place on it is that much less past its end.

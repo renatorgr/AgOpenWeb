@@ -259,6 +259,38 @@ public class TrailedToolTurnPlanTests
         });
     }
 
+    [TestCase(Keyhole)]
+    [TestCase(Sagitta)]
+    public void At_a_hard_fence_the_swung_exit_keeps_the_drill_the_distance_from_it(int style)
+    {
+        // A hard fence all round, the drill 3 m wide and the distance from boundary 2.8 m: the
+        // tractor's straight at the top of the turn brings the drill's outer end up towards the
+        // fence, so the exit is swung from further round the arc where it has to be. Either way
+        // the drill keeps the distance, as in the turn planned for the tractor.
+        const int skip = 1;
+        var planned = Turn(NewCreation(forTool: false, style), skip, hard: true);
+        Assert.That(planned.Path, Is.Not.Null, "a turn with the setting off");
+
+        var result = Turn(NewCreation(forTool: true, style), skip, hard: true);
+        Assert.That(result.Path, Is.Not.Null, "never no turn where there was one");
+        Assert.That(result.ExitSwing, Is.Not.Null, "the exit is swung");
+        var c = ConfigurationStore.Instance;
+        var swept = ImplementSweptPath.Compute(result.Path!, RigGeometry.Geometry(c.Vehicle, c.Tool, c.ActualToolWidth));
+        var clearance = AgOpenWeb.Models.Guidance.TurnClearance.Evaluate(swept, Fence(150),
+            AgOpenWeb.Models.Guidance.TurnClearance.KeepSide.Inside, FromBoundary);
+        double next = NextPassX(skip);
+        TestContext.Out.WriteLine($"style {style}: swung {result.ExitSwing!.Swing * 180 / Math.PI:F1} deg from point {result.ExitSwing.FromIndex}, " +
+            $"{result.ExitSwing.PastPass:F2} m past the pass; the drill within 5 cm of the pass {DrillOnPassBelowTop(planned.Path!, next):F1} m below the top as planned, " +
+            $"{DrillOnPassBelowTop(result.Path!, next):F1} m swung; nearest the fence {FromBoundary - clearance.MaxIntrusion:F2} m");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(clearance.IsClear, Is.True, "the drill keeps the distance from the hard fence");
+            Assert.That(DrillOnPassBelowTop(result.Path!, next), Is.LessThan(DrillOnPassBelowTop(planned.Path!, next) - 5.0),
+                "the drill is on the pass sooner, m below the top of the turn");
+        });
+    }
+
     [Test]
     public void With_the_next_pass_at_the_turn_line_the_turn_stays_as_planned()
     {

@@ -74,7 +74,11 @@ namespace AgOpenWeb.Models.Tool
         /// <param name="tool">The implement (a trailed or TBT one).</param>
         /// <param name="radius">The turn radius, m: the tail's arcs.</param>
         /// <param name="allowed">Where the tractor may drive the new tail (the turn area); null: anywhere.</param>
-        public static Result? Apply(IReadOnlyList<Vec3> path, ToolGeometry tool, double radius, Func<Vec3, bool>? allowed = null)
+        /// <param name="fits">A further test of a whole swung path (the implement against a fence); where
+        /// it fails, the tail is tried from further round the arc, as where it leaves the allowed ground:
+        /// from there the straight heads back into the field. Null: every swung path fits.</param>
+        public static Result? Apply(IReadOnlyList<Vec3> path, ToolGeometry tool, double radius, Func<Vec3, bool>? allowed = null,
+            Func<Result, bool>? fits = null)
         {
             if (path == null || path.Count < 8 || !(radius > 0) || !double.IsFinite(radius)) return null;
             if (tool.Mount is not (ToolMount.Trailing or ToolMount.TBT)) return null;
@@ -126,16 +130,16 @@ namespace AgOpenWeb.Models.Tool
             double angleBefore = Wrap(ToolHeadingAt(path, onPass, tool) - passHeading);
             if (dir * angleBefore > -SquareEnough) return null;       // square, or swung too far already
 
-            // Tried from the top; where the tail leaves the allowed ground, from further round the
-            // arc, where the straight heads back into the field.
+            // Tried from the top; where the tail leaves the allowed ground or does not fit, from
+            // further round the arc, where the straight heads back into the field.
             for (int from = top; from <= arcEnd; from++)
             {
                 double arriving = Chord(path, from - 1);
                 double toGo = dir * Wrap(passHeading - arriving);       // the arc left before the pass's direction
                 if (toGo < 30.0 * Math.PI / 180.0) break;
                 var result = Solve(path, from, arriving, end, passHeading, dir, radius, tool, angleBefore, allowed, out bool outside);
-                if (result != null) return result;
-                if (!outside) break;
+                if (result != null && (fits == null || fits(result))) return result;
+                if (result == null && !outside) break;
             }
             return null;
         }

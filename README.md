@@ -182,7 +182,7 @@ Most of these have been offered to the official project too. When one is merged 
 
 - New setting on the U-turn tab, shown with a trailed implement: *U-turns planned for* The tractor (as before, and the default) or The trailed implement.
 - With The trailed implement, the turn is found as before and then its way out is opened: the tractor goes about 2 m past the next pass and comes back onto it, as a driver does with a trailer. It never turns tighter than the U-turn radius.
-- The implement is then on the pass, and square to it, when the tractor is. That drill: about 6 m past the top of the turn.
+- The implement is then on the pass, and square to it, when the tractor is. That drill, driven in the simulator: 7 to 9 m past the top of the turn.
 - Where the wider way out does not fit (the turn line, a hard boundary, an obstacle, a next pass that bends there), the turn stays as it was, so there is never no turn where there was one.
 - A K-turn, a manual U-turn and the way to the start of a pass are still worked out for the tractor.
 - Simulator only, not tried on a tractor yet. Off unless you turn it on.

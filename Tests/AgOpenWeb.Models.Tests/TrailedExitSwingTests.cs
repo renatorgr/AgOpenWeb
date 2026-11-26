@@ -284,6 +284,29 @@ public class TrailedExitSwingTests
     }
 
     [Test]
+    public void A_swung_path_that_does_not_fit_is_tried_from_further_round_the_arc()
+    {
+        // The caller's own test of a whole swung path (the implement against a fence): refused from
+        // the top of the arc, the tail starts further round it and still leaves the drill square.
+        var planned = Planned(rows: 9);
+        var fromTop = TrailedExitSwing.Apply(planned, Drill, Radius);
+        Assert.That(fromTop, Is.Not.Null);
+
+        int tried = 0;
+        var swung = TrailedExitSwing.Apply(planned, Drill, Radius, null, r => { tried++; return r.FromIndex >= fromTop!.FromIndex + 3; });
+
+        Assert.That(swung, Is.Not.Null);
+        Assert.That(tried, Is.EqualTo(4), "from the top and the three points after it");
+        Assert.That(swung!.FromIndex, Is.EqualTo(fromTop!.FromIndex + 3));
+        Assert.That(swung.PastPass, Is.LessThan(fromTop.PastPass), "from further round the arc the tractor goes less far past the pass");
+        var drill = ToolWhenPivotAt(swung.Path, swung.OnPassIndex, Drill);
+        Assert.That(Deg(Wrap(drill.Heading - Math.PI)), Is.EqualTo(0).Within(0.5));
+
+        // Refused everywhere: no swing.
+        Assert.That(TrailedExitSwing.Apply(planned, Drill, Radius, null, _ => false), Is.Null);
+    }
+
+    [Test]
     public void A_tool_behind_a_tank_is_swung_too()
     {
         var tbt = new ToolGeometry(ToolMount.TBT, 6.0, 0, -1.2, 3.0, 0.5, 3.0);
