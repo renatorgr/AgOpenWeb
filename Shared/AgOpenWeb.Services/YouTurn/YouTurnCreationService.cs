@@ -44,6 +44,12 @@ namespace AgOpenWeb.Services.YouTurn
             _goAround = goAround ?? new Track.GoAroundPasses(configStore, polygonOffsetService);
         }
 
+        /// <summary>
+        /// The passes bent round Go around obstacles this planner plans from. The pipeline steers
+        /// by the same object: the one the host gave both, or this one when it gave none.
+        /// </summary>
+        public Track.GoAroundPasses GoAround => _goAround;
+
         // Current input being processed (for helper methods)
         private YouTurnCreationInput _currentInput;
 

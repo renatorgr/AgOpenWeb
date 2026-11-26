@@ -137,6 +137,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
     // cycle (a new one re-finds the nearest point), the bend shown with its track (kept so the
     // display gate sees the same object), and the obstacles last reported as having no room.
     private readonly Track.GoAroundPasses _goAround;
+    /// <summary>The bent passes and pins steered by: the U-turn planner's own object (for tests).</summary>
+    internal Track.GoAroundPasses GoAround => _goAround;
     private List<Vec3>? _lastSteerBend;
 
     // The line AutoSteer steered last cycle when it was not the plain pass (bent round Go around
@@ -353,7 +355,10 @@ public sealed class GpsPipelineService : IGpsPipelineService
         Track.GoAroundPasses? goAround = null)
     {
         _gpsService = gpsService;
-        _goAround = goAround ?? new Track.GoAroundPasses(configStore, new PolygonOffsetService());
+        // One set of bent passes and pins for the pipeline and the U-turn planner: given by the
+        // host, else the planner's own. Each made its own when the host gave none (every scenario
+        // rig), so the planner never saw a pin and planned from a pass the pipeline did not steer.
+        _goAround = goAround ?? youTurnStateMachine?.GoAround ?? new Track.GoAroundPasses(configStore, new PolygonOffsetService());
         _toolPositionService = toolPositionService;
         _trackGuidanceService = trackGuidanceService;
         _sectionControlService = sectionControlService;
@@ -366,6 +371,8 @@ public sealed class GpsPipelineService : IGpsPipelineService
         _intents = intents;
         _headingFusion = headingFusion;
         _logger = logger;
+        if (youTurnStateMachine?.GoAround is { } planners && !ReferenceEquals(_goAround, planners))
+            _logger.LogWarning("[Go around] The pipeline and the U-turn planner were given two sets of bent passes: the planner does not see the sides the pipeline holds round an obstacle");
         _configStore = configStore;
         _positionEstimator = positionEstimator;
     }
@@ -2647,6 +2654,11 @@ public sealed class GpsPipelineService : IGpsPipelineService
         // it pins the side of each obstacle the tractor is beside. A closed track's lap is bent as
         // a loop and steered as one (fork only).
         var lapPoints = currentTrack.Points; // the pass before the bend: a lap's neck test reads it
+        // The pins of obstacles left behind are let go before the bend is asked for: the first bend
+        // on another pass is made without them, as the planner's is.
+        // Backing up nothing is passed: what trails then is the tractor's front and a front implement.
+        double? travelHeading = _isReverse ? null : headingRad;
+        _goAround.LetGo(track, distAway, driftedEasting, driftedNorthing, travelHeading);
         var bend = GoRoundBend(track, distAway, currentTrack.Points, boundary, report: true, Track.GoAroundPasses.Lap.Whole);
         var bent = bend != null && bend.GoneRound.Count > 0 ? bend.Points : null;
         if (bent != null)
@@ -2655,7 +2667,7 @@ public sealed class GpsPipelineService : IGpsPipelineService
                 Name = currentTrack.Name, Points = bent, Type = track.Type, IsVisible = true, IsActive = true,
                 IsClosed = track.IsClosed
             };
-        _goAround.Steered(track, bend, driftedEasting, driftedNorthing);
+        _goAround.Steered(track, distAway, bend, driftedEasting, driftedNorthing, travelHeading);
         // A line bent or straightened has other points: find the nearest one afresh.
         bool lineChanged = !ReferenceEquals(bent, _lastSteerBend);
         _lastSteerBend = bent;
