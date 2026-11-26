@@ -140,6 +140,13 @@ Most of these have been offered to the official project too. When one is merged 
 - Now, with a front-fixed implement, the tractor steers a little inside each bend so the implement runs on the line. Never tighter than the tractor can turn.
 - Checked by replaying a simulator drive, not tried on a tractor yet.
 
+**A front implement where a bend starts and ends.** With the tractor steering inside each bend, the implement still ran 10 to 25 cm off the line where a bend starts and where it ends. AutoSteer aims at a point ahead, so it starts each bend a little early and comes out of it early, and an implement ahead of the tractor swings out by that.
+
+- Now, once the tractor is on the line (within 1 m and 20°), AutoSteer sets the wheels for the bend where the tractor is, plus a small correction back to the line.
+- In the simulator: an 8 m front boom 4.9 m ahead went from 9 to 2 cm off at the start and end of a 20 m bend; a 35 ft combine header round a 10 m bend from 25 to 9 cm.
+- Joining a line from the side is steered as before. A rear or trailed implement is not changed.
+- Simulator only, not tried on a tractor yet.
+
 ### Fields
 
 **Closing a field.**
