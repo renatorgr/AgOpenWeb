@@ -158,8 +158,15 @@ Most of these have been offered to the official project too. When one is merged 
 
 - Now, with a front-fixed implement (a front boom, a combine's header), the green path is drawn where the middle of the implement goes. An 8 m boom 4.7 m ahead on a 5.4 m turn: 1.8 m further out.
 - Only the drawing changed. The turn is still worked out for the rear axle; working it out for the implement comes next.
-- A rear or trailed implement is drawn as before.
+- A rear-mounted implement is drawn as before.
 - Simulator only, not tried on a tractor yet.
+
+**The green path with a trailed implement.** A trailed implement cuts inside the tractor's turn and comes onto the next pass only some metres after the tractor does. The green path was the tractor's, so it did not show that.
+
+- Now, with a trailed implement (a drill, a trailed sprayer, a tool behind a tank), the green path is drawn where the implement's working line goes.
+- A drill with its discs 2.5 m behind the hitch pin runs 1.1 m inside a 6 m turn.
+- Only the drawing changed. The turn is still worked out for the tractor; working it out for the trailed implement comes next.
+- Not tried on a tractor yet.
 
 ### Fields
 
