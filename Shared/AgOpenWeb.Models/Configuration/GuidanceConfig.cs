@@ -231,6 +231,28 @@ public class GuidanceConfig : ObservableObject
         set => SetProperty(ref _uTurnTrailedOpen, value);
     }
 
+    /// <summary>
+    /// Sets the two choices above together. The GPS cycle reads them while a screen or a profile
+    /// sets them, so they are written in the order that leaves the choice in force, at every
+    /// moment, the one before or the one asked for and never a third: the whole-turn flag first
+    /// when the swing is on at the end (alone it does nothing), the swing first when it goes off.
+    /// Set one after the other the other way, a change from the tractor to the whole turn was the
+    /// swung exit alone for a moment, and a turn planned in that moment was that one.
+    /// </summary>
+    public void SetUTurnForTrailedTool(bool swingExit, bool wholeTurn)
+    {
+        if (swingExit)
+        {
+            UTurnTrailedOpen = wholeTurn;
+            UTurnForTrailedTool = true;
+        }
+        else
+        {
+            UTurnForTrailedTool = false;
+            UTurnTrailedOpen = wholeTurn;
+        }
+    }
+
     // The ranges the settings page keeps these to, kept when a profile is read too: a profile
     // written by hand with a huge straight or bend radius held up the GPS cycle (the way onto the
     // pass and the bend round an obstacle are built a point every 0.25 m).

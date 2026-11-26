@@ -629,6 +629,8 @@ public partial class YouTurnCreationService
                     if (swing != null) path = swing.Path;
                     else if (open.On) return new TurnPathResult(null, UsedFallback: false);
                 }
+                if (open.On && OpenTurnBendsTooTight(path, config.Guidance.UTurnRadius))
+                    return new TurnPathResult(null, UsedFallback: false);
 
                 _logger.LogDebug("[YouTurn] Path created with {Count} points, net={Net:F0}° cumulative={Cum:F0}° (setback {S:F2}m){At}",
                     path.Count, netHeadingChange * 180 / Math.PI, totalHeadingChange * 180 / Math.PI, extraSetback,

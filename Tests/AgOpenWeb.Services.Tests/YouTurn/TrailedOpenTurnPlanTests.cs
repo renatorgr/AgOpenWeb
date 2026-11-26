@@ -1,5 +1,5 @@
 // AgOpenWeb
-// Copyright (C) 2026 AgOpenWeb Contributors
+// Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 using System;
@@ -363,6 +363,103 @@ public class TrailedOpenTurnPlanTests
         Assert.That(result.Path, Is.Not.Null);
         Assert.That(result.OpenShape, Is.Not.Null);
         Assert.That(result.Path![^1].Easting, Is.EqualTo(NextPassX(2)).Within(0.05));
+    }
+
+    [TestCase(Extension)]
+    [TestCase(0.0, Description = "no extension set: the legs worked out from the headland")]
+    public void The_open_turn_ends_where_the_turn_planned_for_the_tractor_does(double extension)
+    {
+        // The shape runs on along the next pass past the place abreast of its start, so its exit leg
+        // is shorter by that much. With no extension set the leg is worked out by the generator, and
+        // the whole of it was added after the shape: the path ended that much further down the pass.
+        const int skip = 2;
+        var tractorPlan = NewCreation(For.Tractor);
+        ConfigurationStore.Instance.Guidance.UTurnExtension = extension;
+        var tractor = Turn(tractorPlan, skip);
+        var openPlan = NewCreation(For.WholeTurn);
+        ConfigurationStore.Instance.Guidance.UTurnExtension = extension;
+        var open = Turn(openPlan, skip);
+        Assert.That(tractor.Path, Is.Not.Null);
+        Assert.That(open.OpenShape, Is.Not.Null);
+
+        // Each from the top of its own turn (the open turn is seated a little further in).
+        double tractorRun = tractor.Path!.Max(p => p.Northing) - tractor.Path![^1].Northing;
+        double openRun = open.Path!.Max(p => p.Northing) - open.Path![^1].Northing;
+        TestContext.Out.WriteLine($"extension {extension:F1} m: the path ends {tractorRun:F1} m below the top for the tractor, {openRun:F1} m for the whole turn; the shape runs on {open.OpenShape!.RunsOn:F1} m");
+        Assert.That(open.OpenShape!.RunsOn, Is.GreaterThan(4), "the shape runs on along the pass");
+        Assert.That(openRun, Is.EqualTo(tractorRun).Within(2.5), "the same place along the next pass, the two turns' own depths apart");
+    }
+
+    [Test]
+    public void The_tractor_turns_no_tighter_in_the_open_turn_than_in_the_turn_planned_for_it()
+    {
+        // The path's smoothing rounds every arc a little towards its centre, a turn planned for the
+        // tractor's too. Over 2 m chords, as the planner reads it before it uses the open turn.
+        foreach (int skip in new[] { 2, 3 })
+        {
+            var tractor = Turn(NewCreation(For.Tractor), skip);
+            var open = Turn(NewCreation(For.WholeTurn), skip);
+            Assert.That(open.OpenRadius, Is.GreaterThan(0), $"skip {skip}: sized for the drill");
+            double asPlanned = FrontToolLine.TightestBend(tractor.Path!), opened = FrontToolLine.TightestBend(open.Path!);
+            TestContext.Out.WriteLine($"skip {skip}: tightest bend {asPlanned:F2} m planned for the tractor, {opened:F2} m sized for the drill (U-turn radius {Radius:F1} m)");
+            Assert.That(opened, Is.GreaterThanOrEqualTo(asPlanned - 0.05), $"skip {skip}");
+            Assert.That(opened, Is.GreaterThanOrEqualTo(Radius * FrontToolLine.TightestBendShare), $"skip {skip}: the planner's own limit");
+        }
+    }
+
+    [Test]
+    public void Which_turn_is_a_wide_one_is_read_from_the_turn_made_for_those_passes()
+    {
+        // The landing test asks by the turn's radius whether a turn is a wide one. With the whole
+        // turn chosen that radius was the open one for any passes, also where no open turn exists
+        // for them and the turn made is the swung exit's, at the U-turn radius.
+        NewCreation(For.WholeTurn);
+        var c = ConfigurationStore.Instance;
+        Assert.Multiple(() =>
+        {
+            Assert.That(YouTurnCreationService.PlannedTurnRadius(c), Is.EqualTo(5.548).Within(0.01), "with no offset: the widest, for room");
+            Assert.That(YouTurnCreationService.PlannedTurnRadius(c, 12.0), Is.EqualTo(5.548).Within(0.01), "three rows skipped: the wide turn at the open radius");
+            Assert.That(YouTurnCreationService.PlannedTurnRadius(c, 9.0), Is.EqualTo(5.39).Within(0.05), "two rows skipped: the one shape's arc");
+            Assert.That(YouTurnCreationService.PlannedTurnRadius(c, 6.0), Is.EqualTo(Radius), "one row skipped: no open turn, the U-turn radius");
+            Assert.That(YouTurnCreationService.PlannedTurnRadius(c, 3.0), Is.EqualTo(Radius), "the next pass: no open turn, the U-turn radius");
+        });
+
+        // An implement so long that no swing squares it up has no open shape at any spacing: passes
+        // 9 m apart get the swung exit's turn at 4.3 m, a wide one, and are read as one.
+        c.Tool.TrailingHitchLength = 9.0;
+        double open = YouTurnCreationService.TrailedOpenRadius(c);
+        Assert.That(open, Is.EqualTo(Radius * TrailedOpenTurn.MaxOpenShare).Within(1e-6), "opened as far as a turn is opened");
+        Assert.That(TrailedOpenTurn.Solve(Rig(), Radius, 9.0), Is.Null, "no shape lands this implement square");
+        Assert.That(9.0, Is.GreaterThan(2 * Radius).And.LessThan(2 * open), "between the two radii's wide turns");
+        Assert.That(YouTurnCreationService.PlannedTurnRadius(c, 9.0), Is.EqualTo(Radius), "the turn made is at the U-turn radius: a wide one");
+
+        // Chosen for the tractor or the swung exit, the U-turn radius at any spacing.
+        NewCreation(For.Exit);
+        Assert.That(YouTurnCreationService.PlannedTurnRadius(ConfigurationStore.Instance, 9.0), Is.EqualTo(Radius));
+    }
+
+    [Test]
+    public void The_shape_for_a_spacing_is_sized_once_and_again_when_the_implement_changes()
+    {
+        // Sizing a shape follows the implement along some eighty of them, and the landing test asks
+        // on every look at a pass.
+        NewCreation(For.WholeTurn);
+        var c = ConfigurationStore.Instance;
+        var first = YouTurnCreationService.TrailedOpenPlanFor(c, 9.0).Shape;
+        Assert.That(first, Is.Not.Null);
+        Assert.That(YouTurnCreationService.TrailedOpenPlanFor(c, 9.0).Shape, Is.SameAs(first), "asked again: the shape kept");
+        Assert.That(YouTurnCreationService.TrailedOpenPlanFor(c, -9.0).Shape, Is.SameAs(first), "the other side: the same spacing");
+
+        c.Tool.TrailingHitchLength = 3.5;
+        var shorter = YouTurnCreationService.TrailedOpenPlanFor(c, 9.0).Shape;
+        Assert.That(shorter, Is.Not.Null.And.Not.SameAs(first), "another implement: sized again");
+        Assert.That(shorter!.Swing, Is.LessThan(first!.Swing), "a shorter drawbar needs less swing");
+
+        c.Tool.TrailingHitchLength = 4.15;
+        c.Guidance.UTurnRadius = 5.0;
+        var wider = YouTurnCreationService.TrailedOpenPlanFor(c, 9.0).Shape;
+        Assert.That(wider, Is.Not.Null.And.Not.SameAs(first), "another U-turn radius: sized again");
+        Assert.That(wider!.CounterRadius, Is.EqualTo(5.0));
     }
 
     [Test]

@@ -332,8 +332,7 @@ public static class ToolProfileJsonService
             ? (LineEntryMode)em : dg.LineEntryMode;
         store.Guidance.LineEntryStraight = GuidanceConfig.InRange(dto.YouTurn?.EntryStraight ?? dg.LineEntryStraight, dg.LineEntryStraight, 0.0, GuidanceConfig.MaxLineEntryStraight);
         store.Guidance.UTurnForFrontTool = dto.YouTurn?.ForFrontTool ?? dg.UTurnForFrontTool;
-        store.Guidance.UTurnForTrailedTool = dto.YouTurn?.ForTrailedTool ?? dg.UTurnForTrailedTool;
-        store.Guidance.UTurnTrailedOpen = dto.YouTurn?.TrailedOpen ?? dg.UTurnTrailedOpen;
+        store.Guidance.SetUTurnForTrailedTool(dto.YouTurn?.ForTrailedTool ?? dg.UTurnForTrailedTool, dto.YouTurn?.TrailedOpen ?? dg.UTurnTrailedOpen);
         store.Guidance.UTurnStyle = dto.YouTurn?.Style ?? dg.UTurnStyle;
         store.Guidance.UTurnSmoothing = dto.YouTurn?.Smoothing ?? dg.UTurnSmoothing;
         store.Guidance.GoAroundRadius = GuidanceConfig.InRange(dto.YouTurn?.GoAroundRadius ?? dg.GoAroundRadius, dg.GoAroundRadius, GuidanceConfig.MinGoAroundRadius, GuidanceConfig.MaxGoAroundRadius);

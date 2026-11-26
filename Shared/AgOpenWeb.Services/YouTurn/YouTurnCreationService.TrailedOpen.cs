@@ -1,11 +1,14 @@
 // AgOpenWeb
-// Copyright (C) 2026 AgOpenWeb Contributors
+// Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 using System;
+using System.Collections.Generic;
+using AgOpenWeb.Models.Base;
 using AgOpenWeb.Models.Configuration;
 using AgOpenWeb.Models.Tool;
 using AgOpenWeb.Models.YouTurn;
+using AgOpenWeb.Services.Track;
 using Microsoft.Extensions.Logging;
 
 namespace AgOpenWeb.Services.YouTurn;
@@ -76,25 +79,69 @@ public partial class YouTurnCreationService
         double offset = Math.Abs(turnOffset);
         if (!(open > 0) || !(offset > 0) || !double.IsFinite(offset)) return default;
         if (offset > 2 * open) return new TrailedOpenPlan(open, null);
-        var shape = TrailedOpenTurn.Solve(BuildToolGeometry(config), config.Guidance.UTurnRadius, offset);
+        var shape = OpenShapeFor(BuildToolGeometry(config), config.Guidance.UTurnRadius, offset);
         return shape == null ? default : new TrailedOpenPlan(shape.Radius, shape);
+    }
+
+    // The shapes sized last, by how far apart the passes are, for one implement and U-turn radius.
+    // Sizing one follows the implement along some eighty shapes (TrailedOpenTurn.Solve), and the
+    // landing test asks which turn a pass gets every time it looks at one (PlannedTurnRadius with
+    // the turn's offset, from YouTurnPathingService.Landing), many times in a GPS cycle. The passes
+    // of a job are a few spacings apart at most (the rows skipped, an implement shifted to one side).
+    private const int OpenShapesKept = 32;
+    private static readonly object OpenShapesLock = new();
+    private static readonly Dictionary<long, TrailedOpenTurn.Shape?> OpenShapes = new();
+    private static (ToolGeometry Tool, double Radius) _openShapesFor;
+
+    private static TrailedOpenTurn.Shape? OpenShapeFor(ToolGeometry tool, double radius, double offset)
+    {
+        long key = BitConverter.DoubleToInt64Bits(offset);
+        lock (OpenShapesLock)
+        {
+            if (_openShapesFor != (tool, radius))
+            {
+                OpenShapes.Clear();
+                _openShapesFor = (tool, radius);
+            }
+            if (OpenShapes.TryGetValue(key, out var kept)) return kept;
+        }
+        var shape = TrailedOpenTurn.Solve(tool, radius, offset);
+        lock (OpenShapesLock)
+        {
+            if (_openShapesFor == (tool, radius))
+            {
+                if (OpenShapes.Count >= OpenShapesKept) OpenShapes.Clear();
+                OpenShapes[key] = shape;
+            }
+        }
+        return shape;
     }
 
     /// <summary>
     /// Sets the generator's <paramref name="input"/> for <paramref name="open"/>: the radius it
-    /// works with, and for the one shape the shape itself and its exit leg. That shape ends
-    /// further along the next pass than a turn planned for the tractor
-    /// (<see cref="TrailedOpenTurn.Shape.RunsOn"/>), so its leg is shorter by that much, never
-    /// under the straight the line needs to take over on (<see cref="TrailedExitSwing.LegAfter"/>):
-    /// the path ends where the planned turn's does.
+    /// works with, and for the one shape the shape itself (the generator shortens its exit leg by
+    /// how far the shape runs on along the next pass, <see cref="YouTurnCreationInput.OpenShape"/>).
     /// </summary>
     private static void ApplyOpenPlan(YouTurnCreationInput input, TrailedOpenPlan open)
     {
         input.TurnRadius = open.Radius;
-        if (open.Shape is not { } shape) return;
-        input.OpenShape = shape;
-        if (input.LegLength > 0)
-            input.ExitLegLength = Math.Max(TrailedExitSwing.LegAfter, input.LegLength - shape.RunsOn);
+        if (open.Shape is { } shape) input.OpenShape = shape;
+    }
+
+    /// <summary>
+    /// The tractor's tightest bend along a turn sized for a trailed implement is the U-turn
+    /// radius: the shape and the swung exit are made no tighter, but the path's smoothing rounds
+    /// every arc a little towards its centre, as it does a turn planned for the tractor. Read the
+    /// way a front implement's turn is (<see cref="FrontToolLine.TightestBend"/>, over 2 m
+    /// chords, a tenth of tolerance): a path bending tighter than that is not this turn.
+    /// </summary>
+    private bool OpenTurnBendsTooTight(IReadOnlyList<Vec3> path, double radius)
+    {
+        double tightest = FrontToolLine.TightestBend(path);
+        if (tightest >= radius * FrontToolLine.TightestBendShare) return false;
+        _logger.LogDebug("[YouTurn] Sized for the trailed implement, the tractor would turn at {R:F1} m (U-turn radius {U:F1} m)",
+            tightest, radius);
+        return true;
     }
 
     /// <summary>The side offset of the turn being planned, as the generator takes it

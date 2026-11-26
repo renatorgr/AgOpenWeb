@@ -1,5 +1,5 @@
 // AgOpenWeb
-// Copyright (C) 2026 AgOpenWeb Contributors
+// Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 using System;
@@ -75,6 +75,14 @@ namespace AgOpenWeb.Models.Tool
         /// implement's wheels √(pin² − drawbar²) and its working centre √(wheels² + its distance
         /// from them²). Never more than <see cref="MaxOpenShare"/> times the radius; the radius
         /// itself for any other implement, or when the implement already runs outside it.
+        /// <para>
+        /// The working centre is the one on the implement's own centre line: an implement shifted
+        /// to one side (<see cref="ToolGeometry.Offset"/>) runs about that much inside this circle on a
+        /// turn towards its side and outside it on a turn away from it. The offset is left out on
+        /// purpose: what the wider arc is for is the angle between tractor and drawbar, which a
+        /// shift to one side does not change, and with it the tractor's arc would differ from a
+        /// left turn to a right one. A turn planned for a front implement does the same.
+        /// </para>
         /// </summary>
         public static double OpenRadius(ToolGeometry tool, double radius)
         {

@@ -1119,8 +1119,8 @@ turn. By how far apart the passes are (`TrailedOpenPlanFor`, `YouTurnCreationSer
   the counter-arc ends, found by a scan and a bisection with the implement followed at 0.1 m. The generator seats that
   shape as it seats its own arc (`YouTurnCreationInput.OpenShape`, `CreateCurveSagittaTurn`: slid to the turn line, no
   omega in its place, not started on a Go around bend), with the exit leg shorter by how far the shape runs on along
-  the pass (`Shape.RunsOn`, `ExitLegLength`, never under `TrailedExitSwing.LegAfter`): the path ends where the planned
-  turn's does.
+  the pass (`Shape.RunsOn`, in `AddCurveSequenceLines`, never under `TrailedExitSwing.LegAfter`; from the operator's
+  extension or, with none set, from the leg the generator works out): the path ends where the planned turn's does.
 - **Further apart, the wide turn** made at the open radius (`TurnRadius`), its exit swung by `ExitSwingFor` with the
   last arc carried on at the open radius and the counter-arc at the U-turn radius (`TrailedExitSwing.Apply`'s
   `counterRadius`).
@@ -1131,9 +1131,17 @@ turn. By how far apart the passes are (`TrailedOpenPlanFor`, `YouTurnCreationSer
 **Never no turn where there was one**: `CreateTurnPath` tries the open turn first (`CreateTurnPathFor`'s `open`: held to
 every check a turn is held to, its refusals logged as detail, not as warnings); with none (it fits nowhere, a hard
 fence, an obstacle, the wide turn not built or its swing refused, a hand-over past the end of the next line, a turn of
-no U-turn's shape) the turn is planned as with *wide exit*, and that failing, for the tractor. `TurnPathResult.OpenRadius`
-and `OpenShape` hold what was done; `PlannedTurnRadius` is the open radius (the landing's wide-turn test, the opening's
-room); a turn planned and not yet driven is planned again when the choice changes (`TrailedSwingStamp`, `EndKey`). A
+no U-turn's shape, a path whose smoothing leaves a bend under 0.9 of the U-turn radius, `OpenTurnBendsTooTight`, read
+as a front implement's turn is) the turn is planned as with *wide exit*, and that failing, for the tractor.
+`TurnPathResult.OpenRadius` and `OpenShape` hold what was done. `PlannedTurnRadius(config, offset)` is the radius of the
+turn made for passes that far apart (the landing's wide-turn test: the open radius only where the open turn exists for
+them, else the U-turn radius, as nearer than the shape exists or with an implement no swing squares up), and without an
+offset the widest (the opening's room); the shape sized for a spacing is kept (`OpenShapeFor`, by implement, U-turn
+radius and spacing: sizing one follows the implement along some eighty shapes, and the landing test asks on every look
+at a pass). The two flags are set together by `GuidanceConfig.SetUTurnForTrailedTool`, in the order that leaves the
+choice in force the old one or the new one at every moment (the GPS cycle reads them while a screen sets them). A side
+offset of the implement is left out of the open radius on purpose (the drawbar's angle does not depend on it). A turn
+planned and not yet driven is planned again when the choice changes (`TrailedSwingStamp`, `EndKey`). A
 K-turn, the simple fallback, a manual U-turn and the way to the start of a pass are planned for the tractor.
 As planned (the planner's tests, a synthetic field, that drill at 4.3 m): two rows skipped (9 m), the largest angle
 between tractor and drill 76° for the tractor, 77° with the exit swung, 66° whole turn, the drill on the pass 18.3, 5.4

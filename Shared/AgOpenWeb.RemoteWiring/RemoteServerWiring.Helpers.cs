@@ -234,7 +234,7 @@ public static partial class RemoteServerWiring
             // U-turns for a trailed implement (fork only): 0 planned for the tractor, 1 the exit swung wide so the
             // implement is square on the next pass when the tractor is, 2 also the whole turn sized for it.
             case "uturn.trailedTool":
-                if (I(out var u11) && u11 >= 0 && u11 <= 2) { gd.UTurnForTrailedTool = u11 >= 1; gd.UTurnTrailedOpen = u11 == 2; }
+                if (I(out var u11) && u11 >= 0 && u11 <= 2) gd.SetUTurnForTrailedTool(u11 >= 1, u11 == 2);
                 return;
             // --- Tram (ConfigStore.Guidance + Tram.TramWidth; saved with the tool profile, #330) ---
             case "tram.passes": if (I(out var tp)) gd.TramPasses = tp; return;

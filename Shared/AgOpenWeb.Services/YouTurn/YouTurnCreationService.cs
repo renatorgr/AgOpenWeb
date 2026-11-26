@@ -1501,10 +1501,16 @@ namespace AgOpenWeb.Services.YouTurn
                 sameWay ? -1 : 1, legLength, insertFront: true);
 
             // Exit leg: walk the destination pass outward from the arc end for legLength METRES.
+            // An open turn for a trailed implement ends further along the next pass than a turn
+            // planned for the tractor (Shape.RunsOn), so its leg is shorter by that much, never under
+            // the straight the line needs to take over on: the path ends where the planned turn's
+            // does, with the operator's extension or with the leg worked out above (extension 0).
             bool outSameWay = isOutSameCurve ? !sameWay : sameWay;
+            double exitLeg = input.OpenShape is { } openShape
+                ? Math.Max(Models.Tool.TrailedExitSwing.LegAfter, legLength - openShape.RunsOn)
+                : Math.Max(legLength, input.MinExitLegLength);
             WalkLegByDistance(nextCurve, ytList[ytList.Count - 1], outClosestTurnPt.CurveIndex,
-                outSameWay ? -1 : 1,
-                input.ExitLegLength > 0 ? input.ExitLegLength : Math.Max(legLength, input.MinExitLegLength), insertFront: false);
+                outSameWay ? -1 : 1, exitLeg, insertFront: false);
 
             return true;
         }

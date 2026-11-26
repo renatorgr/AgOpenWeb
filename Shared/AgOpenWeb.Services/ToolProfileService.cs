@@ -156,8 +156,7 @@ public class ToolProfileService : IToolProfileService
         store.Guidance.LineEntryMode = dg.LineEntryMode;
         store.Guidance.LineEntryStraight = dg.LineEntryStraight;
         store.Guidance.UTurnForFrontTool = dg.UTurnForFrontTool;
-        store.Guidance.UTurnForTrailedTool = dg.UTurnForTrailedTool;
-        store.Guidance.UTurnTrailedOpen = dg.UTurnTrailedOpen;
+        store.Guidance.SetUTurnForTrailedTool(dg.UTurnForTrailedTool, dg.UTurnTrailedOpen);
         store.Guidance.UTurnStyle = dg.UTurnStyle; // Sagitta (Twol parity; no Dubins loop)
         store.Guidance.UTurnSmoothing = dg.UTurnSmoothing;
         store.Guidance.GoAroundRadius = dg.GoAroundRadius;

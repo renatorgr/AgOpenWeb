@@ -256,8 +256,7 @@ public static class ProfileJsonServiceV1
             ? (LineEntryMode)em : LineEntryMode.Nearest;
         store.Guidance.LineEntryStraight = GuidanceConfig.InRange(dto.YouTurn?.EntryStraight ?? GuidanceConfig.DefaultLineEntryStraight, GuidanceConfig.DefaultLineEntryStraight, 0.0, GuidanceConfig.MaxLineEntryStraight);
         store.Guidance.UTurnForFrontTool = dto.YouTurn?.ForFrontTool ?? false;
-        store.Guidance.UTurnForTrailedTool = dto.YouTurn?.ForTrailedTool ?? false;
-        store.Guidance.UTurnTrailedOpen = dto.YouTurn?.TrailedOpen ?? false;
+        store.Guidance.SetUTurnForTrailedTool(dto.YouTurn?.ForTrailedTool ?? false, dto.YouTurn?.TrailedOpen ?? false);
         store.Guidance.UTurnStyle = dto.YouTurn?.Style ?? (int)Models.YouTurn.YouTurnType.SagittaStyle;
         store.Guidance.UTurnSmoothing = dto.YouTurn?.Smoothing ?? 14;
         var dgo = new GuidanceConfig();

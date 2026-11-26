@@ -116,9 +116,11 @@ public partial class YouTurnCreationService
     }
 
     /// <summary>
-    /// The radius the turn generator works with: the U-turn radius, the radius of the front
-    /// implement's circle when turns are planned for it, or the radius the tractor's arc is opened
-    /// to when they are sized for a trailed implement. Rows wider than twice this get the wide turn.
+    /// The widest radius the turn generator works with under these settings: the U-turn radius,
+    /// the radius of the front implement's circle when turns are planned for it, or the radius the
+    /// tractor's arc is opened to when they are sized for a trailed implement. For room kept for a
+    /// turn whose side offset is not known yet (a curve's opening); with the offset, the other
+    /// overload says which radius that turn is made at.
     /// </summary>
     public static double PlannedTurnRadius(ConfigurationStore config)
     {
@@ -127,6 +129,23 @@ public partial class YouTurnCreationService
         if (plan.On) return plan.Radius;
         double open = TrailedOpenRadius(config, kTurn);
         return open > 0 ? open : config.Guidance.UTurnRadius;
+    }
+
+    /// <summary>
+    /// The radius the turn generator works with for a turn onto a pass <paramref name="turnOffset"/> m
+    /// to the side: rows wider than twice this get the wide turn. A turn sized for a trailed
+    /// implement has the open radius only where that turn exists for these passes
+    /// (<see cref="TrailedOpenPlanFor"/>); nearer than its one shape exists, or with an implement
+    /// no swing squares up, the turn is the swung exit's, made at the U-turn radius, and it is
+    /// that radius that says whether it is a wide one.
+    /// </summary>
+    public static double PlannedTurnRadius(ConfigurationStore config, double turnOffset)
+    {
+        bool kTurn = MapTurnStyle(config.Guidance.UTurnStyle) == Models.YouTurn.YouTurnType.KStyle;
+        var plan = FrontToolPlanFor(config, kTurn);
+        if (plan.On) return plan.Radius;
+        var open = TrailedOpenPlanFor(config, turnOffset, kTurn);
+        return open.On ? open.Radius : config.Guidance.UTurnRadius;
     }
 
     /// <summary>
