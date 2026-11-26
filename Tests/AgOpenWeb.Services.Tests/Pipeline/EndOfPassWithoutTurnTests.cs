@@ -90,7 +90,10 @@ public class EndOfPassWithoutTurnTests
             headingFusion,
             NullLogger<GpsPipelineService>.Instance,
             config,
-            new PositionEstimator());
+            new PositionEstimator(),
+            // The passes bent round Go around obstacles need the real offset service whatever the
+            // U-turn is given: with none of its own the pipeline steers by the planner's.
+            new GoAroundPasses(config, new AgOpenWeb.Services.Geometry.PolygonOffsetService()));
         _plane = new LocalPlane(new Wgs84(43.7128, -74.006), new SharedFieldProperties());
         _pipeline.SetLocalPlane(_plane);
         _pipeline.SynchronousMode = true;
