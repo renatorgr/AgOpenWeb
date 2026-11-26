@@ -950,6 +950,23 @@ hairpin at the turning radius) still loops, and an open line bending under 0.9 o
 implement's band and U-turn, line-entry and S paths are not moved. Rear and trailed implements are not changed.
 Tests: `FrontToolLineTests` (`Round_a_go_around_tree_the_implement_stays_on_the_bend`, `An_open_pass_is_never_steered_tighter_than_the_tractor_turns`), `FrontToolCurveTests`. Fork only.
 
+**Following the moved line** (`FrontToolFollower` in `Services/Track`, applied after `CalculateGuidance` in
+`GpsPipelineService.CalculateTrackGuidance`; fork only). Pure Pursuit aims at a goal the look-ahead ahead, so it starts
+each bend early and leaves it early: a few centimetres at the pivot, but the implement h ahead swings out by h times
+the heading taken early. On the curve of `FrontToolFollowerTests` (a straight, a quarter bend right, a straight, a
+quarter bend left) an 8 m boom 4.9 m ahead (the Puma) ran 9 to 12 cm off the pass where a 20 m bend starts and ends,
+and a 35 ft combine header 3.56 m ahead (a tester's combine) 25 cm round a 10 m bend, the middle of each bend on the
+pass. On a line moved for a front implement, with Pure Pursuit, going forward and no U-turn driven, the wheels are set
+for the line's own curvature at the pivot, taken `LeadSeconds` (0.2 s) of travel on as the wheels answer late, less the
+pivot's distance off over L² and 2 sin(heading off) over L, L the look-ahead the operator tuned at no cross-track
+(`GoalLookAheadFor(speed, 0)`: critically damped over Steer Response), plus the side-hill term, within Max Steer Angle;
+the integral is not used. It is blended with Pure Pursuit's angle: alone within 0.5 m and 10° of the line, Pure
+Pursuit alone past 1 m or 20° (joining a line, a pass moved: as before). On the same curve: 2 to 4 cm and 9 cm; a
+receiver's noise (2 cm, 0.5°) moves the wheels about 10 % more from one fix to the next; joining from 2 m beside the
+line is the same. `GoAroundSpeed`'s model of Pure Pursuit is cautious for a front implement since. A line not moved (an
+AB line no tree bends, a rear or trailed implement) is steered by Pure Pursuit as before. `FrontToolFollowerEnabled`
+(on) is there for the tests that compare the two. Tests: `FrontToolFollowerTests`, `FrontToolFollowerUnitTests`.
+
 ## Going around obstacles
 Inner boundaries chosen as *Go around* (`ObstacleAction.GoRound`) bend the pass round them
 (`ObstacleDetour` in `Services/Track`). Each is grown by half the implement (and its offset, or half

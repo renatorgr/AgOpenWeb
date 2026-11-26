@@ -2504,6 +2504,11 @@ public sealed class GpsPipelineService : IGpsPipelineService
         bool Closed, double Reach, double MinRadius, double PassRadius, bool Forward) _frontLineKey;
     private List<Vec3>? _frontLine;
 
+    /// <summary>A front implement's line is followed by <see cref="Track.FrontToolFollower"/> near it
+    /// (true, the default); false leaves it to Pure Pursuit, as before, for tests that compare the two.
+    /// Fork only.</summary>
+    public bool FrontToolFollowerEnabled { get; set; } = true;
+
     private List<Vec3>? FrontToolSteered(Models.Track.Track track, double distAway, List<Vec3>? bent,
         Models.Track.Track steered, bool forward)
     {
@@ -2713,6 +2718,22 @@ public sealed class GpsPipelineService : IGpsPipelineService
         _lastHeadingSameWay = isHeadingSameWay;
 
         var output = _trackGuidanceService.CalculateGuidance(input);
+
+        // On a front implement's line, near it, Pure Pursuit's early turn into a bend and out of it
+        // is swung out by the implement's reach: the wheels follow the line's own bend there instead
+        // (FrontToolFollower), blended in from Pure Pursuit as the tractor comes onto the line. Not
+        // with Stanley, reversing or in a U-turn. Fork only.
+        if (frontMoved && FrontToolFollowerEnabled && !config.Guidance.IsStanley && !_isReverse && !isYouTurnTriggered
+            && output.State != null
+            && Track.FrontToolFollower.Steer(currentTrack.Points, currentTrack.IsClosed, output.CurrentLocationIndex,
+                output.State.IsHeadingSameWay, driftedEasting, driftedNorthing, headingRad,
+                GoalLookAheadFor(speedKmh, 0), Math.Abs(currentPosition.Speed), config.Vehicle.Wheelbase) is { Weight: > 0 } follow)
+        {
+            double sideHill = _roll != 88888 ? _roll * -config.AutoSteer.SideHillCompensation : 0;
+            double steer = follow.Weight * (follow.SteerDeg + sideHill) + (1 - follow.Weight) * output.SteerAngle;
+            output.SteerAngle = Math.Clamp(steer, -config.Vehicle.MaxSteerAngle, config.Vehicle.MaxSteerAngle);
+            output.GuidanceLineSteerAngle = (short)(output.SteerAngle * 100);
+        }
 
         // Store state for next iteration
         _trackGuidanceState = output.State;
