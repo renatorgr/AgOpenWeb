@@ -28,13 +28,19 @@ public class GpsIngestTests
     private IGpsService _gps = null!;
     private AutoSteerService _steer = null!;
     private List<double> _published = null!;
+    private List<int> _fixTimes = null!;
 
     [SetUp]
     public void SetUp()
     {
         _gps = Substitute.For<IGpsService>();
         _published = new List<double>();
-        _gps.When(g => g.UpdateGpsData(Arg.Any<GpsData>())).Do(ci => _published.Add(ci.Arg<GpsData>().CurrentPosition.Latitude));
+        _fixTimes = new List<int>();
+        _gps.When(g => g.UpdateGpsData(Arg.Any<GpsData>())).Do(ci =>
+        {
+            _published.Add(ci.Arg<GpsData>().CurrentPosition.Latitude);
+            _fixTimes.Add(ci.Arg<GpsData>().FixTimeCentiseconds);
+        });
         _steer = new AutoSteerService(Substitute.For<ITrackGuidanceService>(), Substitute.For<IUdpCommunicationService>(), _gps, new ConfigurationStore());
         _steer.Start();
     }
@@ -70,6 +76,30 @@ public class GpsIngestTests
         Feed(Panda(48.2));
         Assert.That(_published, Is.EqualTo(new[] { 48.1, 48.2 }).Within(1e-6));
         Assert.That(_steer.GpsLines.JoinedLines, Is.Zero);
+    }
+
+    [Test]
+    public void A_fix_carries_the_receiver_s_own_time_of_day()
+    {
+        Feed(Panda(48.1) + "\r\n");
+        Assert.That(_fixTimes, Is.EqualTo(new[] { (12 * 3600 + 34 * 60 + 56) * 100 }), "12:34:56.00 in 1/100 s");
+    }
+
+    [Test]
+    public void A_fix_made_of_several_sentences_carries_the_time_of_its_position_sentences()
+    {
+        // GGA + VTG + HPR: the fix goes out on the HPR, eight of them once the family is learned.
+        for (int e = 0; e < 8; e++)
+        {
+            Feed(Encoding.ASCII.GetString(NmeaEpochAssemblerTests.Line(NmeaEpochAssemblerTests.Gga(e))) + "\r\n");
+            Feed(Encoding.ASCII.GetString(NmeaEpochAssemblerTests.Line(NmeaEpochAssemblerTests.Vtg())) + "\r\n");
+            Feed(Encoding.ASCII.GetString(NmeaEpochAssemblerTests.Line(NmeaEpochAssemblerTests.Hpr(e))) + "\r\n");
+        }
+        // While the family is being learned a fix goes out late, on the next epoch's first
+        // sentence; once it is learned, each on its own HPR.
+        int last = (12 * 3600 + 34 * 60 + 56) * 100 + 70;
+        Assert.That(_fixTimes.TakeLast(4), Is.EqualTo(new[] { last - 30, last - 20, last - 10, last }),
+            "a tenth of a second from one fix to the next, the last epoch's 12:34:56.70; all: " + string.Join(" ", _fixTimes));
     }
 
     [Test]

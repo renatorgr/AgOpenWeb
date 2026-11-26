@@ -105,6 +105,13 @@ Most of these have been offered to the official project too. When one is merged 
 - It looks along the curve the tractor is steering, so on the first lap of a boundary curve it no longer goes off at a bend with the tractor on the line.
 - A U-turn planned for one end is dropped when the tractor turns round on the pass, so these still work at the other end.
 
+**The implement's place between two GPS readings.** The app works out where the implement is 100 times a second, between the 10 GPS readings, from how fast the tractor is turning.
+
+- That turning speed was measured over the time between two readings arriving. Two readings that arrived together (a Wi-Fi link that holds data back) looked like a very fast turn.
+- In a bend the implement was then placed turned round by many degrees until the next reading, and AutoSteer could go off with "the implement is in Inner N" with the implement clear of the obstacle.
+- The time between two readings is now the GPS receiver's own, written on each reading.
+- Found in a simulated job on a field with obstacles; not seen on a tractor.
+
 **AutoSteer flickering on and off.** With the steer switch / button set to Button, the app sometimes took AutoSteer off just as it went on (a hard boundary warning, for example).
 
 - The steer module's answer to the engage turned it on again, and it went on and off for seconds with the alarm.
