@@ -515,6 +515,10 @@ public sealed class RemoteServerHost
             req => Task.FromResult(ChangeReport(req, authority, (path, name) =>
                 (AgOpenWeb.Services.BugReport.BugReportAttachments.Refusal.None,
                  AgOpenWeb.Services.BugReport.BugReportAttachments.Remove(path, name)))));
+        // The title (query) and description (body) typed in the panel, written into the dump just
+        // before it is saved to be sent by hand to Renato (fork only, BugReportNotes).
+        server.MapPost("/bugreports/notes", AgOpenWeb.Services.BugReport.BugReportNotes.MaxBytes,
+            req => Task.FromResult(SetReportNotes(req, authority)));
 
         await server.StartAsync().ConfigureAwait(false);
         _broadcaster.Start(BroadcastLoop);
@@ -559,6 +563,27 @@ public sealed class RemoteServerHost
         }
         return SimpleWebServer.Response.Text(System.Text.Json.JsonSerializer.Serialize(reply), "application/json",
             new[] { ("Cache-Control", "no-store") });
+    }
+
+    // POST /bugreports/notes?zip=&title=&client=, the description as the body: the screen holding
+    // control only, as for attachments. Replies {written}: false while the dump is being read.
+    private static SimpleWebServer.Response SetReportNotes(SimpleWebServer.PostRequest req, ControlAuthority authority)
+    {
+        string Q(string k) => req.Query.TryGetValue(k, out var v) ? v : "";
+        if (!Guid.TryParse(Q("client"), out var client) || !authority.HoldsFresh(client))
+            return new SimpleWebServer.Response(403, "text/plain", "view only"u8.ToArray());
+        var path = BugReportZip(Q("zip"));
+        if (path is null) return SimpleWebServer.Response.NotFound;
+        try
+        {
+            AgOpenWeb.Services.BugReport.BugReportNotes.Set(path, AgOpenWeb.Services.BugReport.BugReportNotes.Compose(
+                Q("title"), System.Text.Encoding.UTF8.GetString(req.Body)));
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return SimpleWebServer.Response.Text("{\"written\":false}", "application/json", new[] { ("Cache-Control", "no-store") });
+        }
+        return SimpleWebServer.Response.Text("{\"written\":true}", "application/json", new[] { ("Cache-Control", "no-store") });
     }
 
     /// <summary>Raised once the server has stopped (the backend is shutting down): what was

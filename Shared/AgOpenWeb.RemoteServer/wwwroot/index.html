@@ -1722,24 +1722,40 @@
     <button class="cfg-act cfg-actwide fj-primary" id="br-submit" style="margin-top:10px">Create Bug Report</button>
     <div class="sa-hint" id="br-status" style="margin-top:6px"></div>
     <div id="br-sendbox" style="display:none">
-      <div class="sa-hint" style="margin-top:8px">Send Report sends this report to the AgOpenWeb maintainers.</div>
-      <div class="cfg-label" style="margin-top:8px">GitHub username</div>
-      <input class="cfg-num fj-tx" id="br-ghuser" autocapitalize="off" autocomplete="off" spellcheck="false">
-      <div class="cfg-label" style="margin-top:8px">or email</div>
-      <input class="cfg-num fj-tx" id="br-email" type="email" autocapitalize="off" autocomplete="email" spellcheck="false">
-      <div class="sa-hint" style="margin-top:4px">We need one of the two to reply. An email goes only to the maintainers with the report, never into the public issue, and is deleted with the report.</div>
+      <!-- Fork only: this build is Renato's version, so who the report goes to is chosen
+           (app-menu.js brShowTo): Renato, saved and sent in a Telegram chat, or the official
+           maintainers' service, said plainly. -->
+      <div class="cfg-label" style="margin-top:8px">Send the report to</div>
+      <div class="ln-seg cfg-seg-full" id="br-to"><button class="ln-segbtn" data-to="fork">Renato (this version)</button><button class="ln-segbtn" data-to="official">Official maintainers</button></div>
+      <div class="sa-hint br-fork">This AgOpenWeb is Renato's version (renatorgr/AgOpenWeb), with changes the official one does not have. Save the report, then send the zip to Renato in a Telegram chat.</div>
+      <div class="sa-hint br-official">Send Report sends this report to the AgOpenWeb maintainers.</div>
+      <div class="sa-hint br-official" style="margin-top:4px">That is the official project (an issue on AgOpenGPS-Official/AgOpenWeb), not Renato. This is Renato's version: a problem with one of his changes is not theirs to fix.</div>
+      <div class="br-official">
+        <div class="cfg-label" style="margin-top:8px">GitHub username</div>
+        <input class="cfg-num fj-tx" id="br-ghuser" autocapitalize="off" autocomplete="off" spellcheck="false">
+        <div class="cfg-label" style="margin-top:8px">or email</div>
+        <input class="cfg-num fj-tx" id="br-email" type="email" autocapitalize="off" autocomplete="email" spellcheck="false">
+        <div class="sa-hint" style="margin-top:4px">We need one of the two to reply. An email goes only to the maintainers with the report, never into the public issue, and is deleted with the report.</div>
+      </div>
       <div class="cfg-label" style="margin-top:8px">Screenshots or files (optional)</div>
       <div id="br-files"></div>
       <button class="cfg-act cfg-actwide" id="br-screenshot" style="margin-top:4px">Take Screenshot</button>
       <button class="cfg-act cfg-actwide" id="br-attach" style="margin-top:4px">Add Screenshot or File</button>
       <input type="file" id="br-file" multiple hidden>
       <div class="sa-hint" id="br-attachstatus" style="margin-top:4px">Like the rest of the report, attachments go only to the maintainers.</div>
-      <button class="cfg-act cfg-actwide fj-primary" id="br-send" style="margin-top:8px">Send Report</button>
-      <div class="sa-hint" id="br-need" style="margin-top:6px"></div>
-      <div class="sa-hint" id="br-sendstatus" style="margin-top:6px"></div>
-      <button class="cfg-act cfg-actwide" id="br-openissue" style="margin-top:6px;display:none">Open Issue</button>
+      <div class="br-official">
+        <button class="cfg-act cfg-actwide fj-primary" id="br-send" style="margin-top:8px">Send Report</button>
+        <div class="sa-hint" id="br-need" style="margin-top:6px"></div>
+        <div class="sa-hint" id="br-sendstatus" style="margin-top:6px"></div>
+        <button class="cfg-act cfg-actwide" id="br-openissue" style="margin-top:6px;display:none">Open Issue</button>
+      </div>
+      <div class="br-fork">
+        <button class="cfg-act cfg-actwide fj-primary" id="br-forksave" style="margin-top:8px">1. Save the Report</button>
+        <button class="cfg-act cfg-actwide" id="br-forkchat" style="margin-top:6px">2. Open a Telegram Chat with Renato</button>
+        <div class="sa-hint" id="br-forkstatus" style="margin-top:6px"></div>
+      </div>
     </div>
-    <button class="cfg-act cfg-actwide" id="br-download" style="margin-top:6px;display:none">Download</button>
+    <button class="cfg-act cfg-actwide br-official" id="br-download" style="margin-top:6px;display:none">Download</button>
   </div>
   <!-- Smart WAS Calibration — chain sub-panel of AutoSteer (watch-the-tractor:
        opts OUT of the light-dismiss scrim so you can pan/zoom to watch the tractor
