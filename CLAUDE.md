@@ -294,6 +294,29 @@ real time (the process outlives the backend on Android and iOS). Tests: `Simulat
 (the same U-turn at 1x and 10x; the old 10x drove 1.7 km on past the fence), `SimulatorTimeLapseTests`,
 `MotionClockTests`. Fork only: at a sync keep the fork side in the simulator files.
 
+### The pose between two fixes
+The 100 Hz control loop (`MainViewModel.OnControlLoopTicked`) reads the pose from `PositionEstimator.GetPose`: the
+last fix moved on by its speed and turned on by a yaw rate the estimator derives from the heading change between
+two fixes (the sentence's own yaw rate field is not used). That pose places the implement (`ToolPositionService`):
+the sections, the coverage and the hard fence and hard obstacle guards read it. The time between two fixes is the
+receiver's own (`GpsData.FixTimeCentiseconds`, the time of day on the fix's position sentence, set by
+`AutoSteerService` for every fix: `FixTimeSensor.TimeOfDay` of a one-sentence fix, and for a fix of several
+sentences its own epoch's, `NmeaEpochAssembler.LastFixTimeCentiseconds`, since an epoch can be closed by the first
+sentence of the next one, which carries the next time; `PoseSnapshot.FixTimeCentiseconds`), not the time between their
+arrivals: two fixes that reach the app together (a Wi-Fi link that holds packets back, a harness feeding fixes
+faster than real time) are still a tenth of a second of driving apart. Over the arrivals a 7 deg/s bend read as
+some 450 deg/s, and the pose predicted until the next fix turned an 8 m front boom 23 degrees round: the hard
+obstacle guard read its end 0.85 m "in" an obstacle the boom was 1 m clear of and took AutoSteer off (the farm job
+harness on Couto da Ribeira, pass 21, 26 Nov 2026; its fixes come ten at a time). The receiver's time is used only
+after `PositionEstimator.TimedFixesToTrust` (10) fixes in a row each came with a newer time than the one before
+(`FixInterval`): a fix with no time (the simulator, whose time-lapse stamps its own instants), the same time again
+(a module heard twice, a receiver that writes its time to the whole second), an older one or one more than 2 s on
+(`MaxFixIntervalCentiseconds`: a receiver that sets its clock, fixes lost) starts the count
+again, and until then the time between arrivals is used, as before; the first rate by the receiver's time starts
+the rate's filter afresh. A Unicore log (`#INSPVAXA`) has no time of day read from it, so its fixes keep the
+arrivals. Tests: `PositionEstimatorTests`,
+`GpsPipelinePositionEstimatorTests` (`Fixes_that_reach_the_cycle_together_in_a_bend...`), `GpsIngestTests`. Fork only.
+
 ### The ground left to paint and the time left
 The status bar's Stats page ("Done ... Left ...%") and the field data card's Remaining and Time left come from the
 host (fork only). `CoverageMapService.MeasureCoverage` counts the coverage map's 0.1 m cells inside the field's
