@@ -1,5 +1,5 @@
 // AgOpenWeb
-// Copyright (C) 2026 AgOpenWeb Contributors
+// Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 using System;
@@ -161,12 +161,19 @@ public class PassEndRigFitsTests
         });
     }
 
-    // Half the implement and its offset less the 0.5 m the hard fence guard lets an end go over a
-    // fence, or half the tractor's track when that is more.
+    // The implement's offset, plus half the implement less the 0.5 m the hard fence guard lets an
+    // end go over a fence, or plus half the tractor's track when that is more.
     [TestCase(3.0, 0.0, 1.9, 1.0)]    // the drill
     [TestCase(8.0, 0.0, 1.9, 3.5)]    // the front boom
     [TestCase(3.0, 0.5, 1.9, 1.5)]    // shifted half a metre to one side
+    [TestCase(3.0, -0.5, 1.9, 1.5)]   // or to the other
     [TestCase(1.0, 0.0, 2.0, 1.0)]    // narrower than the tractor: its wheels
+    // Narrow and shifted a metre: on the tool's own line the tractor runs a metre beside it, so its
+    // far wheels are 1.95 m from the line (the implement's end only 0.75 m).
+    [TestCase(1.5, 1.0, 1.9, 1.95)]
+    [TestCase(3.0, 0.0, double.NaN, 1.0)]   // a measure that is no number counts as 0
+    [TestCase(3.0, double.NaN, 1.9, 1.0)]
+    [TestCase(0.5, 0.0, -1.9, 0.0)]         // never negative
     public void The_room_the_rig_needs_either_side_of_the_pass(double toolWidth, double toolOffset, double trackWidth, double expected)
     {
         ConfigurationStore.SetInstance(new ConfigurationStore());

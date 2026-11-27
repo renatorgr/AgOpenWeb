@@ -178,13 +178,25 @@ public static class PassEnds
     }
 
     /// <summary>
-    /// How far either side of a pass the rig needs inside a hard fence to be driven along it: half
-    /// the implement and its offset (the reach the hard fence guard looks at) less what the guard
-    /// lets an end go over a fence (<see cref="HardFenceGuard.Margin"/>), or half the tractor's
-    /// track when that is more.
+    /// How far either side of a pass the rig needs inside a hard fence to be driven along it: the
+    /// implement's offset, plus half the implement less what the hard fence guard lets an end go
+    /// over a fence (<see cref="HardFenceGuard.Margin"/>), or plus half the tractor's track when
+    /// that is more.
+    /// <para>
+    /// The offset counts for both: the pass walked is the tool's own line where the end of the
+    /// pass is watched (the tractor runs the offset beside it) and the tractor's line where a turn
+    /// is planned (the tool runs the offset beside it), and one band has to hold the rig seen from
+    /// either. With a narrow implement shifted to one side, the wheels are what reaches furthest
+    /// from the tool's line. A measure that is no number counts as 0; never negative.
+    /// </para>
     /// </summary>
-    public static double RigHalfWidth(ConfigurationStore config) =>
-        Math.Max(config.ActualToolWidth / 2 + Math.Abs(config.Tool.Offset) - HardFenceGuard.Margin, config.Vehicle.TrackWidth / 2);
+    public static double RigHalfWidth(ConfigurationStore config)
+    {
+        static double Length(double value) => double.IsFinite(value) ? value : 0;
+        double tool = Length(config.ActualToolWidth) / 2 - HardFenceGuard.Margin;
+        double wheels = Length(config.Vehicle.TrackWidth) / 2;
+        return Math.Max(0, Math.Abs(Length(config.Tool.Offset)) + Math.Max(tool, wheels));
+    }
 
     /// <summary>
     /// The test a stretch outside the turn line must pass, piece by piece, to be driven through
