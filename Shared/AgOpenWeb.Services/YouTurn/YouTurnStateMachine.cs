@@ -2467,9 +2467,10 @@ public sealed class YouTurnStateMachine
         // operator is told how much (the crop before the headland line, or before the obstacle the
         // turn is made at when that comes first; with no headland the setback itself), not that
         // the headland is too narrow. Fork only.
+        var turnedAt = ObstacleTurnedAt(ctx.Boundary, result);
         double leftToDo = result.ObstacleSetback <= 0 ? 0
             : ctx.WorkHeadlandLine is { Count: >= 3 }
-                ? PassLeftAhead(workLeavesAt, headingRadians, ctx.WorkHeadlandLine, ObstacleTurnedAt(ctx.Boundary, result))
+                ? PassLeftAhead(workLeavesAt, headingRadians, ctx.WorkHeadlandLine, turnedAt.Outline, turnedAt.Reach)
             : result.ObstacleSetback;
         if (leftToDo > NarrowHeadlandToleranceM)
         {
@@ -2480,7 +2481,9 @@ public sealed class YouTurnStateMachine
             _logger.LogInformation("[YouTurn] Turn seated back {S:F0} m for an obstacle: about {L:F0} m of pass {P} left to do at this end",
                 result.ObstacleSetback, leftToDo, guidance.HowManyPathsAway);
         }
-        else if (startsInside > NarrowHeadlandToleranceM && effects.StatusMessage == null)
+        // Seated back for an obstacle with next to nothing left before it: the obstacle, not the
+        // headland, is where the pass ends, so no "Headland too narrow".
+        else if (startsInside > NarrowHeadlandToleranceM && result.ObstacleSetback <= 0 && effects.StatusMessage == null)
             effects.StatusMessage = HeadlandTooNarrowMessage(startsInside);
         else if (!result.UsedFallback && effects.StatusMessage == null)
             effects.StatusMessage = $"YouTurn path created ({result.Path.Count} points)";
@@ -2588,79 +2591,81 @@ public sealed class YouTurnStateMachine
     public static string HeadlandTooNarrowMessage(double insideM) => string.Format(CultureInfo.InvariantCulture,
         "Headland too narrow for this U-turn: it leaves the pass {0:0.0} m before the headland line, still working. Widen the headland or reduce the U-turn radius.", insideM);
 
-    /// <summary>How far inside the headland line (in the cultivated area) the turn leaves its
-    /// pass: the arc's start, before the entry leg. 0 when it starts in the headland or there
-    /// is no headland line.</summary>
     /// <summary>
     /// How much of the pass is left between a turn's start and the headland line, measured along
     /// the way the tractor drives (the nearest edge of the headland line can be a side of the
     /// field, nearer than the pass's own end). 0 when the start is not inside the headland line;
     /// the nearest edge when the way ahead crosses none. With the outline of the obstacle the
-    /// turn is made at, up to that obstacle when it comes first (its nearest edge when the way
-    /// ahead runs beside it): a turn made early before an obstacle the pass cannot go round
-    /// leaves the crop up to the obstacle, and the pass beyond it is reached from its other end.
-    /// Measured to the headland line through the obstacle, a turn seated back 20 m before Inner 1
-    /// was told as "about 266 m of this pass is left to do at this end" (Couto da Ribeira, 27 Nov
-    /// 2026). Fork only.
+    /// turn is made at, up to where that obstacle first comes within <paramref name="obstacleReach"/>
+    /// of the line driven (across it or beside it), when that comes first: the pass ends at the
+    /// obstacle's turn line, grown by that much, and the pass beyond it is reached from its other
+    /// end. An obstacle that does not come that near the way ahead leaves the headland line's
+    /// length. Measured to the headland line through the obstacle, a turn seated back 20 m before
+    /// Inner 1 was told as "about 266 m of this pass is left to do at this end" (Couto da Ribeira,
+    /// 27 Nov 2026). Fork only.
     /// </summary>
     public static double PassLeftAhead(Vec3? arcStart, double headingRadians, IReadOnlyList<Vec3>? headlandLine,
-        IReadOnlyList<Vec3>? obstacle = null)
+        IReadOnlyList<Vec3>? obstacle = null, double obstacleReach = 0)
     {
         if (arcStart is not { } a || headlandLine == null || headlandLine.Count < 3) return 0;
         if (!GeometryMath.IsPointInPolygon(headlandLine, a)) return 0;
         double ux = Math.Sin(headingRadians), uy = Math.Cos(headingRadians);
-        double best = AlongWayTo(headlandLine, a, ux, uy);
+        double best = AlongToWithin(headlandLine, a, ux, uy, 0);
         if (best == double.MaxValue) best = TurnStartInsideHeadlandLine(arcStart, headlandLine);
         if (obstacle is { Count: >= 3 })
-        {
-            double toObstacle = AlongWayTo(obstacle, a, ux, uy);
-            if (toObstacle == double.MaxValue) toObstacle = DistanceToRing(obstacle, a);
-            best = Math.Min(best, toObstacle);
-        }
+            best = Math.Min(best, AlongToWithin(obstacle, a, ux, uy, Math.Max(0.0, obstacleReach)));
         return best;
     }
 
-    // How far along the way ahead (ux, uy) from `a` the first edge of `ring` is crossed;
-    // double.MaxValue when none is.
-    private static double AlongWayTo(IReadOnlyList<Vec3> ring, Vec3 a, double ux, double uy)
+    // How far along the way ahead (ux, uy) from `a` the ring first comes within `reach` of the
+    // line driven (0: where it crosses the line); double.MaxValue when it does not ahead.
+    private static double AlongToWithin(IReadOnlyList<Vec3> ring, Vec3 a, double ux, double uy, double reach)
     {
         double best = double.MaxValue;
         for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
         {
             var p = ring[j]; var q = ring[i];
-            double ex = q.Easting - p.Easting, ey = q.Northing - p.Northing;
-            double den = ux * ey - uy * ex;
-            if (Math.Abs(den) < 1e-12) continue;
-            double wx = p.Easting - a.Easting, wy = p.Northing - a.Northing;
-            double t = (wx * ey - wy * ex) / den;       // along the way ahead
-            double s = (wx * uy - wy * ux) / den;       // along the edge
-            if (t > 0 && s >= 0 && s <= 1) best = Math.Min(best, t);
+            double px = p.Easting - a.Easting, py = p.Northing - a.Northing;
+            double qx = q.Easting - a.Easting, qy = q.Northing - a.Northing;
+            double t0 = px * ux + py * uy, t1 = qx * ux + qy * uy; // along the way
+            double s0 = px * uy - py * ux, s1 = qx * uy - qy * ux; // beside it
+            // The part of the edge within the band and ahead, as a share of the edge: the along
+            // distance is linear on it, so its least is at one end of that part.
+            double lo = 0, hi = 1;
+            if (!Clip(s0, s1, -reach, reach, ref lo, ref hi) || !Clip(t0, t1, 1e-9, double.MaxValue, ref lo, ref hi)) continue;
+            best = Math.Min(best, Math.Min(t0 + (t1 - t0) * lo, t0 + (t1 - t0) * hi));
         }
         return best;
     }
 
-    private static double DistanceToRing(IReadOnlyList<Vec3> ring, Vec3 a)
+    // Narrows [lo, hi] to where v0 + (v1 - v0) u lies within [min, max]; false when nowhere.
+    private static bool Clip(double v0, double v1, double min, double max, ref double lo, ref double hi)
     {
-        double best = double.MaxValue;
-        for (int i = 0, j = ring.Count - 1; i < ring.Count; j = i++)
-        {
-            var p = ring[j]; var q = ring[i];
-            double dx = q.Easting - p.Easting, dy = q.Northing - p.Northing, l2 = dx * dx + dy * dy;
-            double t = l2 < 1e-12 ? 0 : Math.Clamp(((a.Easting - p.Easting) * dx + (a.Northing - p.Northing) * dy) / l2, 0, 1);
-            double ex = p.Easting + t * dx - a.Easting, ey = p.Northing + t * dy - a.Northing;
-            best = Math.Min(best, ex * ex + ey * ey);
-        }
-        return Math.Sqrt(best);
+        double d = v1 - v0;
+        if (Math.Abs(d) < 1e-12) return v0 >= min && v0 <= max && lo <= hi;
+        double ua = (min - v0) / d, ub = (max - v0) / d;
+        if (ua > ub) (ua, ub) = (ub, ua);
+        lo = Math.Max(lo, ua);
+        hi = Math.Min(hi, ub);
+        return lo <= hi;
     }
 
-    // The outline of the obstacle a turn is made at (before it), or null for a turn at the field's edge.
-    private static IReadOnlyList<Vec3>? ObstacleTurnedAt(Boundary? boundary, YouTurnCreationService.TurnPathResult result)
+    // The outline of the obstacle a turn is made at (before it), and how far its turn line stands
+    // off it (the U-turn distance, and the implement's reach for a hard one); no outline for a
+    // turn at the field's edge.
+    private (IReadOnlyList<Vec3>? Outline, double Reach) ObstacleTurnedAt(Boundary? boundary, YouTurnCreationService.TurnPathResult result)
     {
         if (!result.AtObstacle || boundary == null || result.AtObstacleIndex < 0
-            || result.AtObstacleIndex >= boundary.InnerBoundaries.Count) return null;
-        return boundary.InnerBoundaries[result.AtObstacleIndex].Points.Select(p => new Vec3(p.Easting, p.Northing, 0)).ToList();
+            || result.AtObstacleIndex >= boundary.InnerBoundaries.Count) return (null, 0);
+        var inner = boundary.InnerBoundaries[result.AtObstacleIndex];
+        double reach = Math.Max(0.0, _configStore.Guidance.UTurnDistanceFromBoundary)
+            + (inner.IsHard ? YouTurnCreationService.HardReach(_configStore) : 0);
+        return (inner.Points.Select(p => new Vec3(p.Easting, p.Northing, 0)).ToList(), reach);
     }
 
+    /// <summary>How far inside the headland line (in the cultivated area) the turn leaves its
+    /// pass: the arc's start, before the entry leg. 0 when it starts in the headland or there
+    /// is no headland line.</summary>
     public static double TurnStartInsideHeadlandLine(Vec3? arcStart, IReadOnlyList<Vec3>? headlandLine)
     {
         if (arcStart is not { } a || headlandLine == null || headlandLine.Count < 3) return 0;
