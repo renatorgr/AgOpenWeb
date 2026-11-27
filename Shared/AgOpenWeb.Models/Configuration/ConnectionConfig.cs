@@ -87,6 +87,46 @@ public class ConnectionConfig : ObservableObject
         set => SetProperty(ref _rtcmBroadcast, value);
     }
 
+    // A GPS on a trailed implement (Network IO, fork only; Models/GPS/ImplementGps.cs): listen on UDP 9990 for an AiO
+    // board in its "Implement" role, draw where the implement really is and write it to a file. Off by default.
+    private bool _implementGpsEnabled;
+    public bool ImplementGpsEnabled
+    {
+        get => _implementGpsEnabled;
+        set => SetProperty(ref _implementGpsEnabled, value);
+    }
+
+    // ... its position antenna's height over the ground (m), for the roll
+    private double _implementGpsAntennaHeight = 2.0;
+    public double ImplementGpsAntennaHeight
+    {
+        get => _implementGpsAntennaHeight;
+        set => SetProperty(ref _implementGpsAntennaHeight, double.IsFinite(value) ? Math.Clamp(value, 0, 6) : 2.0);
+    }
+
+    // ... how far right of the implement's centre line that antenna is (m, - = left): a dual's first antenna is on the right
+    private double _implementGpsAntennaRight;
+    public double ImplementGpsAntennaRight
+    {
+        get => _implementGpsAntennaRight;
+        set => SetProperty(ref _implementGpsAntennaRight, double.IsFinite(value) ? Math.Clamp(value, -10, 10) : 0);
+    }
+
+    // ... its roll the other way round (the board turned in its box), and the roll it reads on level ground (degrees)
+    private bool _implementGpsRollInvert;
+    public bool ImplementGpsRollInvert
+    {
+        get => _implementGpsRollInvert;
+        set => SetProperty(ref _implementGpsRollInvert, value);
+    }
+
+    private double _implementGpsRollZero;
+    public double ImplementGpsRollZero
+    {
+        get => _implementGpsRollZero;
+        set => SetProperty(ref _implementGpsRollZero, double.IsFinite(value) ? Math.Clamp(value, -20, 20) : 0);
+    }
+
     // PGN 100, corrected position (Network IO, #337): sent on every fix to the module subnet
     // and to AgIO's loopback port, for seed monitors, rate controllers and GPS_Out. With it,
     // PGN 214 (speed, heading, fix quality) to AgIO's GPS loopback port for GPS_Out (#364).

@@ -140,6 +140,13 @@ namespace AgOpenWeb.Models
         /// GPS module when its address is known).</summary>
         public bool RtcmBroadcast { get; set; } = false;
 
+        /// <summary>A GPS on a trailed implement on UDP 9990 (fork only, ConnectionConfig.ImplementGps*).</summary>
+        public bool ImplementGpsEnabled { get; set; } = false;
+        public double ImplementGpsAntennaHeight { get; set; } = 2.0;
+        public double ImplementGpsAntennaRight { get; set; } = 0;
+        public bool ImplementGpsRollInvert { get; set; } = false;
+        public double ImplementGpsRollZero { get; set; } = 0;
+
         /// <summary>Send PGN 100 (corrected position) for seed monitors and rate controllers.</summary>
         public bool SendCorrectedPosition { get; set; } = false;
 

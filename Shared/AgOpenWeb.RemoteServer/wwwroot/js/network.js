@@ -102,7 +102,75 @@ function renderNetworkIo() {
   if (document.activeElement !== p100) p100.checked = !!s.sendCorrectedPosition;
   renderNtripRx(s);
   renderNtripSwitch(s);
+  renderImplementGps(s);
   nioSubnetBtn.classList.toggle('disabled', !iHoldControl);
+}
+
+// ---- A GPS on a trailed implement (fork only): an AiO board in its Implement role sends its positions to UDP 9990.
+// The host puts each beside the tractor's fix of the same instant and works out where the implement really is
+// (MainViewModel.ImplementGps.cs); here its numbers and its own measures. The map draws it (implementGpsSk). ----
+const nioImplH = document.getElementById('nio-impl-h'), nioImplR = document.getElementById('nio-impl-r');
+for (const [el, key] of [[nioImplH, 'conn.implementGpsAntennaHeight'], [nioImplR, 'conn.implementGpsAntennaRight']])
+  el.addEventListener('change', () => { const v = parseFloat(el.value); if (Number.isFinite(v)) cfgSend(key, String(v)); });
+document.getElementById('nio-impl-zero').addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  const g = statusBar && statusBar.implementGps;
+  if (!iHoldControl || !g || !Number.isFinite(g.rollRaw)) return;
+  // the roll it reads now is "level": as the host uses it (turned round if set), before the zero
+  cfgSend('conn.implementGpsRollZero', (g.rollInvert ? -g.rollRaw : g.rollRaw).toFixed(2));
+});
+function implGpsFixName(q) {
+  return q === 4 ? tr('RTK fixed') : q === 5 ? tr('RTK float') : q === 2 ? tr('DGPS') : q === 1 ? tr('GPS, no corrections') : tr('no fix');
+}
+// "4 cm right" / "12 cm left": across, + right of the model
+function implGpsSide(m) {
+  const cm = Math.round(Math.abs(m) * 100);
+  return cm === 0 ? tr('0 cm') : m > 0 ? tr('{n} cm right', { n: cm }) : tr('{n} cm left', { n: cm });
+}
+function renderImplementGps(s) {
+  const g = s.implementGps, on = !!g;
+  const cb = document.getElementById('nio-impl-on');
+  if (document.activeElement !== cb) cb.checked = on;
+  document.getElementById('nio-impl').hidden = !on;
+  const dot = document.getElementById('nio-impl-dot'), st = document.getElementById('nio-impl-status');
+  dot.style.background = !on ? '#6b7280' : g.hasPose && g.fixQuality === 4 ? '#22c55e' : g.heard ? '#eab308' : '#ef4444';
+  if (!on) return;
+  st.textContent = !g.listening ? tr('Port 9990 not open')
+    : !g.heard ? tr('Listening on UDP 9990')
+    : g.hasPose ? tr('Implement {side} of the model', { side: implGpsSide(g.across) })
+    : tr('Heard, not drawn');
+  const why = document.getElementById('nio-impl-why');
+  const whyText = g.error || (g.heard && !g.hasPose ? g.why : '');
+  why.hidden = !whyText;
+  why.textContent = whyText;
+  const num = (v, d) => Number.isFinite(v) ? v.toFixed(d) : '—';
+  const lines = [];
+  if (g.heard) {
+    lines.push(tr('From {ip}: {sentence}, {rate} a second, {fix}, {sats} satellites, correction age {age} s', {
+      ip: g.sender || '—', sentence: '$' + g.sentence, rate: num(g.rateHz, 0), fix: implGpsFixName(g.fixQuality), sats: g.sats, age: num(g.age, 1) }));
+    lines.push(g.paired ? tr('Same instant as the tractor\'s fix')
+      : !Number.isFinite(g.timeDiffS) ? tr('The tractor\'s fix carries no time (the simulator): its latest one is used')
+      : tr('Not the same instant as the tractor\'s fix ({s} s apart): the nearest one is used', { s: num(g.timeDiffS, 2) }));
+    lines.push(tr('Roll {raw}° as sent, {used}° used. Its own heading {h}°', { raw: num(g.rollRaw, 1), used: num(g.rollUsed, 1), h: num(g.receiverHeading, 1) }));
+    if (g.hasPose) {
+      lines.push(tr('Working centre {side}, {along} cm ahead, {deg}° off the model\'s heading', {
+        side: implGpsSide(g.across), along: Math.round(g.along * 100), deg: num(g.headingDiff, 1) }));
+      if (Number.isFinite(g.receiverHeadingDiff))
+        lines.push(tr('Its own heading against the line to the pin: {deg}°', { deg: num(g.receiverHeadingDiff, 1) }));
+    }
+  } else if (g.listening) {
+    lines.push(g.why || tr('Nothing heard yet'));
+    lines.push(tr('The board: Settings › Module role › Implement, on the tractor\'s network cable.'));
+  }
+  if (g.trailed) lines.push(tr('Pin to working centre {m} m (the tool\'s own measures)', { m: num(g.behindPin, 2) }));
+  if (g.refused > 0) lines.push(tr('{n} sentences refused (checksum, or not a position)', { n: g.refused }));
+  if (g.logFile) lines.push(tr('Written to {file} ({n} rows)', { file: g.logFile, n: g.logRows }));
+  document.getElementById('nio-impl-lines').textContent = lines.join('\n');
+  if (document.activeElement !== nioImplH) nioImplH.value = num(g.antennaHeight, 2);
+  if (document.activeElement !== nioImplR) nioImplR.value = num(g.antennaRight, 2);
+  const inv = document.getElementById('nio-impl-inv');
+  if (document.activeElement !== inv) inv.checked = !!g.rollInvert;
+  document.getElementById('nio-impl-zero').textContent = tr('Zero roll (on level ground)') + (Math.abs(g.rollZero) > 0.005 ? ' · ' + num(g.rollZero, 1) + '°' : '');
 }
 
 // The NTRIP session (NTRIP plan, Phase 4): a plain headline and what to do about it, the

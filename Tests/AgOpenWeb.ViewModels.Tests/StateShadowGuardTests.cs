@@ -54,6 +54,7 @@ public class StateShadowGuardTests
         ["_lastMirroredBaseTrack"] = "VM-LOCAL: dedup cache for last track pushed to the map",
         ["_lastMirroredNextTrack"] = "VM-LOCAL: dedup cache for last track pushed to the map",
         ["_selectedTrack"] = "VM-LOCAL: sole home for track selection (FieldState.SelectedTrack deleted §12.2)",
+        ["_implPlane"] = "VM-LOCAL: the plane the implement GPS's kept tractor fixes are on (compared by reference with State.Field.LocalPlane; another plane forgets them)",
         ["_simulatorLocalPlane"] = "VM-LOCAL: input-stage bootstrap plane for the sim's WGS84->local conversion (reviewed clean §12.4: uses field origin when present, reset on field/coord change)",
 
         // No domain shadows remain — the field-geometry cluster (incl. _activeField)

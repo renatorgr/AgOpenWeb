@@ -699,6 +699,7 @@ steerAngle = atan(2 * wheelbase * sin(α) / lookAheadDistance)
 |------|-----------|---------|
 | 9999 | Receive | GPS/PANDA sentences from AiO board |
 | 8888 | Send | PGN messages to modules (broadcast 192.168.5.255) |
+| 9990 | Receive | Fork only, off by default: `$PANDA` / `$PAOGI` from a GPS on a trailed implement, shown and recorded, never steered by (GPS_RECEIVERS.md) |
 
 ### A module heard on two network links
 

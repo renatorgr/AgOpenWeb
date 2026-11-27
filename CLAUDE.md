@@ -272,8 +272,8 @@ on 25 Nov 2026 in favour of official #944 (*Data quality: one monitor, many sens
 only warns when positions come a second time or late, and nothing is stopped. The fork keeps the stop (Renato,
 25 Nov 2026) and runs #944's sensors beside it: a module on two links is held by `TwoLinkDetector` first, so the
 sensors see only the datagrams that are used. It replaced the fork's `LinkCopyFilter` (#296, #316), which dropped
-the copies and kept working. Fork status frame: the two-link fields come after `LineTune`, and #944's `DataQuality`
-after them, last; at a sync keep the fork's stop, its detector and this order.
+the copies and kept working. Fork status frame: the two-link fields come after `LineTune`, #944's `DataQuality`
+after them, and the implement's GPS (`ImplementGps`, below) last; at a sync keep the fork's stop, its detector and this order.
 
 ### The simulator's 10x is a time-lapse
 The sim bar's 10x (`IsSimulatorSpeed10x`) runs time ten times faster at the speed shown, not the tractor
@@ -316,6 +316,33 @@ again, and until then the time between arrivals is used, as before; the first ra
 the rate's filter afresh. A Unicore log (`#INSPVAXA`) has no time of day read from it, so its fixes keep the
 arrivals. Tests: `PositionEstimatorTests`,
 `GpsPipelinePositionEstimatorTests` (`Fixes_that_reach_the_cycle_together_in_a_bend...`), `GpsIngestTests`. Fork only.
+
+### A GPS on a trailed implement
+Network IO › *Implement GPS* (`Connections.ImplementGpsEnabled`, `conn.implementGps*`, in AppSettings, **off by default**;
+fork only). The app models a trailed implement: it follows the tractor's pin and never slides. On a slope a trailed drill
+slides downhill, and the model cannot know. A second AiO board on the implement, set to its *Implement* role
+(renatorgr/Boards, firmware README "Implement mode"), sends its `$PANDA` / `$PAOGI` to **UDP 9990** and nothing to the
+modules' 9999, so the steering never hears it. `ImplementGpsReceiver` (`Services/Implement`) listens there only while the
+setting is on (`MainViewModel.SyncImplementGpsListener`, at the 5 Hz status tick) and queues the fixes
+(`ImplementGpsSentence.TryParse`, `Models/GPS/ImplementGps.cs`). On the host loop (`MainViewModel.ImplementGps.cs`) each is
+put beside the **tractor's fix of the same receiver time** (`ImplementGpsTracker`: the tractor's last 40 fixes kept, an
+implement fix waits up to 0.5 s for its own, else the nearest one, marked unpaired; `GpsCycleResult.FixTimeCentiseconds`,
+and `DriftEasting/Northing` so the Offset Fix moves it as the tractor), and solved (`ImplementGpsGeometry.Solve`): a
+trailed implement's centre line runs through the pin, so its heading is from the antenna to the pin (the model's hitch
+point, placed by the tractor's GPS), after the antenna's height through the roll and its place on the implement are
+taken out (*Antenna height*, *Antenna right of centre*, *Invert roll*, *Zero roll*); its working centre is the model's
+distance behind the pin (`RigGeometry.ToolBehindPivot`) along that heading, and the result is that centre against the
+model's: across (+ right), along, heading difference. A trailing tool only (not TBT, not fixed): otherwise the fixes are
+heard and written with no pose. **It steers nothing and changes nothing the model does**: sections, coverage and turns
+still use the model. It is drawn beside the model (the Tick ends with `ImplementPose`, relative to the model's implement
+so it moves with it: `implementGpsSk` in `js/map-layers.js`, a dashed magenta line where it really works, its centre
+line to the pin and the antenna; paler when not paired, gone when 2 s old), shown in Network IO (the Status frame ends
+with `ImplementGps`, after `DataQuality`; `renderImplementGps` in `js/network.js`) and written, one row per fix, to
+`<data folder>/ImplementGps/ImplementGps_yyyy-MM-dd.csv` (`ImplementGpsLog`: on a worker of its own, numbers with a
+point; the columns in `ImplementGpsLog.Header`, raw and solved, so it can be solved again with other measures). Made to
+measure how far a tester's no-till drill is from the model on his slopes before deciding what to do about it (sections
+and coverage by the real drill, then a slow shift of the line; direct implement steering last). At a sync keep the
+fork's Tick and Status endings. Docs/GPS_RECEIVERS.md. Tests: `ImplementGpsTests` (Models), `ImplementGpsTrackerTests`.
 
 ### The ground left to paint and the time left
 The status bar's Stats page ("Done ... Left ...%") and the field data card's Remaining and Time left come from the
@@ -392,6 +419,7 @@ thread" stand-in, `IUiDispatcher`), coordinates services, and is driven only thr
 | `MainViewModel.Simulator.cs` | GPS simulator state |
 | `MainViewModel.ViewSettings.cs` | Display/view settings |
 | `MainViewModel.FieldData.cs` | Field data card: trip distance, boundary area |
+| `MainViewModel.ImplementGps.cs` | Fork only: a GPS on a trailed implement (UDP 9990), shown and recorded, never steered by |
 | `MainViewModel.*.Remote.cs` | Web-client-only flows (field builder edits, headland, KML, tram) |
 
 ### ConfigurationStore

@@ -556,6 +556,11 @@ public class ConfigurationService(
         store.Connections.AgShareApiKey = settings.AgShareApiKey;
         store.Connections.AgShareEnabled = settings.AgShareEnabled;
         store.Connections.RtcmBroadcast = settings.RtcmBroadcast;
+        store.Connections.ImplementGpsEnabled = settings.ImplementGpsEnabled;
+        store.Connections.ImplementGpsAntennaHeight = settings.ImplementGpsAntennaHeight;
+        store.Connections.ImplementGpsAntennaRight = settings.ImplementGpsAntennaRight;
+        store.Connections.ImplementGpsRollInvert = settings.ImplementGpsRollInvert;
+        store.Connections.ImplementGpsRollZero = settings.ImplementGpsRollZero;
         store.Connections.SendCorrectedPosition = settings.SendCorrectedPosition;
         store.Connections.NtripEnabled = settings.NtripEnabled;
         store.Connections.NtripProfilePerField = settings.NtripProfilePerField;
@@ -634,6 +639,11 @@ public class ConfigurationService(
         settings.AgShareApiKey = store.Connections.AgShareApiKey;
         settings.AgShareEnabled = store.Connections.AgShareEnabled;
         settings.RtcmBroadcast = store.Connections.RtcmBroadcast;
+        settings.ImplementGpsEnabled = store.Connections.ImplementGpsEnabled;
+        settings.ImplementGpsAntennaHeight = store.Connections.ImplementGpsAntennaHeight;
+        settings.ImplementGpsAntennaRight = store.Connections.ImplementGpsAntennaRight;
+        settings.ImplementGpsRollInvert = store.Connections.ImplementGpsRollInvert;
+        settings.ImplementGpsRollZero = store.Connections.ImplementGpsRollZero;
         settings.SendCorrectedPosition = store.Connections.SendCorrectedPosition;
         settings.NtripEnabled = store.Connections.NtripEnabled;
         settings.NtripProfilePerField = store.Connections.NtripProfilePerField;

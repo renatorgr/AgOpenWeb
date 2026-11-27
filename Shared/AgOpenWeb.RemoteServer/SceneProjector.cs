@@ -60,6 +60,9 @@ public sealed class SceneProjector : System.IDisposable
     public System.Func<SystemDataDto?>? SystemDataProvider { get; set; }
     // How each stream from the modules arrives (System Data card, the status bar's rate).
     public System.Func<IReadOnlyList<DataStreamDto>?>? DataQualityProvider { get; set; }
+    // A GPS on a trailed implement (fork only): Network IO's numbers, and the Tick's real implement.
+    public System.Func<ImplementGpsDto?>? ImplementGpsProvider { get; set; }
+    public System.Func<ImplementPoseDto?>? ImplementPoseProvider { get; set; }
 
     /// <summary>Host-supplied projector for the generated tram lines (ITramLineService's
     /// ParallelTramLines — pipeline state, but the service isn't injected here). Set by the
@@ -471,7 +474,8 @@ public sealed class SceneProjector : System.IDisposable
                    && _config.ActualToolWidth > _config.Vehicle.TrackWidth ? 16 : 0),
             _state.Field.IsOutOfBounds,
             _state.Guidance.IsContourMode ? _state.Guidance.ContourAhead : 0,
-            _state.Guidance.ContourAheadM);
+            _state.Guidance.ContourAheadM,
+            ImplementPoseProvider?.Invoke());
     }
 
     // Top status-bar readouts (Phase 1). All state-projected: fix/age/sats from
@@ -559,7 +563,8 @@ public sealed class SceneProjector : System.IDisposable
             LineTuneProvider?.Invoke(),
             c.SecondLinks,
             c.IsOnTwoLinks,
-            DataQualityProvider?.Invoke());
+            DataQualityProvider?.Invoke(),
+            ImplementGpsProvider?.Invoke());
     }
 
     // The NTRIP session for the Network IO card, read live for every status frame.

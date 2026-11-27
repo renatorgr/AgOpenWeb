@@ -65,6 +65,7 @@ function renderSkia(canvas, rp) {
   drawEditHandlesSk(canvas); // stage-4 on-map edit handles (drag points to reshape)
   if (!implementPictureSk(canvas)) drawHitchSk(canvas); // the implement's picture, else its hitch line (under the tool footprint)
   toolFootprintSk(canvas);
+  implementGpsSk(canvas); // the real implement from its own GPS, beside the model's (fork)
   if (rp) { vehicleSk(canvas, rp); svennArrowSk(canvas, rp); }
   drawGoalSk(canvas); // #95 — Pure Pursuit target (over the vehicle)
   lightbarSk(canvas); // screen-space overlay, still inside the dpr scale

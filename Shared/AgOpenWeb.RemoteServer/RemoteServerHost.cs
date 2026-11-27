@@ -283,6 +283,22 @@ public sealed class RemoteServerHost
     }
     private Func<IReadOnlyList<DataStreamDto>?>? _dataQualityProvider;
 
+    /// <summary>A GPS on a trailed implement (fork only): Network IO's numbers.</summary>
+    public Func<ImplementGpsDto?>? ImplementGpsProvider
+    {
+        get => _broadcaster?.Projector.ImplementGpsProvider;
+        set { _implementGpsProvider = value; if (_broadcaster is not null) _broadcaster.Projector.ImplementGpsProvider = value; }
+    }
+    private Func<ImplementGpsDto?>? _implementGpsProvider;
+
+    /// <summary>... and the real implement on the map, in every Tick.</summary>
+    public Func<ImplementPoseDto?>? ImplementPoseProvider
+    {
+        get => _broadcaster?.Projector.ImplementPoseProvider;
+        set { _implementPoseProvider = value; if (_broadcaster is not null) _broadcaster.Projector.ImplementPoseProvider = value; }
+    }
+    private Func<ImplementPoseDto?>? _implementPoseProvider;
+
     public Func<IReadOnlyList<HeadlandSegInfoDto>>? HeadlandSegsProvider
     {
         get => _broadcaster?.Projector.HeadlandSegsProvider;
@@ -379,6 +395,8 @@ public sealed class RemoteServerHost
         _broadcaster.Projector.FieldDataProvider = _fieldDataProvider;
         _broadcaster.Projector.SystemDataProvider = _systemDataProvider;
         _broadcaster.Projector.DataQualityProvider = _dataQualityProvider;
+        _broadcaster.Projector.ImplementGpsProvider = _implementGpsProvider;
+        _broadcaster.Projector.ImplementPoseProvider = _implementPoseProvider;
         _broadcaster.Projector.TramLinesProvider = _tramLinesProvider;
 
         // Control authority → broadcast state to clients + drive the native banner;

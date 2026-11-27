@@ -209,7 +209,20 @@ public record TickDto(
     // Contour: what the line ahead holds (GuidanceState.ContourAhead: 0 clear, 1 the line turns
     // back, 2 it runs over sprayed ground, 3 it ends) and how far ahead (m): the operator should take over.
     int ContourAhead,
-    double ContourAheadM);
+    double ContourAheadM,
+    // The real implement from its own GPS, against the model's (fork only, UDP 9990); null with none. Last.
+    ImplementPoseDto? ImplementPose = null);
+
+/// <summary>Where a trailed implement really is, from a GPS on it (fork only, <c>MainViewModel.ImplementGps.cs</c>), against
+/// the model's working centre and heading: the client draws it from the model's implement as drawn, so it moves with it.</summary>
+/// <param name="Ready">1 from the tractor's fix of the same instant, 2 from the nearest one (the times did not match).</param>
+/// <param name="AcrossM">Its working centre, + right of the model's (m).</param>
+/// <param name="AlongM">... + ahead of it.</param>
+/// <param name="HeadingDiffDeg">Its heading less the model's.</param>
+/// <param name="AntennaAcrossM">The antenna, the same way.</param>
+/// <param name="AgeS">How old the fix is.</param>
+public record ImplementPoseDto(int Ready, double AcrossM, double AlongM, double HeadingDiffDeg,
+    double AntennaAcrossM, double AntennaAlongM, double AgeS);
 
 /// <summary>Top status-bar readouts (Phase 1), sent at a low rate. GPS fix quality
 /// + correction age + sat count; the units preference (so the client formats speed
@@ -349,7 +362,18 @@ public record StatusDto(
     bool OnTwoLinks = false,
     // How each stream from the modules arrives (gaps, bursts): the GPS fixes first. null before
     // the first judgement. Last in the fork's frame, after the fork's own fields.
-    IReadOnlyList<DataStreamDto>? DataQuality = null);
+    IReadOnlyList<DataStreamDto>? DataQuality = null,
+    // A GPS on a trailed implement, UDP 9990, for Network IO (fork only); null with it off. After DataQuality.
+    ImplementGpsDto? ImplementGps = null);
+
+/// <summary>A GPS on a trailed implement, for Network IO › Implement GPS (fork only, <c>ImplementGpsView</c>).</summary>
+public record ImplementGpsDto(
+    bool Listening, string Error, string Sender, string Sentence, bool Heard, double RateHz,
+    int FixQuality, int Satellites, double AgeS, bool Paired, double TimeDiffS,
+    double ReceiverHeadingDeg, double RollRawDeg, double RollUsedDeg,
+    bool HasPose, double AcrossM, double AlongM, double HeadingDiffDeg, double ReceiverHeadingDiffDeg,
+    string Why, long Refused, string LogFile, long LogRows,
+    double AntennaHeight, double AntennaRight, bool RollInvert, double RollZero, double BehindPin, bool Trailed);
 
 /// <summary>Tuning on the line: <c>LineTuneStage</c> (0 Idle, 1 Waiting, 2 Measuring, 3 Result,
 /// 4 Accepted, 5 Stopped, 6 Failed), whether it tunes the Stanley gains (else Steer Response),

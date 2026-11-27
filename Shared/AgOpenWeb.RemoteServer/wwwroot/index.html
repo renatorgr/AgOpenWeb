@@ -987,6 +987,31 @@
       <button id="nio-ntset" class="cfg-act">NTRIP Settings</button>
       <button id="nio-svc-switch" class="cfg-act rn-gated" hidden></button>
     </div>
+    <!-- A GPS on a trailed implement (fork only): an AiO board in its Implement role sends its positions to UDP 9990.
+         Drawn beside the model and written to a file; it steers nothing. -->
+    <hr class="nio-rule">
+    <label class="nio-bcrow" title="Listen on UDP 9990 for an AiO board on a trailed implement, set to its Implement role. Its position is drawn beside the model and written to a file. It steers nothing.">
+      <input type="checkbox" class="nio-chk" id="nio-impl-on" data-key="conn.implementGpsEnabled">
+      <span class="nio-mod" style="font-weight:700">Implement GPS</span>
+      <span class="nio-dot" id="nio-impl-dot"></span>
+    </label>
+    <div id="nio-impl" hidden>
+      <div class="nio-ntstatus" id="nio-impl-status"></div>
+      <div class="nio-warn" id="nio-impl-why" hidden></div>
+      <div class="sa-hint" id="nio-impl-lines" style="white-space:pre-line;overflow-wrap:anywhere;margin:4px 0 8px"></div>
+      <div class="nio-row2">
+        <div class="nio-fld"><label>Antenna height (m)</label><input class="cfg-num nio-tx" id="nio-impl-h" type="number" step="0.01" min="0" max="6"></div>
+        <div class="nio-fld"><label>Antenna right of centre (m)</label><input class="cfg-num nio-tx" id="nio-impl-r" type="number" step="0.01" min="-10" max="10"></div>
+      </div>
+      <div class="sa-hint">The position antenna: its height over the ground, and how far right of the implement's centre line it is (left: a minus). A dual's first antenna is on the right.</div>
+      <label class="nio-bcrow" title="When the roll shown is to the wrong side on a slope">
+        <input type="checkbox" class="nio-chk" id="nio-impl-inv" data-key="conn.implementGpsRollInvert">
+        <span class="nio-mod">Invert roll</span>
+      </label>
+      <div class="nio-btnrow">
+        <button id="nio-impl-zero" class="cfg-act rn-gated">Zero roll (on level ground)</button>
+      </div>
+    </div>
   </div>
   <!-- NTRIP Settings — chain sub-panel of Network IO, opened from its NTRIP line: the connection in
        detail (headline and advice, the checks, the RTCM messages), the mode, the options and the
