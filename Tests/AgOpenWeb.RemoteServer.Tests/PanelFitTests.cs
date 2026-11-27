@@ -31,6 +31,20 @@ public class PanelFitTests
             "the panes take what is left and scroll");
     }
 
+    /// <summary>
+    /// The AutoSteer tabs are not all as tall: at a bigger UI size or on a shorter screen only the
+    /// taller ones (Steering Sensor, Deadzone / Timing) scrolled, and their scroll bar took its width
+    /// from the panes, so their sliders and + buttons ended a scroll bar short of the Pure Pursuit and
+    /// Gain tabs' (a tester, 27 Nov 2026; 12 of 32 screen, UI size and Half/Full cases measured). The
+    /// body keeps the scroll bar's room whether a tab scrolls or not. Fork only.
+    /// </summary>
+    [Test]
+    public void Every_AutoSteer_tab_keeps_the_scroll_bars_room()
+    {
+        Assert.That(Decls(Css("panels.css"), ".as-body"), Does.Contain("scrollbar-gutter: stable"),
+            "a tab that scrolls is as wide as one that does not");
+    }
+
     [Test]
     public void The_NTRIP_panels_take_the_menu_panels_max_height()
     {
