@@ -171,6 +171,63 @@ public class TrailedOpenTurnTests
         });
     }
 
+    /// <summary>
+    /// The swing is looked for from the least one that fits, not from the first whole degree
+    /// above it. The farm's Puma (U-turn radius 5.4 m, the pin 1.4 m behind the rear axle) with
+    /// this drill and two rows skipped (9.15 m): the implement is square 0.8 of a degree above
+    /// the least swing, and started at the next whole degree the search said "no shape" there,
+    /// with one at 9.10 m and one at 9.20 m (the farm job harness on the mini PC, 27 Nov 2026).
+    /// </summary>
+    [Test]
+    public void A_swing_between_the_least_one_and_the_next_whole_degree_is_found()
+    {
+        const double pumaRadius = 5.4;
+        var onThePuma = Drill with { AttachX = -1.4 };
+        var shape = TrailedOpenTurn.Solve(onThePuma, pumaRadius, 9.15);
+        Assert.That(shape, Is.Not.Null, "passes 9.15 m apart have an open turn, as 9.10 m and 9.20 m have");
+        Assert.Multiple(() =>
+        {
+            double least = Math.Acos(9.15 / (2 * pumaRadius));
+            Assert.That(shape!.Swing, Is.GreaterThan(least).And.LessThan(Math.Ceiling(Deg(least)) * Math.PI / 180.0),
+                "the case: the swing lies between the least one and the next whole degree");
+            Assert.That(shape.Radius, Is.GreaterThanOrEqualTo(pumaRadius), "the tractor never turns tighter than the U-turn radius");
+            Assert.That(Deg(Math.Abs(TrailedOpenTurn.ToolLagAtEnd(onThePuma, shape))), Is.LessThan(0.01), "the implement is square where the counter-arc ends");
+            var before = TrailedOpenTurn.Solve(onThePuma, pumaRadius, 9.10);
+            var after = TrailedOpenTurn.Solve(onThePuma, pumaRadius, 9.20);
+            Assert.That(before, Is.Not.Null);
+            Assert.That(after, Is.Not.Null);
+            Assert.That(shape.Swing, Is.LessThan(before!.Swing).And.GreaterThan(after!.Swing), "between its neighbours' swings");
+        });
+    }
+
+    /// <summary>
+    /// From the nearest passes that have an open turn up to twice the open radius, every spacing
+    /// has one: no spacing in between is left out. Both of the farm's tractors with this drill.
+    /// </summary>
+    [TestCase(4.3, 1.54)]
+    [TestCase(5.4, 1.4)]
+    public void Every_spacing_from_the_nearest_with_an_open_turn_to_twice_the_open_radius_has_one(double radius, double pin)
+    {
+        var tool = Drill with { AttachX = -pin };
+        double open = TrailedOpenTurn.OpenRadius(tool, radius);
+        double first = double.NaN;
+        var missing = new List<double>();
+        for (int cm = 300; cm <= (int)Math.Floor(2 * open * 100); cm += 2)
+        {
+            double offset = cm / 100.0;
+            if (TrailedOpenTurn.Solve(tool, radius, offset) != null)
+            {
+                if (double.IsNaN(first)) first = offset;
+            }
+            else if (!double.IsNaN(first)) missing.Add(offset);
+        }
+        Assert.Multiple(() =>
+        {
+            Assert.That(first, Is.GreaterThan(radius).And.LessThan(2 * open), "some spacing has an open turn");
+            Assert.That(missing, Is.Empty, $"spacings past {first:F2} m with no open turn");
+        });
+    }
+
     [Test]
     public void Passes_past_what_the_arcs_reach_get_a_straight_along_the_top()
     {
