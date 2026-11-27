@@ -289,6 +289,8 @@ never from the repository.
 | `AGOPENWEB_JOB_FIELDS` | The folder of field folders (an AgOpenWeb data folder's `Fields`) |
 | `AGOPENWEB_JOB_FIELD_LIST` | The fields to work, `;`-separated; field i's jobs are R*i*1 to R*i*6 |
 | `AGOPENWEB_JOB_PROFILES` | Optional: the data folder whose `Vehicles` and `Tools` profiles give the first tractor's and the boom's settings (`AGOPENWEB_JOB_VEHICLE`, `AGOPENWEB_JOB_TOOL` name them) |
+| `AGOPENWEB_JOB_SETTINGS` | Optional: settings typed on top of every rig's own, `;`-separated `key:value` (`uturn.trailedTool:2;uturn.frontTool:1`): a choice tried on the whole farm without touching a profile |
+| `AGOPENWEB_JOB_SKIP` | Optional: `mode,rows` for the skip button (`0,2` = Normal, 2 rows), written in the job's own copy of the field in place of the field's saved choice |
 
 The rigs (the code's last digit):
 
