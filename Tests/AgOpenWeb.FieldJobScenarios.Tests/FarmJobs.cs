@@ -15,6 +15,11 @@ namespace AgOpenWeb.FieldJobScenarios.Tests;
 /// <item>AGOPENWEB_JOB_FIELD_LIST: the fields to work, <c>;</c>-separated, in a fixed order: field i's jobs are R<i>i</i>1..R<i>i</i>6;</item>
 /// <item>AGOPENWEB_JOB_PROFILES (optional): the data folder, whose <c>Vehicles</c> and <c>Tools</c> give the tractor's
 /// and the boom's own settings (AGOPENWEB_JOB_VEHICLE, AGOPENWEB_JOB_TOOL name the profiles); without it the measures below.</item>
+/// <item>AGOPENWEB_JOB_SETTINGS (optional): settings the operator types on top of every rig's own, <c>;</c>-separated
+/// <c>key:value</c> (as <see cref="JobSpec.Extra"/>), to try a choice on the whole farm without touching a profile:
+/// <c>uturn.trailedTool:2</c>, <c>uturn.frontTool:1</c>;</item>
+/// <item>AGOPENWEB_JOB_SKIP (optional): <c>mode,rows</c> for the skip button (mode 0 Normal, 1 Alternative, 2 Ignore
+/// worked tracks; rows 0-9), written in the job's own copy of the field in place of the field's saved choice.</item>
 /// </list>
 /// Each field is opened as it was saved (<see cref="JobSpec.FieldFolder"/>: its obstacles with their choices, its
 /// headland line, a hard boundary, the skip mode) and worked on its active AB line, or its first AB line when the
@@ -30,6 +35,50 @@ public static class FarmJobs
         (Environment.GetEnvironmentVariable("AGOPENWEB_JOB_FIELD_LIST") ?? "")
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+    /// <summary>AGOPENWEB_JOB_SETTINGS: what the operator types on top of every rig's own settings (<c>key:value</c>).
+    /// An entry that is no <c>key:value</c> stops the run: left out, the farm would be worked with other settings
+    /// than the ones asked for, and nothing would say so.</summary>
+    public static IReadOnlyList<string> TypedOnTop
+    {
+        get
+        {
+            var typed = (Environment.GetEnvironmentVariable("AGOPENWEB_JOB_SETTINGS") ?? "")
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (string x in typed)
+                if (x.IndexOf(':') <= 0)
+                    throw new InvalidOperationException($"AGOPENWEB_JOB_SETTINGS: '{x}' is not key:value (entries are split by ';').");
+            return typed;
+        }
+    }
+
+    /// <summary>A typed setting as the report shows it: the value of a key that may hold a login is left out.</summary>
+    public static string Shown(string typed)
+    {
+        string key = typed[..typed.IndexOf(':')];
+        foreach (string secret in new[] { "key", "pass", "token", "secret", "user", "login" })
+            if (key.Contains(secret, StringComparison.OrdinalIgnoreCase)) return key + ":(not shown)";
+        return typed;
+    }
+
+    /// <summary>AGOPENWEB_JOB_SKIP: the skip button's mode and rows for this run, or null for the field's own.
+    /// Anything but <c>mode,rows</c> with a mode of 0 to 2 and 0 to 9 rows stops the run. The skip modes skip at
+    /// least one row, as the app's button does, so the report says the rows the job runs with.</summary>
+    public static (int Mode, int Rows)? SkipTyped
+    {
+        get
+        {
+            string text = (Environment.GetEnvironmentVariable("AGOPENWEB_JOB_SKIP") ?? "").Trim();
+            if (text.Length == 0) return null;
+            var parts = text.Split(',', StringSplitOptions.TrimEntries);
+            if (parts.Length != 2
+                || !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out int mode)
+                || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out int rows)
+                || mode > 2 || rows > 9)
+                throw new InvalidOperationException($"AGOPENWEB_JOB_SKIP: '{text}' is not mode,rows (mode 0 to 2, rows 0 to 9).");
+            return (mode, mode != 0 ? Math.Max(1, rows) : rows);
+        }
+    }
+
     /// <summary>The fields named in the list that cannot be worked (no folder, no field.geojson, no AB line), with why.</summary>
     public static readonly List<string> Skipped = new();
 
@@ -40,6 +89,10 @@ public static class FarmJobs
         if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) yield break;
         var kit = Kit.Load();
         var list = FieldList;
+        var typed = TypedOnTop;
+        var skip = SkipTyped;
+        string forThisRun = (typed.Count > 0 ? " For this run the operator typed on top: " + string.Join(", ", typed.Select(Shown)) + "." : "")
+            + (skip is { } sk ? JobRun.F($" For this run the skip button is set to mode {sk.Mode}, {sk.Rows} row(s), not the field's own.") : "");
         for (int i = 0; i < list.Count; i++)
         {
             string name = list[i], folder = Path.Combine(root, name);
@@ -48,16 +101,17 @@ public static class FarmJobs
             string? track = AbTrack(folder, field);
             if (track == null) { Skipped.Add($"R{i + 1}x '{name}': no AB line in the field"); continue; }
             double headland = HeadlandWidth(folder);
-            bool snake = SkipMode(folder) == 2;
+            bool snake = (skip?.Mode ?? SkipMode(folder)) == 2;
             foreach (var rig in kit.Rigs())
             {
                 var watch = snake ? new SkipWorkedJobs.SnakeWatch(careless: false) : null;
                 yield return new JobSpec(
                     JobRun.F($"R{i + 1}{rig.Digit}"), $"{name}, {rig.Title}",
-                    JobRun.F($"{rig.Story} The field as it was saved ({field.Inner.Count} obstacles, headland {headland:0.#} m, its own boundary and skip mode{(snake ? ": ignore worked tracks" : "")}), worked on its AB line '{track}'."),
+                    JobRun.F($"{rig.Story} The field as it was saved ({field.Inner.Count} obstacles, headland {headland:0.#} m, its own boundary and skip mode{(snake ? ": ignore worked tracks" : "")}), worked on its AB line '{track}'.") + forThisRun,
                     name, track, rig.V, rig.T, Machines.PumaSys)
                 {
                     FieldFolder = folder,
+                    FieldSkip = skip,
                     Obstacles = true,
                     HeadlandM = headland > 0 ? headland : 12,
                     MakeHeadland = r => FileHeadlandAsync(r, headland),
@@ -68,7 +122,7 @@ public static class FarmJobs
                     UTurnStyle = rig.Style,
                     LookAheadMatchesValves = rig.LookAheadMatchesValves,
                     SpeedKmh = rig.SpeedKmh,
-                    Extra = rig.Extra,
+                    Extra = typed.Count > 0 ? rig.Extra.Concat(typed).ToList() : rig.Extra,
                     PassCheck = true,
                     // A corner of short passes beside the hard fence has no room to turn: start on a full-length pass.
                     StartChordM = 100,

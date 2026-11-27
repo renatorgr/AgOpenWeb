@@ -101,6 +101,9 @@ public sealed record JobSpec(
     /// hard boundary and skip mode come with it. <see cref="Field"/> is then the folder's name. Fork only: the
     /// real-field jobs (<see cref="FarmJobs"/>), whose fields are never in the repository.</summary>
     public string? FieldFolder { get; init; }
+    /// <summary>With <see cref="FieldFolder"/>: the skip button's mode and rows written in the job's copy of the field
+    /// (<c>UTurnSkip.json</c>) in place of the field's saved choice; null = as saved. Fork only.</summary>
+    public (int Mode, int Rows)? FieldSkip { get; init; }
     /// <summary>The operator starts on the first pass along the edge with at least this much line in the cultivated
     /// area, m. 20 = the first pass worth driving; more on a field whose edge passes are too short to turn from
     /// (a corner of short passes beside a hard fence), where a person starts further in. Fork only.</summary>
@@ -553,6 +556,8 @@ public sealed class JobRun : IAsyncDisposable
             string src = Path.Combine(Spec.FieldFolder!, f);
             if (File.Exists(src)) File.Copy(src, Path.Combine(dst, f), overwrite: true);
         }
+        if (Spec.FieldSkip is { } skip)
+            File.WriteAllText(Path.Combine(dst, "UTurnSkip.json"), F($"{{\n  \"mode\": {skip.Mode},\n  \"rows\": {skip.Rows}\n}}\n"));
         S.Step(F($"Field > Open: '{name}' as it was saved ({Field.Inner.Count} obstacles with their choices, its headland line and skip mode)"));
         await SendAsync("field.openOnly", name);
         if (!await Rig.WaitUntilAsync(() => Rig.Vm.IsFieldOpen && Rig.Vm.CurrentFieldName == name && !Rig.State.UI.IsBusy, 30000))
