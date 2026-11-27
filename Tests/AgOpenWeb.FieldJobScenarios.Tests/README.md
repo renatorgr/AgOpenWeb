@@ -306,6 +306,21 @@ Where the operator starts:
   headland, facing the field) is reported as `TAKE-OVER-AT-START`, and the operator drives on
   (`JobSpec.DriveOnPastStartWarnings`). On a hard boundary it ended the job before its first turn.
 
+When AgOpenWeb has no room for a U-turn on the next pass ("N passes still to do, but no room on the next
+pass at this end", "No U-turn onto the next pass: ..."):
+
+- The operator drives the pass to its end, then by hand to the nearest start of a pass still to do
+  (30 m of its line unsprayed in one piece; not one driven to before and not sprayed since; nearest in
+  metres, at either end of the stretch of the pass that holds that piece), turns AutoSteer and the sections
+  on again, and goes on (`JobSpec.MovesOnAfterNoRoom`, up to 20 times; `JobRun.MoveOnAsync`). The drive
+  there sprays nothing, and the module must have shut its sections before they go back to Auto. The other
+  harnesses still end the job there.
+- Each time is listed in `NO-ROOM-DROVE-ON-BY-HAND` (Improvement), and the share sprayed at the first one is
+  a metric (also when no pass was left to drive to): it is the number the job ended with before. The passes
+  driven by hand count in "U-turns / passes".
+- Why: on Casa the job ended at the first such end, and that came early or late with the order the passes
+  happened to be worked in (56 % one night, 23 % the next, 25-26 Nov 2026), so the share said little.
+
 Also:
 
 - With the skip mode *ignore worked tracks* the snake check of W1/W2 runs too.

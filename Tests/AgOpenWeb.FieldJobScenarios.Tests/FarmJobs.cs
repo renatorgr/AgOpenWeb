@@ -74,8 +74,18 @@ public static class FarmJobs
                     StartChordM = 100,
                     StartChordOfLongest = 0.8,
                     DriveOnPastStartWarnings = true,
+                    // "No room on the next pass" with the field going on: by hand to the nearest pass still to do, and on.
+                    MovesOnAfterNoRoom = 20,
                     ExtraJudge = (sc, r, flag) =>
                     {
+                        // The job went on past "no room" ends by hand: the share at the first is the number the
+                        // job ended with before (comparable with older nights), the rest is the whole field's.
+                        if (!double.IsNaN(r.SprayedAtFirstMoveOn))
+                            sc.Row.Metrics.Add(("Sprayed when AgOpenWeb first had no room for a U-turn on the next pass (the operator then drove on by hand)", JobRun.F($"{r.SprayedAtFirstMoveOn * 100:0.0} %")));
+                        if (r.MovedOn.Count > 0)
+                        {
+                            flag(Severity.Improvement, "NO-ROOM-DROVE-ON-BY-HAND", JobRun.F($"AgOpenWeb had no room for a U-turn on the next pass {r.MovedOn.Count} time(s) with the field going on, and the operator drove by hand to the nearest pass still to do: {string.Join("; ", r.MovedOn)}."));
+                        }
                         // AutoSteer engaged in the headland facing the field: a turn planned at the crossing the
                         // tractor is about to enter fails, and with a hard boundary the operator is told to take over.
                         if (r.StartWarnings.Count > 0)
