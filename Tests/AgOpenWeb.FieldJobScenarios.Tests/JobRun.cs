@@ -713,8 +713,9 @@ public sealed class JobRun : IAsyncDisposable
 
     /// <summary>Where the operator puts the tractor to work pass <paramref name="k"/> along A->B
     /// (<paramref name="dir"/> 1) or against it (-1): on the pass's line, 12 m before the boundary
-    /// crossing just before its longest stretch in the cultivated area, facing the field.</summary>
-    private ((double E, double N) Pivot, double HeadingRad, int Pass) PoseAtPassStart(int k, int dir)
+    /// crossing just before its longest stretch in the cultivated area, facing the field. With
+    /// <paramref name="vIn"/> (a place along the pass), the stretch that holds it instead.</summary>
+    private ((double E, double N) Pivot, double HeadingRad, int Pass) PoseAtPassStart(int k, int dir, double? vIn = null)
     {
         var work = Work ?? Outer;
         double u = (k + 0.5) * Spacing;
@@ -727,6 +728,9 @@ public sealed class JobRun : IAsyncDisposable
         double chordStart = tw.Count >= 2 ? tw[0] : Outer.Min(Vv), chordEnd = tw.Count >= 2 ? tw[1] : Outer.Max(Vv);
         for (int i = 0, bestLen = -1; i + 1 < tw.Count; i += 2)
             if (tw[i + 1] - tw[i] > bestLen) { bestLen = (int)(tw[i + 1] - tw[i]); chordStart = tw[i]; chordEnd = tw[i + 1]; }
+        if (vIn is { } vi)
+            for (int i = 0; i + 1 < tw.Count; i += 2)
+                if (tw[i] - 1 <= vi && vi <= tw[i + 1] + 1) { chordStart = tw[i]; chordEnd = tw[i + 1]; break; }
         var outer = Ring.LineCrossings(onLine, Along, Outer);
         double vPivot;
         if (dir > 0)
@@ -757,18 +761,22 @@ public sealed class JobRun : IAsyncDisposable
 
     /// <summary>The longest stretch of pass <paramref name="k"/>'s centre line, in one piece, in the cultivated
     /// area (outside the obstacles) that the truth grid has never seen sprayed, a metre at a time: what the
-    /// sections leave round an obstacle or at a pass end is short pieces, not a pass still to do.</summary>
-    private double LongestUnsprayedOnPassM(int k)
+    /// sections leave round an obstacle or at a pass end is short pieces, not a pass still to do. With
+    /// the middle of that stretch along the pass, for the start that leads to it.</summary>
+    private (double Length, double VMid) LongestUnsprayedOnPassM(int k)
     {
-        double u = (k + 0.5) * Spacing, vMin = Outer.Min(Vv) - 1, vMax = Outer.Max(Vv) + 1, run = 0, longest = 0;
+        double u = (k + 0.5) * Spacing, vMin = Outer.Min(Vv) - 1, vMax = Outer.Max(Vv) + 1, run = 0, longest = 0, mid = 0;
         for (double v = vMin; v <= vMax; v += 1)
         {
             int i = Grid.Index(A.E + Across.E * u + Along.E * v, A.N + Across.N * u + Along.N * v);
             byte z = i < 0 ? (byte)0 : Grid.Zone[i];
-            if ((z & TruthGrid.InWork) != 0 && (z & TruthGrid.InObstacle) == 0 && Grid.Count[i] == 0) longest = Math.Max(longest, ++run);
+            if ((z & TruthGrid.InWork) != 0 && (z & TruthGrid.InObstacle) == 0 && Grid.Count[i] == 0)
+            {
+                if (++run > longest) { longest = run; mid = v - (run - 1) / 2; }
+            }
             else run = 0;
         }
-        return longest;
+        return (longest, mid);
     }
 
     /// <summary>The share of the cultivated area (outside the obstacles) sprayed so far, on the truth grid.</summary>
@@ -785,25 +793,32 @@ public sealed class JobRun : IAsyncDisposable
         return work == 0 ? 0 : (double)sprayed / work;
     }
 
-    /// <summary>The start of the pass still to do nearest the implement's (a stretch of <see cref="OpenPassM"/> of its line in one piece
-    /// unsprayed and 20 m of it in the cultivated area), from its end nearer the tractor, with no U-turn
-    /// obstacle at that start (<see cref="StartBlocked"/>); null when none is left.</summary>
+    /// <summary>The start nearest the tractor of a pass still to do (a stretch of <see cref="OpenPassM"/> of its line in one piece
+    /// unsprayed and 20 m of it in the cultivated area), at either end of the stretch of the pass that holds the
+    /// unsprayed piece, with no U-turn obstacle at that start (<see cref="StartBlocked"/>); null when none is left.
+    /// Nearest as the operator drives there, not by pass number: a pass two over can start nearer than the next.</summary>
     private ((double E, double N) Pivot, double HeadingRad, int Pass)? NearestOpenPassStart(int from)
     {
         var work = Work ?? Outer;
         double uMin = work.Min(U), uMax = work.Max(U);
         int kMin = (int)Math.Floor(uMin / Spacing) - 1, kMax = (int)Math.Ceiling(uMax / Spacing) + 1;
-        int here = TruthPass() is var tp && tp != int.MinValue ? tp : from;
-        foreach (int k in Enumerable.Range(kMin, kMax - kMin + 1).OrderBy(k => Math.Abs(k - here)).ThenBy(k => k))
+        ((double E, double N) Pivot, double HeadingRad, int Pass)? best = null;
+        double bestD = double.MaxValue, bestOpen = 0;
+        for (int k = kMin; k <= kMax; k++)
         {
             if (k == from || InsideChordM(k) < 20) continue;
-            double open = LongestUnsprayedOnPassM(k);
+            var (open, vMid) = LongestUnsprayedOnPassM(k);
             if (open < OpenPassM || (_movedTo.TryGetValue(k, out var before) && open >= before - 1)) continue;
-            var starts = new[] { 1, -1 }.Where(d => !StartBlocked(k, d)).Select(d => PoseAtPassStart(k, d))
-                .OrderBy(p => (p.Pivot.E - Truth.E) * (p.Pivot.E - Truth.E) + (p.Pivot.N - Truth.N) * (p.Pivot.N - Truth.N)).ToList();
-            if (starts.Count > 0) { _movedTo[k] = open; return starts[0]; }
+            foreach (int d in new[] { 1, -1 })
+            {
+                if (StartBlocked(k, d)) continue;
+                var p = PoseAtPassStart(k, d, vMid);
+                double dd = (p.Pivot.E - Truth.E) * (p.Pivot.E - Truth.E) + (p.Pivot.N - Truth.N) * (p.Pivot.N - Truth.N);
+                if (dd < bestD) { bestD = dd; best = p; bestOpen = open; }
+            }
         }
-        return null;
+        if (best is { } b) _movedTo[b.Pass] = bestOpen;
+        return best;
     }
 
     /// <summary>The operator at a "no room" end (<see cref="JobSpec.MovesOnAfterNoRoom"/>): sections and AutoSteer
@@ -822,16 +837,22 @@ public sealed class JobRun : IAsyncDisposable
             return false;
         }
         Truth.Place(start.Pivot.E, start.Pivot.N, start.HeadingRad);
-        string line = F($"{saidAt:0} s at the end of pass {pass}, by hand to pass {start.Pass} with {share * 100:0.0} % sprayed");
-        MovedOn.Add(line);
-        Did(F($"AgOpenWeb had no room for a U-turn here (\"{said}\"): the operator drove by hand to the start of pass {start.Pass}, the nearest still to do ({share * 100:0.0} % of the field sprayed), and goes on"));
+        // The drive there sprays nothing: the section ends of the last fix before it must not be
+        // joined to the first after it (the truth, the app's sections and its map).
+        Array.Clear(_prevEdge); Array.Clear(_prevAppEdge); Array.Clear(_prevMapEdge);
         S.Step(F($"tractor put at the start of pass {start.Pass} ({start.Pivot.E:0},{start.Pivot.N:0}), 12 m before the boundary, heading {(start.HeadingRad * 180 / Math.PI + 360) % 360:0}° (driven there by hand after \"{said}\")"));
-        for (int i = 0; i < 30; i++) { Truth.Advance(FixSeconds, 0); SendFix(); await Task.Delay(PaceMs); }
+        // As at the start of the job, with the control loop and the module running: with the master off
+        // the module hears its sections off before the operator puts them in Auto again.
+        await RollAsync(30);
         await Rig.WaitForVmAsync();
+        if (Module.SectionsOpen != 0) { Did(F($"the module still had sections open after the master went off at a \"no room\" end: 0x{Module.SectionsOpen:X}")); return false; }
         await SendAsync("autosteer.toggle");
         if (!await Rig.ReadAsync(() => Rig.Vm.IsAutoSteerEngaged)) { Did("AutoSteer did not engage on the pass driven to: " + string.Join(" | ", Collect())); return false; }
         await SendAsync("section.master");
         if (!await Rig.ReadAsync(() => Rig.Vm.IsSectionMasterOn)) { Did("the section master did not switch to Auto on the pass driven to"); return false; }
+        // Counted only once the job goes on.
+        MovedOn.Add(F($"{saidAt:0} s at the end of pass {pass}, by hand to pass {start.Pass} with {share * 100:0.0} % sprayed"));
+        Did(F($"AgOpenWeb had no room for a U-turn here (\"{said}\"): the operator drove by hand to the start of pass {start.Pass}, the nearest still to do ({share * 100:0.0} % of the field sprayed), and goes on"));
         return true;
     }
 
