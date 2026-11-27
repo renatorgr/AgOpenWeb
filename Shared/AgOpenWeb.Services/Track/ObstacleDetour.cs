@@ -256,8 +256,9 @@ public sealed class ObstacleDetour
         if (hits.Count == 0)
             return ungrown.Count == 0 ? null : new Bend(new List<Vec3>(pass), Array.Empty<int>(), ungrown, Array.Empty<RoundedObstacle>());
         radius = Math.Max(radius, 1.0);
-        Group(hits, radius);
+        for (int i = 0; i < hits.Count; i++) hits[i].Group = i;
         Pin(hits, pinnedSides);
+        Group(hits, radius);
 
         var outer = boundary.OuterBoundary is { IsValid: true } ob
             ? ob.Points.Select(p => new Vec2(p.Easting, p.Northing)).ToList() : null;
@@ -325,6 +326,8 @@ public sealed class ObstacleDetour
             {
                 // The other side, for the obstacle and those going round with it.
                 foreach (var h in hits.Where(h => h.Group == culprit.Group)) { h.Side = -h.Side; h.Flipped = true; }
+                // On that side its bend can be longer and meet the next group.
+                Group(hits, radius);
             }
             else { blocked.Add(culprit.Fence.InnerIndex); hits.Remove(culprit); }
         }
@@ -366,38 +369,120 @@ public sealed class ObstacleDetour
     /// <summary>Beyond the bend's lead, how much nearer than the start of the bend still counts as beside the obstacle.</summary>
     private const double BesideSlack = 2.0;
 
-    // A pinned obstacle keeps its side, and so do the obstacles gone round with it; none of them
-    // is tried the other way (Flipped): no room there means blocked.
+    // A pinned obstacle keeps its side and is not tried the other way (Flipped): no room there
+    // means blocked. The obstacles whose bends meet its bend on that side go round with it (Group).
     private static void Pin(List<Hit> hits, IReadOnlyDictionary<int, int>? pins)
     {
         if (pins == null || pins.Count == 0) return;
         foreach (var h in hits)
         {
             if (!pins.TryGetValue(h.Fence.InnerIndex, out int side)) continue;
-            foreach (var g in hits.Where(x => x.Group == h.Group)) { g.Side = side; g.Flipped = true; }
+            h.Side = side;
+            h.Flipped = true;
         }
     }
 
     // Obstacles close together along the pass are gone round in one bend, on one side: the side
-    // where the farthest any of them reaches across the pass is the nearer.
+    // where the farthest any of them reaches across the pass is the nearer, or the side one of
+    // them is held to (pinned, or already tried the other way: Flipped). Close together means
+    // that their bends meet, each bend as long as the side it goes round on needs. Measured by
+    // the longer of the two moves for every obstacle, two obstacles 46 m apart on either side of
+    // the pass were one group: a tree 6 m to go round on the left was gone round 17 m to the
+    // right, across the next pass, with an obstacle behind it that needed 0.3 m to the right (a
+    // tester's field, Couto da Ribeira, 27 Nov 2026). Fork only.
+    //
+    // Groups only join, never split. Every obstacle starts in the group it is in (its own at the
+    // start, on its own side: the smaller move, Across), and two groups next to each other along
+    // the pass whose bends meet are joined and take one side, which can make their bend longer
+    // and meet the group before it or after it in turn: one sweep along the pass, each joined
+    // group checked against the one before it again. So it ends, no two groups are left apart
+    // with bends that meet, and every obstacle has its group's side and number. A group that
+    // joins nothing keeps its side. A joined group can hold obstacles whose bends no longer meet
+    // on the side it took: they stay on one side, as the grouping by the longer move always kept
+    // them. Two groups held to opposite sides are not joined: where their bends meet they cancel,
+    // and the line's check blocks the obstacle it runs into there. Run again after a flip, as a
+    // pin or a flip can give a group its longer bend.
     private static void Group(List<Hit> hits, double radius)
     {
         hits.Sort((a, b) => a.First.CompareTo(b.First));
-        int group = 0, reach = int.MinValue;
-        var groups = new List<List<Hit>>();
-        foreach (var h in hits)
+        var groups = new List<Run>();
+        // The groups as they are, in the order they start along the pass.
+        foreach (var members in hits.GroupBy(h => h.Group))
         {
-            // The bend for an obstacle starts and ends this far (in stations) before and after it.
-            int lead = (int)Math.Ceiling(Lead(Math.Max(h.NeedLeft, h.NeedRight), radius) / SampleStep);
-            if (groups.Count == 0 || h.First - lead > reach) { groups.Add(new List<Hit>()); group = groups.Count - 1; }
-            h.Group = group;
-            groups[group].Add(h);
-            reach = Math.Max(reach, h.Last + lead);
+            var run = new Run(members.ToList(), radius);
+            while (groups.Count > 0 && groups[^1].Meets(run) && groups[^1].CanJoin(run))
+            {
+                run = Run.Join(groups[^1], run);
+                groups.RemoveAt(groups.Count - 1);
+            }
+            groups.Add(run);
         }
-        foreach (var g in groups)
+        for (int g = 0; g < groups.Count; g++) groups[g].Settle(g);
+    }
+
+    // A group of obstacles while they are grouped: for either side, the farthest any of them
+    // reaches across the pass and how far along it their bends reach (stations), so two groups
+    // are joined without going through their obstacles again.
+    private sealed class Run
+    {
+        private List<Hit> _hits;
+        private double _needLeft, _needRight;
+        private int _startLeft = int.MaxValue, _endLeft = int.MinValue, _startRight = int.MaxValue, _endRight = int.MinValue;
+        private int _held;    // the side a pinned or flipped obstacle holds the group to; 0 when none does
+        private int _kept;    // the side the group had
+        private bool _joined; // joined to another group in this sweep: it takes its side again
+
+        public Run(List<Hit> hits, double radius)
         {
-            int side = g.Max(h => h.NeedLeft) <= g.Max(h => h.NeedRight) ? 1 : -1;
-            foreach (var h in g) h.Side = side;
+            _hits = hits;
+            _kept = hits[0].Side;
+            foreach (var h in hits)
+            {
+                _needLeft = Math.Max(_needLeft, h.NeedLeft);
+                _needRight = Math.Max(_needRight, h.NeedRight);
+                // The bend for an obstacle starts and ends this far (in stations) before and after it.
+                int leadLeft = (int)Math.Ceiling(Lead(h.NeedLeft, radius) / SampleStep);
+                int leadRight = (int)Math.Ceiling(Lead(h.NeedRight, radius) / SampleStep);
+                _startLeft = Math.Min(_startLeft, h.First - leadLeft);
+                _endLeft = Math.Max(_endLeft, h.Last + leadLeft);
+                _startRight = Math.Min(_startRight, h.First - leadRight);
+                _endRight = Math.Max(_endRight, h.Last + leadRight);
+                if (_held == 0 && h.Flipped) _held = h.Side;
+            }
+        }
+
+        public int Side => _held != 0 ? _held : !_joined ? _kept : _needLeft <= _needRight ? 1 : -1;
+        private int Start => Side > 0 ? _startLeft : _startRight;
+        private int End => Side > 0 ? _endLeft : _endRight;
+
+        public bool Meets(Run other) => other.Start <= End && Start <= other.End;
+        public bool CanJoin(Run other) => _held == 0 || other._held == 0 || _held == other._held;
+
+        // The smaller group's obstacles go into the larger's list.
+        public static Run Join(Run a, Run b)
+        {
+            var (into, from) = a._hits.Count >= b._hits.Count ? (a, b) : (b, a);
+            into._hits.AddRange(from._hits);
+            into._needLeft = Math.Max(a._needLeft, b._needLeft);
+            into._needRight = Math.Max(a._needRight, b._needRight);
+            into._startLeft = Math.Min(a._startLeft, b._startLeft);
+            into._endLeft = Math.Max(a._endLeft, b._endLeft);
+            into._startRight = Math.Min(a._startRight, b._startRight);
+            into._endRight = Math.Max(a._endRight, b._endRight);
+            into._held = a._held != 0 ? a._held : b._held;
+            into._joined = true;
+            return into;
+        }
+
+        public void Settle(int group)
+        {
+            int side = Side;
+            foreach (var h in _hits)
+            {
+                h.Group = group;
+                h.Side = side;
+                if (_held != 0) h.Flipped = true;
+            }
         }
     }
 

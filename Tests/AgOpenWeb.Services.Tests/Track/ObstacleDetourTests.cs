@@ -274,14 +274,14 @@ public class ObstacleDetourTests
     [Test]
     public void An_obstacle_with_no_room_either_side_does_not_take_away_the_bend_round_the_one_before_it()
     {
-        // Two obstacles 70 m apart on the pass, near enough for one bend, both reaching 40 m to
+        // Two obstacles 50 m apart on the pass, near enough for one bend, both reaching 40 m to
         // the right: the pass clips 3 m of the first and 1 m of the second, so left is the way
         // round both. Left of the second lies an obstacle chosen as U-turn, so there is no way
         // round the second, and right of it is further than a bend may move the line. Sent to the
         // right with it, the first had no room there either and neither was gone round (a
         // tester's field, 26 Nov 2026: the pass was then steered straight at the first).
         var field = Field(-100, 100,
-            Block(-3, 90, 40, 110), Block(-1, 180, 40, 182), Block(-12, 176, -4, 186, ObstacleAction.Turn));
+            Block(-3, 90, 40, 110), Block(-1, 160, 40, 162), Block(-12, 156, -4, 166, ObstacleAction.Turn));
         var bend = Detour.Compute(North, field, KeepOut, Radius)!;
         Assert.That(bend.GoneRound, Is.EqualTo(new[] { 0 }), "the first is gone round");
         Assert.That(bend.Blocked, Is.EqualTo(new[] { 1 }), "the second has no room: a U-turn before it");
@@ -289,8 +289,62 @@ public class ObstacleDetourTests
         var beside = bend.Points.Where(p => p.Northing >= 90 && p.Northing <= 110).ToList();
         Assert.That(beside, Is.Not.Empty);
         Assert.That(beside.Max(p => p.Easting), Is.LessThanOrEqualTo(-3 - KeepOut + 0.05), "the implement kept out of the first");
-        foreach (var p in bend.Points.Where(p => p.Northing > 170))
+        foreach (var p in bend.Points.Where(p => p.Northing > 150))
             Assert.That(Math.Abs(p.Easting), Is.LessThan(1e-6), $"back on the pass before the second, at {p.Northing:F1}");
+    }
+
+    [Test]
+    public void Two_obstacles_apart_on_either_side_of_the_pass_are_each_gone_round_the_nearer_way()
+    {
+        // The first lies west of the pass and its grown outline reaches 0.5 m across it: 0.5 m to
+        // the east is the way round it (34 m to the west). The second, 55 m on, lies east of the
+        // pass and reaches 6 m across it: 6 m to the west (19 m to the east). Their bends, each
+        // on its nearer side, do not meet. Taken as one group by the longer of their moves, both
+        // went east and the second was gone round 19 m off the pass, across the next pass (a
+        // tester's field, Couto da Ribeira, 27 Nov 2026: 17 m right of pass 21R for a tree 6 m to
+        // go round on the left).
+        var field = Field(-100, 100, Block(-30, 40, -3.5, 80), Block(-2, 135, 15, 150));
+        var bend = Detour.Compute(North, field, KeepOut, Radius)!;
+
+        Assert.That(bend.GoneRound, Is.EquivalentTo(new[] { 0, 1 }));
+        Assert.That(bend.Rounds.Single(r => r.InnerIndex == 0).Side, Is.EqualTo(-1), "the first: east, its nearer side");
+        Assert.That(bend.Rounds.Single(r => r.InnerIndex == 1).Side, Is.EqualTo(1), "the second: west, its nearer side");
+        var besideFirst = bend.Points.Where(p => p.Northing >= 40 && p.Northing <= 80).ToList();
+        var besideSecond = bend.Points.Where(p => p.Northing >= 135 && p.Northing <= 150).ToList();
+        Assert.That(besideFirst, Is.Not.Empty);
+        Assert.That(besideSecond, Is.Not.Empty);
+        Assert.That(besideFirst.Min(p => p.Easting), Is.GreaterThanOrEqualTo(-3.5 + KeepOut - 0.05), "the implement kept out of the first");
+        Assert.That(besideSecond.Max(p => p.Easting), Is.LessThanOrEqualTo(-2 - KeepOut + 0.05), "the implement kept out of the second");
+        Assert.That(bend.Points.Max(p => p.Easting), Is.LessThan(1.0), "never more than the first needs to the east");
+        Assert.That(bend.Points.Min(p => p.Easting), Is.GreaterThan(-6.5), "never more than the second needs to the west");
+        Assert.That(TightestRadius(bend.Points), Is.GreaterThanOrEqualTo(Radius * 0.9));
+    }
+
+    [Test]
+    public void A_pinned_obstacle_takes_the_next_one_round_its_side_when_its_longer_bend_meets_it()
+    {
+        // Both lie west of the pass. The first reaches 1 m across it (12 m to go round it on the
+        // west), the second, 37 m on, 2 m (16 m on the west). Each on its own side, their bends do
+        // not meet, and both are gone round on the east.
+        var field = Field(-100, 100, Block(-8, 60, -3, 70), Block(-12, 115, -2, 125));
+        var free = Detour.Compute(North, field, KeepOut, Radius)!;
+        Assert.That(free.GoneRound, Is.EquivalentTo(new[] { 0, 1 }));
+        Assert.That(free.Rounds.Select(r => r.Side), Is.All.EqualTo(-1), "each on its own side, the east");
+
+        // The first pinned west (the tractor beside it, going round there): its bend on the west
+        // is 46 m long and meets the second, which goes round with it, on the west, so the line
+        // does not swing back east of the pass between the two.
+        var pinned = Detour.Compute(North, field, KeepOut, Radius, 1.0, new Dictionary<int, int> { [0] = 1 })!;
+        Assert.That(pinned.GoneRound, Is.EquivalentTo(new[] { 0, 1 }));
+        Assert.That(pinned.Blocked, Is.Empty);
+        Assert.That(pinned.Rounds.Select(r => r.Side), Is.All.EqualTo(1), "both on the pinned side, the west");
+        Assert.That(pinned.Points.Where(p => p.Northing >= 60 && p.Northing <= 70).Max(p => p.Easting),
+            Is.LessThanOrEqualTo(-8 - KeepOut + 0.05), "the implement kept out of the first");
+        Assert.That(pinned.Points.Where(p => p.Northing >= 115 && p.Northing <= 125).Max(p => p.Easting),
+            Is.LessThanOrEqualTo(-12 - KeepOut + 0.05), "the implement kept out of the second");
+        Assert.That(pinned.Points.Where(p => p.Northing >= 74 && p.Northing <= 111).Max(p => p.Easting),
+            Is.LessThanOrEqualTo(0.05), "never east of the pass between them");
+        Assert.That(TightestRadius(pinned.Points), Is.GreaterThanOrEqualTo(Radius * 0.9));
     }
 
     private static Boundary FieldTo(double top, params BoundaryPolygon[] obstacles)
