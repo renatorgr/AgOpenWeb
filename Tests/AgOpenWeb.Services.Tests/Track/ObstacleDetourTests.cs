@@ -320,6 +320,33 @@ public class ObstacleDetourTests
         Assert.That(TightestRadius(bend.Points), Is.GreaterThanOrEqualTo(Radius * 0.9));
     }
 
+    [Test]
+    public void A_pinned_obstacle_takes_the_next_one_round_its_side_when_its_longer_bend_meets_it()
+    {
+        // Both lie west of the pass. The first reaches 1 m across it (12 m to go round it on the
+        // west), the second, 37 m on, 2 m (16 m on the west). Each on its own side, their bends do
+        // not meet, and both are gone round on the east.
+        var field = Field(-100, 100, Block(-8, 60, -3, 70), Block(-12, 115, -2, 125));
+        var free = Detour.Compute(North, field, KeepOut, Radius)!;
+        Assert.That(free.GoneRound, Is.EquivalentTo(new[] { 0, 1 }));
+        Assert.That(free.Rounds.Select(r => r.Side), Is.All.EqualTo(-1), "each on its own side, the east");
+
+        // The first pinned west (the tractor beside it, going round there): its bend on the west
+        // is 46 m long and meets the second, which goes round with it, on the west, so the line
+        // does not swing back east of the pass between the two.
+        var pinned = Detour.Compute(North, field, KeepOut, Radius, 1.0, new Dictionary<int, int> { [0] = 1 })!;
+        Assert.That(pinned.GoneRound, Is.EquivalentTo(new[] { 0, 1 }));
+        Assert.That(pinned.Blocked, Is.Empty);
+        Assert.That(pinned.Rounds.Select(r => r.Side), Is.All.EqualTo(1), "both on the pinned side, the west");
+        Assert.That(pinned.Points.Where(p => p.Northing >= 60 && p.Northing <= 70).Max(p => p.Easting),
+            Is.LessThanOrEqualTo(-8 - KeepOut + 0.05), "the implement kept out of the first");
+        Assert.That(pinned.Points.Where(p => p.Northing >= 115 && p.Northing <= 125).Max(p => p.Easting),
+            Is.LessThanOrEqualTo(-12 - KeepOut + 0.05), "the implement kept out of the second");
+        Assert.That(pinned.Points.Where(p => p.Northing >= 74 && p.Northing <= 111).Max(p => p.Easting),
+            Is.LessThanOrEqualTo(0.05), "never east of the pass between them");
+        Assert.That(TightestRadius(pinned.Points), Is.GreaterThanOrEqualTo(Radius * 0.9));
+    }
+
     private static Boundary FieldTo(double top, params BoundaryPolygon[] obstacles)
     {
         var b = new Boundary { OuterBoundary = Rect(-100, -100, 100, top) };
