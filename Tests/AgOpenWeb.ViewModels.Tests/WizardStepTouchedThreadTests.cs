@@ -14,7 +14,7 @@ namespace AgOpenWeb.ViewModels.Tests;
 /// thread, while the host loop enters the step again (which clears what it changed) and asks
 /// what it changed. The sets behind that were plain HashSets: changed from both threads at once
 /// they threw "Operations that change non-concurrent collections must have exclusive access",
-/// and the steer wizard harness stopped in the Roll step (mini PC night, 25 Nov 2026).
+/// and the steer wizard scenarios stopped in the Roll step (a run on 25 Nov 2026).
 /// </summary>
 [TestFixture]
 public class WizardStepTouchedThreadTests
