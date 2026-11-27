@@ -120,7 +120,7 @@ public abstract class WizardStepViewModel : ObservableObject
     // from the module's data thread (IAutoSteerService.StateUpdated), while the host loop clears
     // the sets on entry and reads them on leaving: a HashSet changed from two threads at once
     // threw "Operations that change non-concurrent collections must have exclusive access" and
-    // stopped the steer wizard harness in the Roll step (mini PC night, 25 Nov 2026).
+    // stopped the steer wizard scenarios in the Roll step (a run on 25 Nov 2026).
     private readonly object _touchedLock = new();
     private bool _loading;
 
