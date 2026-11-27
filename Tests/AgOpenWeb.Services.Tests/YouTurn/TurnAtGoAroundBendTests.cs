@@ -240,6 +240,30 @@ public class TurnAtGoAroundBendTests
     }
 
     [Test]
+    public void The_pass_left_before_an_obstacle_the_turn_is_made_at_ends_at_the_obstacle()
+    {
+        // A headland line 300 m long; a turn made early before an obstacle the pass cannot go
+        // round, 20 m before it: 20 m of the pass are left at this end, not the 240 m to the
+        // headland line through the obstacle, which the pass reaches from its other end
+        // (Couto da Ribeira, 27 Nov 2026: "about 266 m" for a turn 20 m before Inner 1).
+        var line = new List<Vec3> { new(0, 0, 0), new(100, 0, 0), new(100, 300, 0), new(0, 300, 0) };
+        var start = new Vec3(50, 60, 0);
+        var obstacle = new List<Vec3> { new(30, 80, 0), new(70, 80, 0), new(70, 140, 0), new(30, 140, 0) };
+        Assert.That(YouTurnStateMachine.PassLeftAhead(start, 0, line), Is.EqualTo(240).Within(1e-9), "no obstacle: to the headland line");
+        Assert.That(YouTurnStateMachine.PassLeftAhead(start, 0, line, obstacle), Is.EqualTo(20).Within(1e-9), "up to the obstacle");
+
+        // The pass runs beside the obstacle (it ends at the obstacle's turn line, 3 m off it): its
+        // nearest edge.
+        var beside = new List<Vec3> { new(53, 80, 0), new(90, 80, 0), new(90, 140, 0), new(53, 140, 0) };
+        Assert.That(YouTurnStateMachine.PassLeftAhead(start, 0, line, beside),
+            Is.EqualTo(Math.Sqrt(3 * 3 + 20 * 20)).Within(1e-9));
+
+        // The headland line nearer than the obstacle: the headland line.
+        var far = new List<Vec3> { new(30, 280, 0), new(70, 280, 0), new(70, 320, 0), new(30, 320, 0) };
+        Assert.That(YouTurnStateMachine.PassLeftAhead(new Vec3(50, 260, 0), 0, line, far), Is.EqualTo(20).Within(1e-9));
+    }
+
+    [Test]
     public void The_pass_end_note_reaches_the_toast_while_its_turn_is_planned()
     {
         var turn = new List<Vec3> { new(0, 0, 0), new(0, 1, 0) };
