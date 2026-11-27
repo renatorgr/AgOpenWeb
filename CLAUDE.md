@@ -1116,7 +1116,11 @@ turn. By how far apart the passes are (`TrailedOpenPlanFor`, `YouTurnCreationSer
   direction and the swing past it, and a counter-arc of that angle at the U-turn radius onto the pass. The counter-arc
   must end on the pass, which gives the arc's radius for a swing s, (d + R(1 − cos s)) / (1 + cos s), held to the open
   radius (the rest is the top straight); the swing is the one that leaves the implement's heading on the pass's where
-  the counter-arc ends, found by a scan and a bisection with the implement followed at 0.1 m. The generator seats that
+  the counter-arc ends, found by a scan and a bisection with the implement followed at 0.1 m. The scan starts at the
+  least swing that fits (the arc at the U-turn radius itself), then every whole degree: started at the first whole
+  degree, a swing within a degree of the least one was missed and those passes had "no shape" (the farm's Puma, 5.4 m,
+  with that drill and two rows skipped, 9.15 m: none, with a shape at 9.10 and at 9.20 m; the farm job harness, 27 Nov
+  2026; the shape missed is the tractor's own arc opened by under 5 cm, so the turn made was nearly the same). The generator seats that
   shape as it seats its own arc (`YouTurnCreationInput.OpenShape`, `CreateCurveSagittaTurn`: slid to the turn line, no
   omega in its place, not started on a Go around bend), with the exit leg shorter by how far the shape runs on along
   the pass (`Shape.RunsOn`, in `AddCurveSequenceLines`, never under `TrailedExitSwing.LegAfter`; from the operator's
@@ -1125,7 +1129,7 @@ turn. By how far apart the passes are (`TrailedOpenPlanFor`, `YouTurnCreationSer
   last arc carried on at the open radius and the counter-arc at the U-turn radius (`TrailedExitSwing.Apply`'s
   `counterRadius`).
 - **Nearer than the shape exists** (the implement would be past square at the end of every such turn; that drill:
-  under about 6.6 m, so the neighbouring 3 m pass and one row skipped): the turn as with *wide exit*. A keyhole opened
+  under 6.3 m, so the neighbouring 3 m pass and one row skipped; the Puma at 5.4 m: under 9.05 m): the turn as with *wide exit*. A keyhole opened
   to that radius would be about 4 m deeper (12.6 m against 8.9 m with one row skipped), so none is made.
 
 **Never no turn where there was one**: `CreateTurnPath` tries the open turn first (`CreateTurnPathFor`'s `open`: held to
