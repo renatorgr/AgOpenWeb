@@ -35,22 +35,47 @@ public static class FarmJobs
         (Environment.GetEnvironmentVariable("AGOPENWEB_JOB_FIELD_LIST") ?? "")
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    /// <summary>AGOPENWEB_JOB_SETTINGS: what the operator types on top of every rig's own settings (<c>key:value</c>).</summary>
-    public static IReadOnlyList<string> TypedOnTop =>
-        (Environment.GetEnvironmentVariable("AGOPENWEB_JOB_SETTINGS") ?? "")
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(x => x.Contains(':')).ToList();
+    /// <summary>AGOPENWEB_JOB_SETTINGS: what the operator types on top of every rig's own settings (<c>key:value</c>).
+    /// An entry that is no <c>key:value</c> stops the run: left out, the farm would be worked with other settings
+    /// than the ones asked for, and nothing would say so.</summary>
+    public static IReadOnlyList<string> TypedOnTop
+    {
+        get
+        {
+            var typed = (Environment.GetEnvironmentVariable("AGOPENWEB_JOB_SETTINGS") ?? "")
+                .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (string x in typed)
+                if (x.IndexOf(':') <= 0)
+                    throw new InvalidOperationException($"AGOPENWEB_JOB_SETTINGS: '{x}' is not key:value (entries are split by ';').");
+            return typed;
+        }
+    }
 
-    /// <summary>AGOPENWEB_JOB_SKIP: the skip button's mode and rows for this run, or null for the field's own.</summary>
+    /// <summary>A typed setting as the report shows it: the value of a key that may hold a login is left out.</summary>
+    public static string Shown(string typed)
+    {
+        string key = typed[..typed.IndexOf(':')];
+        foreach (string secret in new[] { "key", "pass", "token", "secret", "user", "login" })
+            if (key.Contains(secret, StringComparison.OrdinalIgnoreCase)) return key + ":(not shown)";
+        return typed;
+    }
+
+    /// <summary>AGOPENWEB_JOB_SKIP: the skip button's mode and rows for this run, or null for the field's own.
+    /// Anything but <c>mode,rows</c> with a mode of 0 to 2 and 0 to 9 rows stops the run. The skip modes skip at
+    /// least one row, as the app's button does, so the report says the rows the job runs with.</summary>
     public static (int Mode, int Rows)? SkipTyped
     {
         get
         {
-            var parts = (Environment.GetEnvironmentVariable("AGOPENWEB_JOB_SKIP") ?? "").Split(',', StringSplitOptions.TrimEntries);
+            string text = (Environment.GetEnvironmentVariable("AGOPENWEB_JOB_SKIP") ?? "").Trim();
+            if (text.Length == 0) return null;
+            var parts = text.Split(',', StringSplitOptions.TrimEntries);
             if (parts.Length != 2
-                || !int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int mode)
-                || !int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int rows)) return null;
-            return (Math.Clamp(mode, 0, 2), Math.Clamp(rows, 0, 9));
+                || !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out int mode)
+                || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out int rows)
+                || mode > 2 || rows > 9)
+                throw new InvalidOperationException($"AGOPENWEB_JOB_SKIP: '{text}' is not mode,rows (mode 0 to 2, rows 0 to 9).");
+            return (mode, mode != 0 ? Math.Max(1, rows) : rows);
         }
     }
 
@@ -66,7 +91,7 @@ public static class FarmJobs
         var list = FieldList;
         var typed = TypedOnTop;
         var skip = SkipTyped;
-        string forThisRun = (typed.Count > 0 ? " For this run the operator typed on top: " + string.Join(", ", typed) + "." : "")
+        string forThisRun = (typed.Count > 0 ? " For this run the operator typed on top: " + string.Join(", ", typed.Select(Shown)) + "." : "")
             + (skip is { } sk ? JobRun.F($" For this run the skip button is set to mode {sk.Mode}, {sk.Rows} row(s), not the field's own.") : "");
         for (int i = 0; i < list.Count; i++)
         {
