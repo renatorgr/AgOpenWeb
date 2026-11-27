@@ -379,25 +379,42 @@ public sealed class ObstacleDetour
     }
 
     // Obstacles close together along the pass are gone round in one bend, on one side: the side
-    // where the farthest any of them reaches across the pass is the nearer.
+    // where the farthest any of them reaches across the pass is the nearer. Close together means
+    // that their bends meet, each bend as long as the side it goes round on needs: every
+    // obstacle starts on its own side (the smaller move, Across), and a group that takes the
+    // other side for one of them gets that one's longer bend, which can meet the next group in
+    // turn. Measured by the longer of the two moves for every obstacle, two obstacles 46 m apart
+    // on either side of the pass were one group: a tree 6 m to go round on the left was gone round
+    // 17 m to the right, across the next pass, with an obstacle behind it that needed 0.3 m to the
+    // right (a tester's field, Couto da Ribeira, 27 Nov 2026). Fork only.
     private static void Group(List<Hit> hits, double radius)
     {
         hits.Sort((a, b) => a.First.CompareTo(b.First));
-        int group = 0, reach = int.MinValue;
-        var groups = new List<List<Hit>>();
-        foreach (var h in hits)
+        for (int round = 0; round <= hits.Count; round++)
         {
-            // The bend for an obstacle starts and ends this far (in stations) before and after it.
-            int lead = (int)Math.Ceiling(Lead(Math.Max(h.NeedLeft, h.NeedRight), radius) / SampleStep);
-            if (groups.Count == 0 || h.First - lead > reach) { groups.Add(new List<Hit>()); group = groups.Count - 1; }
-            h.Group = group;
-            groups[group].Add(h);
-            reach = Math.Max(reach, h.Last + lead);
-        }
-        foreach (var g in groups)
-        {
-            int side = g.Max(h => h.NeedLeft) <= g.Max(h => h.NeedRight) ? 1 : -1;
-            foreach (var h in g) h.Side = side;
+            int group = 0, reach = int.MinValue;
+            var groups = new List<List<Hit>>();
+            foreach (var h in hits)
+            {
+                // The bend for an obstacle starts and ends this far (in stations) before and after it.
+                int lead = (int)Math.Ceiling(Lead(h.Side > 0 ? h.NeedLeft : h.NeedRight, radius) / SampleStep);
+                if (groups.Count == 0 || h.First - lead > reach) { groups.Add(new List<Hit>()); group = groups.Count - 1; }
+                h.Group = group;
+                groups[group].Add(h);
+                reach = Math.Max(reach, h.Last + lead);
+            }
+            bool moved = false;
+            foreach (var g in groups)
+            {
+                int side = g.Max(h => h.NeedLeft) <= g.Max(h => h.NeedRight) ? 1 : -1;
+                foreach (var h in g)
+                {
+                    if (h.Side != side) moved = true;
+                    h.Side = side;
+                }
+            }
+            // Every obstacle's bend as long as its side needs: the groups hold.
+            if (!moved) return;
         }
     }
 
