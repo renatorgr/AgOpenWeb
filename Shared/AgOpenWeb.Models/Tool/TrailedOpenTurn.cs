@@ -131,15 +131,16 @@ namespace AgOpenWeb.Models.Tool
             // The first swing that leaves the implement square where the counter-arc ends: with
             // less it still lags, with more it is past the pass's direction. Looked for from the
             // least swing that fits (the arc at the U-turn radius itself; with less the tractor would
-            // turn tighter), then at every whole degree above it. Started at the first whole degree
-            // that fits, a swing between the two was missed: where the implement is square within a
-            // degree of the least swing, the first one tried was already past square and there was
-            // "no shape" (the Puma's 5.4 m with the drill and passes 9.15 m apart, with a shape at
+            // turn tighter; no swing at all where the passes are twice the radius apart or more),
+            // then at every whole degree above it. Started at the first whole degree that fits, a
+            // swing between the two was missed: where the implement is square within a degree of
+            // the least swing, the first one tried was already past square and there was "no
+            // shape" (the Puma's 5.4 m with the drill and passes 9.15 m apart, with a shape at
             // 9.10 and at 9.20 m).
             const double scan = 1.0 * Math.PI / 180.0;
             double least = offset < 2 * radius ? Math.Acos(offset / (2 * radius)) : 0;
             double lo = double.NaN, hi = double.NaN;
-            for (double a = Math.Max(least, scan); a <= MaxSwing + 1e-9; a = scan * (Math.Floor(a / scan + 1e-9) + 1))
+            for (double a = least; a <= MaxSwing + 1e-9; a = scan * (Math.Floor(a / scan + 1e-9) + 1))
             {
                 var shape = For(a);
                 if (shape == null) continue;
