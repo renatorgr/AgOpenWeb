@@ -1746,9 +1746,11 @@ namespace AgOpenWeb.Services.YouTurn
                     // as the end, the next pass "ended" where it runs past a bulge of the fence
                     // nearer than the U-turn distance, and the wide turn followed the turn line
                     // there: 300 m round a corner of a tester's field, refused as malformed, with
-                    // the next pass's real end 16 m from the turn's start.
+                    // the next pass's real end 16 m from the turn's start. Beside a hard fence only
+                    // where the rig fits along the stretch, as on the tractor's own pass.
                     if (_currentInput.IsPointDrivenThrough is { } drivenThrough
-                        && PassEnds.IsDrivenThrough(nextCurve, j, count, p => _currentInput.IsPointInsideTurnArea(p) == 0, drivenThrough, out int on))
+                        && PassEnds.IsDrivenThrough(nextCurve, j, count, p => _currentInput.IsPointInsideTurnArea(p) == 0, drivenThrough, out int on,
+                            _currentInput.RigFitsBetween))
                     {
                         _logger.LogDebug("[YouTurn] The next pass runs outside the turn line from point {J} to {On}, inside the fence: driven through, its end is beyond",
                             j, on);

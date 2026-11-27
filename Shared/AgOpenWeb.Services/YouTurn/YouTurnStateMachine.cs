@@ -2753,6 +2753,7 @@ public sealed class YouTurnStateMachine
         public Boundary? Boundary;
         public IReadOnlyList<Vec3>? TurnLine;
         public long FieldStamp;
+        public double RigHalfWidth;
         public List<Vec3> Points = new();
         public PassEnd? End;
         public int SearchedFrom = -1;
@@ -2774,9 +2775,16 @@ public sealed class YouTurnStateMachine
         double width = _configStore.ActualToolWidth - _configStore.Tool.Overlap;
         double offset = Models.Track.PassGeometry.Offset(track, guidance.HowManyPathsAway, width, guidance.NudgeOffset);
         long stamp = SnakeFieldStamp(ctx.Boundary, turnLine);
+        // The fence, for a stretch outside the turn line that is driven through; asked only at a point
+        // outside the turn line, and the end is kept, so not on the cycle. Beside a hard fence the
+        // rig must fit along the stretch (PassEnds.RigFits): its half width is part of what the end
+        // was found for, 0 with a soft fence.
+        var fence = ctx.Boundary?.OuterBoundary is { IsValid: true } f ? f : null;
+        double rigHalfWidth = fence is { IsHard: true } ? PassEnds.RigHalfWidth(_configStore) : 0;
         var p = _passAhead;
         if (!ReferenceEquals(track, p.Track) || offset != p.Offset || headingSameWay != p.SameWay
-            || !ReferenceEquals(ctx.Boundary, p.Boundary) || !ReferenceEquals(turnLine, p.TurnLine) || stamp != p.FieldStamp)
+            || !ReferenceEquals(ctx.Boundary, p.Boundary) || !ReferenceEquals(turnLine, p.TurnLine) || stamp != p.FieldStamp
+            || rigHalfWidth != p.RigHalfWidth)
         {
             p.Track = track;
             p.Offset = offset;
@@ -2784,6 +2792,7 @@ public sealed class YouTurnStateMachine
             p.Boundary = ctx.Boundary;
             p.TurnLine = turnLine;
             p.FieldStamp = stamp;
+            p.RigHalfWidth = rigHalfWidth;
             var outer = ctx.Boundary?.OuterBoundary;
             p.Points = outer != null && outer.IsValid
                 ? YouTurnCreationService.PassForTurn(track, outer.Points, offset).Pass
@@ -2795,14 +2804,11 @@ public sealed class YouTurnStateMachine
 
         int near = PassEnds.NearestIndex(p.Points, passPoint.Easting, passPoint.Northing);
         int step = headingSameWay ? 1 : -1;
-        // The fence, for a stretch outside the turn line that is driven through; asked only at a point
-        // outside the turn line, and the end is kept, so not on the cycle.
-        var fence = ctx.Boundary?.OuterBoundary is { IsValid: true } f ? f : null;
         Func<Vec3, bool>? insideField = fence == null ? null : q => fence.IsPointInside(q.Easting, q.Northing);
         void Search(int from)
         {
             p.End = PassEnds.Find(p.Points, from, headingSameWay, q => _headlandIndex.Contains(turnLine, q.Easting, q.Northing), turnLine, insideField,
-                m => _logger.LogDebug("[YouTurn] Pass {Pass}: {What}", guidance.HowManyPathsAway, m));
+                m => _logger.LogDebug("[YouTurn] Pass {Pass}: {What}", guidance.HowManyPathsAway, m), PassEnds.RigFits(fence, rigHalfWidth));
             p.SearchedFrom = from;
             if (p.End is { } e)
                 _logger.LogDebug("[YouTurn] End of pass {Pass} ahead at ({E:F1},{N:F1}), point {Idx} of {Count}, from point {From}",

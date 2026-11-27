@@ -57,6 +57,14 @@ namespace AgOpenWeb.Models.YouTurn
         public Func<Vec3, bool>? IsPointDrivenThrough { get; set; }
 
         /// <summary>
+        /// Whether the rig fits beside a hard fence from one point of a pass to the next (the
+        /// implement's ends and the tractor's wheels inside it): a stretch outside the turn line
+        /// is driven through only where it does, on the tractor's own pass and on the next one.
+        /// Null with a soft fence: the stretch is judged by the pass's line alone.
+        /// </summary>
+        public Func<Vec3, Vec3, bool>? RigFitsBetween { get; set; }
+
+        /// <summary>
         /// Rows wider than twice the turn radius get the omega turn (one shape, square to the
         /// track, landing abreast) and not the wide turn that follows the turn line to the end
         /// of the next pass. Set for the second try after a wide turn of no U-turn's shape:
