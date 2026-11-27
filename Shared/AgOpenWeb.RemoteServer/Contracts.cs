@@ -367,13 +367,18 @@ public record StatusDto(
     ImplementGpsDto? ImplementGps = null);
 
 /// <summary>A GPS on a trailed implement, for Network IO › Implement GPS (fork only, <c>ImplementGpsView</c>).</summary>
+/// <param name="Why">Why no implement is drawn, as a short name the page puts into words ("no_fix", "silent" ...); "" when one is.</param>
+/// <param name="LogFile">The day's file inside the data folder (never the whole path: every browser reads this).</param>
+/// <param name="Lost">Fixes heard and not written (too many a second, the app busy, the disk).</param>
+/// <param name="OtherSender">A second address sending positions, not used; "" none.</param>
 public record ImplementGpsDto(
     bool Listening, string Error, string Sender, string Sentence, bool Heard, double RateHz,
     int FixQuality, int Satellites, double AgeS, bool Paired, double TimeDiffS,
     double ReceiverHeadingDeg, double RollRawDeg, double RollUsedDeg,
     bool HasPose, double AcrossM, double AlongM, double HeadingDiffDeg, double ReceiverHeadingDiffDeg,
     string Why, long Refused, string LogFile, long LogRows,
-    double AntennaHeight, double AntennaRight, bool RollInvert, double RollZero, double BehindPin, bool Trailed);
+    double AntennaHeight, double AntennaRight, bool RollInvert, double RollZero, double BehindPin, bool Trailed,
+    long Lost = 0, long Repeated = 0, string OtherSender = "", long FromOthers = 0);
 
 /// <summary>Tuning on the line: <c>LineTuneStage</c> (0 Idle, 1 Waiting, 2 Measuring, 3 Result,
 /// 4 Accepted, 5 Stopped, 6 Failed), whether it tunes the Stanley gains (else Steer Response),

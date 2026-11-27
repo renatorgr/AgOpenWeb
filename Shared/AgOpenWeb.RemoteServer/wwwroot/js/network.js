@@ -127,6 +127,22 @@ function implGpsSide(m) {
   const cm = Math.round(Math.abs(m) * 100);
   return cm === 0 ? tr('0 cm') : m > 0 ? tr('{n} cm right', { n: cm }) : tr('{n} cm left', { n: cm });
 }
+// Why no implement is drawn: the host sends a short name (ImplementGpsLog.NoPoseName, and the three of the view),
+// put into words here so they are translated.
+function implGpsWhy(code) {
+  switch (code) {
+    case 'nothing_yet': return tr('Nothing heard on UDP 9990 yet');
+    case 'silent': return tr('Nothing heard for 2 s');
+    case 'wait_tractor': return tr('Waiting for the tractor\'s GPS');
+    case 'no_tractor_fix': return tr('The tractor\'s GPS gives no position: nothing to put the implement beside');
+    case 'tractor_fix_missing': return tr('The tractor\'s position of that instant is missing (its GPS is silent or late): not drawn beside an older one');
+    case 'no_fix': return tr('The implement\'s receiver has no fix');
+    case 'no_plane': return tr('No field plane yet (the tractor\'s GPS sets it)');
+    case 'not_trailing': return tr('The tool is not a trailing one: Tool › Type › Trailing');
+    case 'antenna_on_pin': return tr('The antenna is too near the pin: check the tractor\'s hitch and the antenna');
+    default: return code || '';
+  }
+}
 function renderImplementGps(s) {
   const g = s.implementGps, on = !!g;
   const cb = document.getElementById('nio-impl-on');
@@ -140,7 +156,7 @@ function renderImplementGps(s) {
     : g.hasPose ? tr('Implement {side} of the model', { side: implGpsSide(g.across) })
     : tr('Heard, not drawn');
   const why = document.getElementById('nio-impl-why');
-  const whyText = g.error || (g.heard && !g.hasPose ? g.why : '');
+  const whyText = g.error || (g.heard && !g.hasPose ? implGpsWhy(g.why) : '');
   why.hidden = !whyText;
   why.textContent = whyText;
   const num = (v, d) => Number.isFinite(v) ? v.toFixed(d) : '—';
@@ -148,7 +164,10 @@ function renderImplementGps(s) {
   if (g.heard) {
     lines.push(tr('From {ip}: {sentence}, {rate} a second, {fix}, {sats} satellites, correction age {age} s', {
       ip: g.sender || '—', sentence: '$' + g.sentence, rate: num(g.rateHz, 0), fix: implGpsFixName(g.fixQuality), sats: g.sats, age: num(g.age, 1) }));
-    lines.push(g.paired ? tr('Same instant as the tractor\'s fix')
+    const noTractor = g.why === 'no_tractor_fix' || g.why === 'tractor_fix_missing';
+    if (noTractor) {
+      if (Number.isFinite(g.timeDiffS)) lines.push(tr('The nearest tractor fix is {s} s away', { s: num(g.timeDiffS, 2) }));
+    } else lines.push(g.paired ? tr('Same instant as the tractor\'s fix')
       : !Number.isFinite(g.timeDiffS) ? tr('The tractor\'s fix carries no time (the simulator): its latest one is used')
       : tr('Not the same instant as the tractor\'s fix ({s} s apart): the nearest one is used', { s: num(g.timeDiffS, 2) }));
     lines.push(tr('Roll {raw}° as sent, {used}° used. Its own heading {h}°', { raw: num(g.rollRaw, 1), used: num(g.rollUsed, 1), h: num(g.receiverHeading, 1) }));
@@ -159,12 +178,15 @@ function renderImplementGps(s) {
         lines.push(tr('Its own heading against the line to the pin: {deg}°', { deg: num(g.receiverHeadingDiff, 1) }));
     }
   } else if (g.listening) {
-    lines.push(g.why || tr('Nothing heard yet'));
+    lines.push(implGpsWhy(g.why) || tr('Nothing heard yet'));
     lines.push(tr('The board: Settings › Module role › Implement, on the tractor\'s network cable.'));
   }
   if (g.trailed) lines.push(tr('Pin to working centre {m} m (the tool\'s own measures)', { m: num(g.behindPin, 2) }));
   if (g.refused > 0) lines.push(tr('{n} sentences refused (checksum, or not a position)', { n: g.refused }));
-  if (g.logFile) lines.push(tr('Written to {file} ({n} rows)', { file: g.logFile, n: g.logRows }));
+  if (g.otherSender) lines.push(tr('A second sender, {ip}, is not used ({n} positions): only one board in the Implement role', { ip: g.otherSender, n: g.fromOthers }));
+  if (g.repeated > 0) lines.push(tr('{n} positions came twice and were taken once', { n: g.repeated }));
+  if (g.lost > 0) lines.push(tr('{n} positions not written (too many a second, the app busy, or the disk)', { n: g.lost }));
+  if (g.logFile) lines.push(tr('Written to {file} in the data folder ({n} rows)', { file: g.logFile, n: g.logRows }));
   document.getElementById('nio-impl-lines').textContent = lines.join('\n');
   if (document.activeElement !== nioImplH) nioImplH.value = num(g.antennaHeight, 2);
   if (document.activeElement !== nioImplR) nioImplR.value = num(g.antennaRight, 2);

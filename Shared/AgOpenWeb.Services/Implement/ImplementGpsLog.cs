@@ -16,15 +16,20 @@ namespace AgOpenWeb.Services.Implement;
 /// Writes every implement fix beside the tractor's to a file of the day (fork only):
 /// <c>&lt;data folder&gt;/ImplementGps/ImplementGps_yyyy-MM-dd.csv</c>, one row per fix, numbers with a point. The rows
 /// are made on the host loop and written on a worker of their own, so a slow disk never holds the loop up; a row that
-/// can't be written is dropped and counted.
+/// can't be written is dropped and counted (<see cref="Dropped"/>), and one counts as written only once it is flushed
+/// to the file. A day's file stops at <see cref="DefaultMaxFileBytes"/> (a receiver's own 10 a second make about
+/// 250 MB in 24 h): the app never deletes these files, and a flood must not fill the tablet.
 /// </summary>
 public sealed class ImplementGpsLog : IDisposable
 {
     public const string FolderName = "ImplementGps";
+    public const long DefaultMaxFileBytes = 512L * 1024 * 1024;
+    private const int QueueSize = 3000;   // 5 minutes at 10 Hz
 
     /// <summary>The columns. The tractor's are what the app's model used; the implement's are as its GPS sent them, then
     /// solved (<c>ImplementGpsGeometry.Solve</c>). Plane positions in metres, headings in degrees (0 north, clockwise),
-    /// across and along in centimetres (+ right of, + ahead of the model's working centre).</summary>
+    /// across and along in centimetres (+ right of, + ahead of the model's working centre). <c>no_pose</c> says why
+    /// the solved columns are empty; the tractor's are empty with no tractor fix at all.</summary>
     public const string Header =
         "tablet_utc,tractor_time,implement_time,paired,time_diff_s," +
         "impl_sentence,impl_fix,impl_sats,impl_hdop,impl_age,impl_lat,impl_lon,impl_alt,impl_speed_kmh," +
@@ -32,45 +37,85 @@ public sealed class ImplementGpsLog : IDisposable
         "antenna_e,antenna_n,centre_e,centre_n,impl_heading,work_e,work_n," +
         "model_work_e,model_work_n,model_heading,across_cm,along_cm,heading_diff,receiver_heading_diff," +
         "pin_e,pin_n,pivot_e,pivot_n,tractor_heading,tractor_speed_kmh,tractor_roll,steer_angle,xte_cm,autosteer,pass," +
-        "behind_pin,antenna_height,antenna_right";
+        "behind_pin,antenna_height,antenna_right,tractor_fix,tractor_rtk_hold_m,no_pose";
 
     private readonly string _folder;
-    private readonly Channel<(DateTime Utc, string Row)> _rows =
-        Channel.CreateBounded<(DateTime, string)>(new BoundedChannelOptions(3000) { FullMode = BoundedChannelFullMode.DropWrite });
+    private readonly long _maxFileBytes;
+    // Wait, not DropWrite: with DropWrite a full queue drops the row and TryWrite still says yes, so nothing is counted
+    private readonly Channel<(DateTime Utc, string? Row)> _rows =
+        Channel.CreateBounded<(DateTime, string?)>(new BoundedChannelOptions(QueueSize) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true });
     private readonly Task _writer;
     private long _written, _dropped;
     private volatile string? _path;
     private volatile string? _error;
+    private volatile bool _closeAsked;
 
-    public ImplementGpsLog(string dataFolder)
+    public ImplementGpsLog(string dataFolder, long maxFileBytes = DefaultMaxFileBytes)
     {
         _folder = Path.Combine(dataFolder, FolderName);
+        _maxFileBytes = maxFileBytes;
         _writer = Task.Run(WriteLoopAsync);
     }
 
     /// <summary>The file written to last; null before the first row.</summary>
     public string? CurrentPath => _path;
-    /// <summary>Why the last row could not be written; null once one is.</summary>
+    /// <summary>That file inside the data folder (<c>ImplementGps/ImplementGps_yyyy-MM-dd.csv</c>): what the screens
+    /// show, so the tablet's own folders are not sent to every browser that looks on.</summary>
+    public string? CurrentName => _path is { } p ? FolderName + "/" + Path.GetFileName(p) : null;
+    /// <summary>Why rows are not written (the disk, or the day's file full); null once one is.</summary>
     public string? Error => _error;
+    /// <summary>Rows flushed to the file.</summary>
     public long Written => Interlocked.Read(ref _written);
+    /// <summary>Rows not written: the queue full, the file full, or the disk said no.</summary>
     public long Dropped => Interlocked.Read(ref _dropped);
 
-    /// <summary>Queue one row (from <see cref="Row"/>).</summary>
+    /// <summary>Queue one row (from <see cref="Row"/>). Never waits.</summary>
     public void Add(DateTime utc, string row)
     {
         if (!_rows.Writer.TryWrite((utc, row))) Interlocked.Increment(ref _dropped);
+    }
+
+    /// <summary>Close the day's file once what is queued is written (the listener was switched off), without waiting:
+    /// the host loop calls this. The next row opens it again.</summary>
+    public void CloseFile()
+    {
+        _closeAsked = true;
+        _rows.Writer.TryWrite((default, null));   // only wakes the writer; with the queue full it is awake already
     }
 
     private async Task WriteLoopAsync()
     {
         StreamWriter? w = null;
         string? openPath = null;
+        long size = 0;
+        int unflushed = 0;
+        bool full = false;
+        int newLine = Environment.NewLine.Length;
+
+        // closes the file; what was not yet flushed counts as written only if the close flushed it
+        void Close()
+        {
+            if (w == null) return;
+            try
+            {
+                w.Dispose();
+                Interlocked.Add(ref _written, unflushed);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Interlocked.Add(ref _dropped, unflushed);
+                _error = ex.Message;
+            }
+            w = null; openPath = null; unflushed = 0;
+        }
+
         try
         {
             while (await _rows.Reader.WaitToReadAsync().ConfigureAwait(false))
             {
                 while (_rows.Reader.TryRead(out var item))
                 {
+                    if (item.Row == null) continue;   // CloseFile's wake-up
                     try
                     {
                         // the day the row was made, on the tablet's own calendar: one file per working day
@@ -78,33 +123,70 @@ public sealed class ImplementGpsLog : IDisposable
                             item.Utc.ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + ".csv");
                         if (path != openPath)
                         {
-                            w?.Dispose();
-                            w = null; openPath = null;
+                            Close();
                             Directory.CreateDirectory(_folder);
-                            bool fresh = !File.Exists(path) || new FileInfo(path).Length == 0;
+                            var info = new FileInfo(path);
+                            size = info.Exists ? info.Length : 0;
                             w = new StreamWriter(new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read),
                                 new UTF8Encoding(false));
-                            if (fresh) w.WriteLine(Header);
+                            if (size == 0)
+                            {
+                                w.WriteLine(Header);
+                                size += Header.Length + newLine;
+                            }
                             openPath = path;
                             _path = path;
+                            full = false;
+                        }
+                        int length = Encoding.UTF8.GetByteCount(item.Row) + newLine;
+                        if (size + length > _maxFileBytes)
+                        {
+                            Interlocked.Increment(ref _dropped);
+                            full = true;
+                            _error = string.Create(CultureInfo.InvariantCulture,
+                                $"The day's file is full ({_maxFileBytes / (1024 * 1024)} MB): rows are not written");
+                            continue;
                         }
                         w!.WriteLine(item.Row);
-                        Interlocked.Increment(ref _written);
-                        _error = null;
+                        size += length;
+                        unflushed++;
                     }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                     {
-                        Interlocked.Increment(ref _dropped);
+                        Interlocked.Add(ref _dropped, unflushed + 1);
+                        unflushed = 0;
                         _error = ex.Message;
-                        w?.Dispose(); w = null; openPath = null;
+                        try { w?.Dispose(); } catch (Exception e2) when (e2 is IOException or UnauthorizedAccessException) { }
+                        w = null; openPath = null;
                     }
                 }
-                try { w?.Flush(); } catch (IOException) { }
+                if (_closeAsked)
+                {
+                    _closeAsked = false;
+                    Close();
+                    continue;
+                }
+                if (w == null || unflushed == 0) continue;
+                try
+                {
+                    w.Flush();
+                    Interlocked.Add(ref _written, unflushed);
+                    unflushed = 0;
+                    if (!full) _error = null;   // a full file stays said
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Interlocked.Add(ref _dropped, unflushed);
+                    unflushed = 0;
+                    _error = ex.Message;
+                    try { w.Dispose(); } catch (Exception e2) when (e2 is IOException or UnauthorizedAccessException) { }
+                    w = null; openPath = null;
+                }
             }
         }
         finally
         {
-            try { w?.Dispose(); } catch (IOException) { }
+            Close();
         }
     }
 
@@ -121,7 +203,8 @@ public sealed class ImplementGpsLog : IDisposable
         b.Append(','); b.Append(Time(t.TimeCentiseconds));
         b.Append(','); b.Append(Time(x.TimeCentiseconds));
         b.Append(','); b.Append(s.Paired ? '1' : '0');
-        N(s.TimeDiffCentiseconds / 100.0, "0.00");
+        // implement time less tractor time; empty when one of them carries none (the simulator, no tractor fix)
+        N(t.TimeCentiseconds >= 0 && x.TimeCentiseconds >= 0 ? s.TimeDiffCentiseconds / 100.0 : double.NaN, "0.00");
         b.Append(','); b.Append(x.IsPaogi ? "PAOGI" : "PANDA");
         b.Append(','); b.Append(x.FixQuality.ToString(inv));
         b.Append(','); b.Append(x.Satellites.ToString(inv));
@@ -144,11 +227,26 @@ public sealed class ImplementGpsLog : IDisposable
         else b.Append(",,,,");
         N(t.PinE, "0.000"); N(t.PinN, "0.000"); N(t.PivotE, "0.000"); N(t.PivotN, "0.000"); Deg(t.HeadingRad);
         N(t.SpeedKmh, "0.00"); N(t.RollDeg, "0.00"); N(t.SteerDeg, "0.00"); N(t.CrossTrackM * 100, "0.0");
-        b.Append(','); b.Append(t.AutoSteer ? '1' : '0');
+        b.Append(','); if (t.FixQuality >= 0) b.Append(t.AutoSteer ? '1' : '0');
         b.Append(','); b.Append(Csv(t.Pass));
         N(f.BehindPin, "0.000"); N(f.AntennaHeight, "0.000"); N(f.AntennaRight, "0.000");
+        b.Append(','); if (t.FixQuality >= 0) b.Append(t.FixQuality.ToString(inv));
+        N(t.RtkHoldM, "0.000");
+        b.Append(','); b.Append(NoPoseName(s.NoPose));
         return b.ToString();
     }
+
+    /// <summary>The reason as the file and the screens name it; empty with a pose.</summary>
+    public static string NoPoseName(ImplementGpsNoPose why) => why switch
+    {
+        ImplementGpsNoPose.NoTractor => "no_tractor_fix",
+        ImplementGpsNoPose.TractorStale => "tractor_fix_missing",
+        ImplementGpsNoPose.NoFix => "no_fix",
+        ImplementGpsNoPose.NoPlane => "no_plane",
+        ImplementGpsNoPose.NotTrailed => "not_trailing",
+        ImplementGpsNoPose.AntennaOnPin => "antenna_on_pin",
+        _ => "",
+    };
 
     // hundredths of a second of the day -> hh:mm:ss.ss; empty with none
     private static string Time(int cs)
@@ -161,7 +259,8 @@ public sealed class ImplementGpsLog : IDisposable
     private static string Csv(string? v) =>
         string.IsNullOrEmpty(v) ? "" : v.IndexOfAny(new[] { ',', '"', '\n', '\r' }) < 0 ? v : "\"" + v.Replace("\"", "\"\"") + "\"";
 
-    /// <summary>Writes what is queued and closes the file.</summary>
+    /// <summary>Writes what is queued and closes the file, waiting up to 2 s for it: for the app going down and for
+    /// tests, never on the host loop (that one calls <see cref="CloseFile"/>).</summary>
     public void Dispose()
     {
         _rows.Writer.TryComplete();

@@ -1027,6 +1027,10 @@ public static class WireCodec
             w.Write((float)ig.RollZero);
             w.Write((float)ig.BehindPin);
             w.Write((byte)(ig.Trailed ? 1 : 0));
+            w.Write((int)Math.Min(ig.Lost, int.MaxValue));
+            w.Write((int)Math.Min(ig.Repeated, int.MaxValue));
+            WriteStr(w, ig.OtherSender);
+            w.Write((int)Math.Min(ig.FromOthers, int.MaxValue));
         }
         return ms.ToArray();
     }

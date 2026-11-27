@@ -19,16 +19,22 @@ namespace AgOpenWeb.ViewModels;
 /// <param name="Error">Why it is not, or why the file is not written.</param>
 /// <param name="Heard">A fix came in the last 2 s.</param>
 /// <param name="TimeDiffS">The implement's fix time less the tractor's; NaN when one of them carries no time (the simulator).</param>
-/// <param name="Why">Why no implement is drawn though fixes come ("not a trailing tool", "no tractor fix" ...); null when one is.</param>
+/// <param name="Why">Why no implement is drawn, as a short name the page puts into words (<c>ImplementGpsLog.NoPoseName</c>,
+/// or "nothing_yet", "silent", "wait_tractor"); null when one is.</param>
 /// <param name="AntennaAcrossM">The antenna against the model's working centre, as <c>AcrossM</c>.</param>
 /// <param name="SampleMs">When the last pose was made (<see cref="Environment.TickCount64"/>); 0 none.</param>
+/// <param name="LogName">The day's file inside the data folder (not the tablet's whole path: every browser reads this).</param>
+/// <param name="Lost">Fixes that reached the port and are not in the file: too many a second, the app busy, the disk.</param>
+/// <param name="Repeated">Fixes that came twice and were taken once.</param>
+/// <param name="OtherSender">A second address sending positions while the first is heard; its fixes are not used.</param>
 public sealed record ImplementGpsView(
     bool Enabled, bool Listening, string? Error, string? Sender, string? Sentence, bool Heard, double RateHz,
     int FixQuality, int Satellites, double AgeS, bool Paired, double TimeDiffS, double ReceiverHeadingDeg,
     double RollRawDeg, double RollUsedDeg, bool HasPose, double AcrossM, double AlongM, double HeadingDiffDeg,
     double ReceiverHeadingDiffDeg, double AntennaAcrossM, double AntennaAlongM, string? Why, long SampleMs,
-    long Refused, string? LogPath, long LogRows, double AntennaHeight, double AntennaRight, bool RollInvert,
-    double RollZero, double BehindPin, bool Trailed)
+    long Refused, string? LogName, long LogRows, double AntennaHeight, double AntennaRight, bool RollInvert,
+    double RollZero, double BehindPin, bool Trailed, long Lost = 0, long Repeated = 0, string? OtherSender = null,
+    long FromOthers = 0)
 {
     public static readonly ImplementGpsView Off = new(false, false, null, null, null, false, 0, 0, 0, double.NaN, false,
         0, double.NaN, double.NaN, double.NaN, false, 0, 0, 0, double.NaN, 0, 0, null, 0, 0, null, 0, 0, 0, false, 0, 0, false);
@@ -59,15 +65,25 @@ public partial class MainViewModel
     private string? _implWhy;
     private volatile ImplementGpsView _implementGpsView = ImplementGpsView.Off;
     private bool _implStopHooked;
+    private long _implBindTriedMs;
+    private string? _implBindError;
+    private const long ImplBindRetryMs = 5000;
 
     /// <summary>The implement GPS as the screens show it.</summary>
     public ImplementGpsView ImplementGps => _implementGpsView;
 
     /// <summary>Opens or closes UDP 9990 with the setting (called at the 5 Hz status tick, so the setting's order of
-    /// loading doesn't matter).</summary>
+    /// loading doesn't matter). A port that could not be opened (another program on it) is tried again every
+    /// <see cref="ImplBindRetryMs"/>, so it comes by itself once the port is free.</summary>
     private void SyncImplementGpsListener()
     {
         bool want = ConfigStore.Connections.ImplementGpsEnabled && !_backendStopping.IsCancellationRequested;
+        long now = Environment.TickCount64;
+        if (want && _implReceiver is { Error: not null } failed && now - _implBindTriedMs >= ImplBindRetryMs)
+        {
+            failed.Dispose();
+            _implReceiver = null;
+        }
         if (want && _implReceiver == null)
         {
             if (!_implStopHooked)
@@ -79,11 +95,17 @@ public partial class MainViewModel
             var r = new ImplementGpsReceiver();
             bool open = r.Start();
             _implReceiver = r;
+            _implBindTriedMs = now;
             _implLog ??= new ImplementGpsLog(AppDataRoot.Documents);
+            // a new session: nothing of the last one is "heard" or drawn
             _implTracker.Clear();
-            _implRateFromMs = Environment.TickCount64; _implRateCount = 0; _implRateHz = 0;
+            _implLast = null;
+            _implWhy = null;
+            _implLastFixMs = 0; _implLastPoseMs = 0;
+            _implRateFromMs = now; _implRateCount = 0; _implRateHz = 0;
             if (open) _logger.LogInformation("[ImplementGps] Listening on UDP {Port}", ImplementGpsReceiver.Port);
-            else _logger.LogWarning("[ImplementGps] {Error}", r.Error);
+            else if (r.Error != _implBindError) _logger.LogWarning("[ImplementGps] {Error}", r.Error);   // once, not every 5 s
+            _implBindError = r.Error;
         }
         else if (!want && _implReceiver != null)
         {
@@ -92,14 +114,19 @@ public partial class MainViewModel
         }
     }
 
+    /// <summary>Switched off: the port closed, what was already heard written (each beside the nearest tractor fix,
+    /// none waited for), the file closed without waiting for the disk.</summary>
     private void StopImplementGps()
     {
-        _implReceiver?.Dispose();
+        _implReceiver?.Dispose();          // no more datagrams; the queue is still there to empty
+        DrainImplementGps(flush: true);
         _implReceiver = null;
-        _implLog?.Dispose();
-        _implLog = null;
+        _implBindError = null;
+        _implLog?.CloseFile();
         _implTracker.Clear();
         _implLast = null;
+        _implWhy = null;
+        _implLastFixMs = 0; _implLastPoseMs = 0;
         _implementGpsView = ImplementGpsView.Off;
     }
 
@@ -119,7 +146,7 @@ public partial class MainViewModel
         if (!ReferenceEquals(State.Field.LocalPlane, _implPlane))
         {
             _implPlane = State.Field.LocalPlane;
-            _implTracker.Clear();
+            _implTracker.ClearTractor();   // its fixes are in the old plane's metres
         }
         if (result.GpsValid && result.IsToolPositionReady)
         {
@@ -132,12 +159,14 @@ public partial class MainViewModel
                 result.Speed * 3.6, result.RollDegrees, g?.SteerAngle ?? double.NaN,
                 g is { IsGuidanceActive: true } ? g.CrossTrackError : double.NaN,
                 result.IsAutoSteerEngaged, g is { IsGuidanceActive: true } ? g.CurrentLineLabel : "",
-                result.DriftEasting, result.DriftNorthing));
+                result.DriftEasting, result.DriftNorthing, result.FixQuality, result.RtkHoldM),
+                Environment.TickCount64);
         }
         DrainImplementGps();
     }
 
-    private void DrainImplementGps()
+    /// <param name="flush">The listener is stopping: nothing waits for a tractor fix still to come.</param>
+    private void DrainImplementGps(bool flush = false)
     {
         var r = _implReceiver;
         if (r == null) return;
@@ -151,7 +180,7 @@ public partial class MainViewModel
         _implSamples.Clear();
         var plane = State.Field.LocalPlane;
         var fitting = ImplementGpsFittingNow();
-        _implTracker.Drain(now, fitting, (lat, lon) =>
+        _implTracker.Drain(flush ? now + ImplementGpsTracker.HoldMs + 1 : now, fitting, (lat, lon) =>
         {
             if (plane == null) return null;
             var g = plane.ConvertWgs84ToGeoCoord(new Wgs84(lat, lon));
@@ -167,11 +196,8 @@ public partial class MainViewModel
             if (s.Pose != null) _implLastPoseMs = now;
         }
         var last = _implSamples[^1];
-        _implWhy = plane == null ? "No field plane yet (the tractor's GPS sets it)"
-            : !fitting.Trailed ? "The tool is not a trailing one: Tool › Type › Trailing"
-            : last.Pose == null ? "The antenna is too near the pin: check the tractor's hitch and the antenna"
-            : null;
-        PublishImplementGpsView(now);
+        _implWhy = last.Pose != null ? null : ImplementGpsLog.NoPoseName(last.NoPose);
+        if (!flush) PublishImplementGpsView(now);
     }
 
     /// <summary>5 Hz: fixes waited out, the rate, the view (also with the tractor's GPS silent).</summary>
@@ -209,8 +235,8 @@ public partial class MainViewModel
             antAcross = de * Math.Cos(h) - dn * Math.Sin(h);
             antAlong = de * Math.Sin(h) + dn * Math.Cos(h);
         }
-        string? why = !heard ? (_implLastFixMs == 0 ? "Nothing heard on UDP 9990 yet" : "Nothing heard for 2 s")
-            : s == null ? "Waiting for the tractor's GPS" : _implWhy;
+        string? why = !heard ? (_implLastFixMs == 0 ? "nothing_yet" : "silent")
+            : s == null ? "wait_tractor" : _implWhy;
         string? error = r.Error ?? _implLog?.Error;
         _implementGpsView = new ImplementGpsView(
             true, r.Error == null, error, r.Sender, r.LastType, heard, heard ? _implRateHz : 0,
@@ -219,8 +245,9 @@ public partial class MainViewModel
             fix.Heading, fix.Roll, s?.RollUsed ?? double.NaN,
             fresh, pose?.AcrossM ?? 0, pose?.AlongM ?? 0, pose?.HeadingDiffDeg ?? 0, pose?.ReceiverHeadingDiffDeg ?? double.NaN,
             antAcross, antAlong, why, fresh ? _implLastPoseMs : 0,
-            r.Refused, _implLog?.CurrentPath, _implLog?.Written ?? 0,
+            r.Refused, _implLog?.CurrentName, _implLog?.Written ?? 0,
             c.ImplementGpsAntennaHeight, c.ImplementGpsAntennaRight, c.ImplementGpsRollInvert, c.ImplementGpsRollZero,
-            fitting.BehindPin, fitting.Trailed);
+            fitting.BehindPin, fitting.Trailed,
+            r.Lost + _implTracker.Lost + (_implLog?.Dropped ?? 0), r.Repeated, r.OtherSenderAt(now), r.FromOthers);
     }
 }

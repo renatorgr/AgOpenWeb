@@ -1267,8 +1267,9 @@ public static partial class RemoteServerWiring
                             v.FixQuality, v.Satellites, v.AgeS, v.Paired, v.TimeDiffS,
                             v.ReceiverHeadingDeg, v.RollRawDeg, v.RollUsedDeg,
                             v.HasPose, v.AcrossM, v.AlongM, v.HeadingDiffDeg, v.ReceiverHeadingDiffDeg,
-                            v.Why ?? "", v.Refused, v.LogPath ?? "", v.LogRows,
-                            v.AntennaHeight, v.AntennaRight, v.RollInvert, v.RollZero, v.BehindPin, v.Trailed);
+                            v.Why ?? "", v.Refused, v.LogName ?? "", v.LogRows,
+                            v.AntennaHeight, v.AntennaRight, v.RollInvert, v.RollZero, v.BehindPin, v.Trailed,
+                            v.Lost, v.Repeated, v.OtherSender ?? "", v.FromOthers);
                     };
                     server.ImplementPoseProvider = () =>
                     {

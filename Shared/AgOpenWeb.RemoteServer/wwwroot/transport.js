@@ -324,6 +324,7 @@ window.RemoteTransport = {
               hasPose: !!u8(), across: f32(), along: f32(), headingDiff: f32(), receiverHeadingDiff: f32(),
               why: str(), refused: i32(), logFile: str(), logRows: i32(),
               antennaHeight: f32(), antennaRight: f32(), rollInvert: !!u8(), rollZero: f32(), behindPin: f32(), trailed: !!u8(),
+              lost: i32(), repeated: i32(), otherSender: str(), fromOthers: i32(),
             };
           }
           handlers.onStatusBar && handlers.onStatusBar({

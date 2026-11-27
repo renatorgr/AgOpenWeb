@@ -323,11 +323,19 @@ fork only). The app models a trailed implement: it follows the tractor's pin and
 slides downhill, and the model cannot know. A second AiO board on the implement, set to its *Implement* role
 (renatorgr/Boards, firmware README "Implement mode"), sends its `$PANDA` / `$PAOGI` to **UDP 9990** and nothing to the
 modules' 9999, so the steering never hears it. `ImplementGpsReceiver` (`Services/Implement`) listens there only while the
-setting is on (`MainViewModel.SyncImplementGpsListener`, at the 5 Hz status tick) and queues the fixes
-(`ImplementGpsSentence.TryParse`, `Models/GPS/ImplementGps.cs`). On the host loop (`MainViewModel.ImplementGps.cs`) each is
-put beside the **tractor's fix of the same receiver time** (`ImplementGpsTracker`: the tractor's last 40 fixes kept, an
-implement fix waits up to 0.5 s for its own, else the nearest one, marked unpaired; `GpsCycleResult.FixTimeCentiseconds`,
-and `DriftEasting/Northing` so the Offset Fix moves it as the tractor), and solved (`ImplementGpsGeometry.Solve`): a
+setting is on (`MainViewModel.SyncImplementGpsListener`, at the 5 Hz status tick; a port that could not be opened is
+tried again every 5 s) and queues the fixes (`ImplementGpsSentence.TryParse`, `Models/GPS/ImplementGps.cs`). The
+sentences carry no signature (nothing in this protocol does), so what it keeps out is counted and shown: **one sender
+at a time** (the first heard, until silent 5 s; a second board in the role would be one implement jumping between two
+places), the same fix a second time, and more than 50 fixes a second. On the host loop (`MainViewModel.ImplementGps.cs`)
+each is put beside the **tractor's fix of the same receiver time** (`ImplementGpsTracker`: the tractor's last 40 fixes
+kept, an implement fix waits up to 0.5 s for its own, else the nearest one, marked unpaired;
+`GpsCycleResult.FixTimeCentiseconds`, and `DriftEasting/Northing` so the Offset Fix moves it as the tractor; the RTK
+hold is **not** added, it takes out the tractor receiver's own step). **Every fix heard is written; a pose is only
+made when it can be trusted**: none with the implement's receiver at fix 0, beside a tractor fix more than 0.3 s off
+(the tractor's GPS silent: it would be drawn where it is not), with no tractor fix, no plane, or a tool that is not
+trailing (`ImplementGpsNoPose`, the file's `no_pose`, sent to the page as that short name and put into words there).
+It is then solved (`ImplementGpsGeometry.Solve`): a
 trailed implement's centre line runs through the pin, so its heading is from the antenna to the pin (the model's hitch
 point, placed by the tractor's GPS), after the antenna's height through the roll and its place on the implement are
 taken out (*Antenna height*, *Antenna right of centre*, *Invert roll*, *Zero roll*); its working centre is the model's
@@ -339,7 +347,10 @@ so it moves with it: `implementGpsSk` in `js/map-layers.js`, a dashed magenta li
 line to the pin and the antenna; paler when not paired, gone when 2 s old), shown in Network IO (the Status frame ends
 with `ImplementGps`, after `DataQuality`; `renderImplementGps` in `js/network.js`) and written, one row per fix, to
 `<data folder>/ImplementGps/ImplementGps_yyyy-MM-dd.csv` (`ImplementGpsLog`: on a worker of its own, numbers with a
-point; the columns in `ImplementGpsLog.Header`, raw and solved, so it can be solved again with other measures). Made to
+point; the columns in `ImplementGpsLog.Header`, raw and solved, so it can be solved again with other measures; a row
+counts as written once flushed, one that is not is counted and shown; a day's file stops at 512 MB; switching the
+setting off writes what was heard and lets the file go without the host loop waiting for the disk; the page gets the
+file's name in the data folder, never the whole path). Made to
 measure how far a tester's no-till drill is from the model on his slopes before deciding what to do about it (sections
 and coverage by the real drill, then a slow shift of the line; direct implement steering last). At a sync keep the
 fork's Tick and Status endings. Docs/GPS_RECEIVERS.md. Tests: `ImplementGpsTests` (Models), `ImplementGpsTrackerTests`.

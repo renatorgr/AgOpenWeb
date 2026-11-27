@@ -125,6 +125,12 @@ per fix to UDP 9990, nothing to 9999. Anything else that sends those sentences t
 checksum, or of another kind, is counted as refused. For its receiver to get RTK corrections, turn on Network IO ›
 *Broadcast corrections*.
 
+**One board only.** The sentences carry no signature (nothing in this protocol does), so the app cannot tell a board
+from anything else on the tractor's network that sends them. It follows **one sender at a time**: the first it hears,
+until that one is silent for 5 s. A second one (another board left in the Implement role) is not used, and Network IO
+says so with its address. The same position arriving twice is taken once, and more than 50 a second are not taken.
+If another program already has the port, the app says so and tries again every 5 s.
+
 **The measures** (Network IO › Implement GPS):
 
 | Setting | What |
@@ -137,7 +143,9 @@ checksum, or of another kind, is counted as refused. For its receiver to get RTK
 The pin and the working centre are the tool's own (Vehicle › Hitch, Tool › Hitch): only a **trailing** tool is solved.
 
 **How the place is worked out.** Each implement fix is put beside the tractor's fix of the same receiver time (both
-receivers send on the GNSS second; it waits up to 0.5 s for it, else the nearest one is used and said). A trailed
+receivers send on the GNSS second; it waits up to 0.5 s for it, else the nearest one is used and said). The implement
+is **not drawn** when that cannot be trusted: its receiver has no fix, or the tractor's fix of that instant is missing
+and the nearest is more than 0.3 s away (the tractor's GPS silent). Network IO says which; the fix is still written. A trailed
 implement's centre line runs through the pin, so its heading is from the antenna to the pin, once the antenna's height
 through the roll and its place on the implement are taken out. Its working centre is the model's distance behind the
 pin along that heading. Shown: that centre against the model's, across (+ right) and along, and the heading difference.
@@ -146,9 +154,13 @@ pin along that heading. Shown: that centre against the model's, across (+ right)
 what the implement's GPS sent (`impl_*`: time, fix, position, roll as sent and as used), what was worked out
 (`antenna_*`, `centre_*`, `work_*`, `across_cm`, `along_cm`, `heading_diff`), the model's implement (`model_*`), the
 tractor (`pin_*`, `pivot_*`, heading, speed, roll, steer angle, `xte_cm`, AutoSteer, the pass), whether the two fixes
-were of the same instant (`paired`, `time_diff_s`) and the measures used, so it can be worked out again with others.
-It grows by about 10 MB an hour while the implement's GPS sends, and the app never deletes these files: turn the
-setting off when the measuring is done, and delete the old ones by hand.
+were of the same instant (`paired`, `time_diff_s`), the measures used, so it can be worked out again with others, the
+tractor's own fix (`tractor_fix`, and `tractor_rtk_hold_m`: how far its position was held when RTK was lost) and, on a
+row with nothing worked out, why (`no_pose`: `no_fix`, `no_tractor_fix`, `tractor_fix_missing`, `no_plane`,
+`not_trailing`, `antenna_on_pin`). Every position heard gets a row; one that could not be written is counted, and
+Network IO shows the count. It grows by about 10 MB an hour while the implement's GPS sends, and the app never deletes
+these files: turn the setting off when the measuring is done, and delete the old ones by hand. A day's file stops at
+512 MB (two days without a stop), and Network IO says so.
 
 ## Setting up a receiver
 
