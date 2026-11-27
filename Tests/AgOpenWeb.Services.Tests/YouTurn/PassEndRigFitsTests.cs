@@ -19,7 +19,8 @@ namespace AgOpenWeb.Services.Tests.YouTurn;
 /// pass's line (<see cref="PassEnds.RigFits"/>; fork only).
 /// <para>
 /// On a tester's field (Tapada da Casa, a 3 m no-till drill, 27 Nov 2026) a pass runs 0.7 m from
-/// the tip of a bay of the hard fence, with 60 m of field beyond it. The line is inside the fence,
+/// the tip of a bay of the hard fence, 60 m from one end of the pass and 500 m from the other. The
+/// line is inside the fence,
 /// so the pass was driven through, and the hard fence guard took AutoSteer off 2 s before the tip,
 /// where the drill's end would be 0.8 m over the fence: every job with the drill ended on that pass.
 /// The fence here is that tip: a bay from the east side whose tip is 0.7 m from the pass.

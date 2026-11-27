@@ -30,7 +30,8 @@ namespace AgOpenWeb.Services.Tests.Pipeline;
 /// turn line was "driven through" (<see cref="PassEnds.Find"/>): the U-turn was planned at the far
 /// end of the field, and the hard fence guard took AutoSteer off 2 s before the implement's end got
 /// to the fence. On a tester's field (Tapada da Casa, a 3 m no-till drill, 27 Nov 2026: the tip
-/// 0.7 m from the pass, 60 m of field beyond) every job with the drill ended there. The pass now
+/// 0.7 m from the pass, 60 m from one end of it and 500 m from the other) every job with the drill
+/// ended there. The pass now
 /// ends where the rig does not fit (<see cref="PassEnds.RigFits"/>), and the U-turn is made before
 /// the tip, as on the passes beside it that the bay cuts.
 /// </summary>

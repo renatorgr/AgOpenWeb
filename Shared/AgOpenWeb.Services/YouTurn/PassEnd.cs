@@ -45,7 +45,8 @@ public readonly record struct PassEnd(int OutsideIndex, int InsideIndex, Vec2 Cr
 /// Beside a hard fence the stretch is driven with the whole rig, not with a line: where the
 /// implement or the tractor's wheels would be across the fence (<see cref="RigFits"/>), the pass
 /// ends, as where it leaves the fence itself. On a tester's field (Tapada da Casa, a 3 m drill,
-/// 27 Nov 2026) a pass runs 0.7 m from the tip of a bay of the fence, with 60 m of field beyond:
+/// 27 Nov 2026) a pass runs 0.7 m from the tip of a bay of the fence, 60 m from one end of the
+/// pass and 500 m from the other:
 /// the line stays inside, so it was driven through, and the hard fence guard took AutoSteer off
 /// with the drill's end 0.8 m over the fence ahead; every job with the drill ended on that pass.
 /// Fork only.
