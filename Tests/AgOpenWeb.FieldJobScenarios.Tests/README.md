@@ -311,7 +311,7 @@ pass at this end", "No U-turn onto the next pass: ..."):
 
 - The operator drives the pass to its end, then by hand to the start of the nearest pass still to do
   (30 m of its line unsprayed in one piece; not one driven to before and not sprayed since), turns
-  AutoSteer and the sections on again, and goes on (`JobSpec.MovesOnAfterNoRoom`, up to 10 times;
+  AutoSteer and the sections on again, and goes on (`JobSpec.MovesOnAfterNoRoom`, up to 20 times;
   `JobRun.MoveOnAsync`). The other harnesses still end the job there.
 - Each time is listed in `NO-ROOM-DROVE-ON-BY-HAND` (Improvement), and the share sprayed at the first one is
   a metric: it is the number the job ended with before.

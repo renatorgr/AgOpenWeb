@@ -75,7 +75,7 @@ public static class FarmJobs
                     StartChordOfLongest = 0.8,
                     DriveOnPastStartWarnings = true,
                     // "No room on the next pass" with the field going on: by hand to the nearest pass still to do, and on.
-                    MovesOnAfterNoRoom = 10,
+                    MovesOnAfterNoRoom = 20,
                     ExtraJudge = (sc, r, flag) =>
                     {
                         // The job went on past "no room" ends by hand: the share at the first is the number the
