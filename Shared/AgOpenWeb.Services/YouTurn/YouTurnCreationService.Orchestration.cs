@@ -957,10 +957,13 @@ public partial class YouTurnCreationService
         var obstacleAreas = obstacles;
         Func<Vec3, bool> isPointDrivenThrough = p => !obstacleAreas.Exists(o => o.Area.Contains(p.Easting, p.Northing))
             && boundary.OuterBoundary.IsPointInside(p.Easting, p.Northing);
+        // Beside a hard fence the stretch is driven through only where the rig fits (the implement's
+        // ends and the wheels inside the fence), as the state machine finds the same end.
+        var rigFits = PassEnds.RigFits(boundary.OuterBoundary, PassEnds.RigHalfWidth(config));
         var passEnd = PassEnds.Find(currentCurvePoints, currentLocationIndex, guidance.IsHeadingSameWay,
             p => isPointInsideTurnArea(p) == 0, turnBoundaryVec3,
             isPointDrivenThrough,
-            m => _logger.LogDebug("[YouTurn] Pass {Path}: {What}", guidance.HowManyPathsAway, m));
+            m => _logger.LogDebug("[YouTurn] Pass {Path}: {What}", guidance.HowManyPathsAway, m), rigFits);
         if (passEnd is { } end)
             _logger.LogDebug("[YouTurn] End of pass {Path} ahead at ({E:F1},{N:F1}), point {Idx} of {Count}",
                 guidance.HowManyPathsAway, end.Crossing.Easting, end.Crossing.Northing, end.OutsideIndex, currentCurvePoints.Count);
@@ -979,6 +982,7 @@ public partial class YouTurnCreationService
             MaxGapCrossing = config.Guidance.UTurnCrossGap,
             IsPointInHeadlandStrip = isPointInHeadlandStrip,
             IsPointDrivenThrough = isPointDrivenThrough,
+            RigFitsBetween = rigFits,
 
             // The single generator walks these points (the current offset pass).
             GuidancePoints = currentCurvePoints,

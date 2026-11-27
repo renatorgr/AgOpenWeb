@@ -30,6 +30,10 @@ namespace AgOpenWeb.Services.Tests.Pipeline;
 /// way, and a spike of a hard fence beside the pass took a 12 m boom's end 1.1 m over it (the beta robot
 /// on Quinta Torta, simulator). Now it runs up to the start of the planned turn, which keeps the
 /// implement off the fence from there.
+/// <para>Where the pass is outside the turn line beside such a spike, the pass now ends there
+/// (<see cref="PassEnds.RigFits"/>) and the U-turn is made before it; the guard is what is left for a
+/// spike beside a pass that stays inside the turn line (an implement wider than twice the U-turn
+/// distance from boundary).</para>
 /// </summary>
 [TestFixture]
 [NonParallelizable] // ConfigurationStore is a singleton.
@@ -184,9 +188,14 @@ public class HardFenceGuardTurnAheadTests
 
     // A spike of the east fence reaching 1.5 m past the boom's end at y 0 (the pivot stays 2.5 m clear of it):
     // AutoSteer goes off with the alarm before the boom gets to it, though a turn is planned at the north end.
+    // The turn line is 1 m from the fence here, so the pass stays inside it past the spike and has no end
+    // there. With the turn line further in than the pass is from the spike, the pass is outside it for a
+    // stretch, and that stretch is the end of the pass where the boom does not fit (PassEnds.RigFits,
+    // PassEndAtFenceTipPipelineTests): the U-turn is made before the spike and the guard has nothing to stop.
     [Test]
     public void A_spike_of_the_fence_beside_the_pass_takes_AutoSteer_off_with_a_turn_planned_ahead()
     {
+        ConfigurationStore.Instance.Guidance.UTurnDistanceFromBoundary = 1;
         Open(new[] { new Vec3(20, -12, 0), new Vec3(6.5, 0, 0), new Vec3(20, 6, 0) }, slantedNorth: false);
         var (off, offNorthing, planned, _) = DrivePass();
 

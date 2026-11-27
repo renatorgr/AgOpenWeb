@@ -4,7 +4,10 @@
 
 using System;
 using System.Collections.Generic;
+using AgOpenWeb.Models;
 using AgOpenWeb.Models.Base;
+using AgOpenWeb.Models.Configuration;
+using AgOpenWeb.Services.Pipeline;
 
 namespace AgOpenWeb.Services.YouTurn;
 
@@ -38,6 +41,15 @@ public readonly record struct PassEnd(int OutsideIndex, int InsideIndex, Vec2 Cr
 /// line's crossing before it, as at any ordinary end of the field; so is one after which the pass
 /// is back inside the turn line for less than <see cref="DriveOnLength"/> (J14).
 /// </para>
+/// <para>
+/// Beside a hard fence the stretch is driven with the whole rig, not with a line: where the
+/// implement or the tractor's wheels would be across the fence (<see cref="RigFits"/>), the pass
+/// ends, as where it leaves the fence itself. On a tester's field (Tapada da Casa, a 3 m drill,
+/// 27 Nov 2026) a pass runs 0.7 m from the tip of a bay of the fence, with 60 m of field beyond:
+/// the line stays inside, so it was driven through, and the hard fence guard took AutoSteer off
+/// with the drill's end 0.8 m over the fence ahead; every job with the drill ended on that pass.
+/// Fork only.
+/// </para>
 /// </summary>
 public static class PassEnds
 {
@@ -46,11 +58,13 @@ public static class PassEnds
     /// points in their order (<paramref name="forward"/>) or against it. Null when the pass does not
     /// leave the turn area ahead (past its last crossing, or never inside). With
     /// <paramref name="insideField"/> (the fence) a stretch outside the turn line but inside the
-    /// fence is driven through; without it every point outside the turn line is an end.
+    /// fence is driven through; without it every point outside the turn line is an end. With
+    /// <paramref name="rigFits"/> (<see cref="RigFits"/>: a hard fence) such a stretch is driven
+    /// through only where the rig fits beside the fence.
     /// </summary>
     public static PassEnd? Find(IReadOnlyList<Vec3> pass, int fromIndex, bool forward,
         Func<Vec3, bool> insideTurnArea, IReadOnlyList<Vec3>? turnLine = null, Func<Vec3, bool>? insideField = null,
-        Action<string>? debug = null)
+        Action<string>? debug = null, Func<Vec3, Vec3, bool>? rigFits = null)
     {
         int step = forward ? 1 : -1;
         bool seenInside = false;
@@ -60,7 +74,7 @@ public static class PassEnds
             if (!seenInside) continue;
             if (insideField != null)
             {
-                var why = IsClip(pass, j, step, insideTurnArea, insideField, out int back);
+                var why = IsClip(pass, j, step, insideTurnArea, insideField, rigFits, out int back);
                 if (back != j && RunInside(pass, back, step, insideTurnArea) is var run && run < DriveOnLength)
                 {
                     why += FormattableString.Invariant($", but inside it for only {run:F1} m: the end of the pass");
@@ -90,15 +104,16 @@ public static class PassEnds
     /// Whether the stretch of <paramref name="pass"/> outside the turn line that starts at
     /// <paramref name="first"/> (its first point outside, walking by <paramref name="step"/>) is
     /// driven through, as <see cref="Find"/> decides it: no point of it outside
-    /// <paramref name="insideField"/>, and the pass back inside the turn line at
+    /// <paramref name="insideField"/>, the rig fitting beside a hard fence all along it
+    /// (<paramref name="rigFits"/>), and the pass back inside the turn line at
     /// <paramref name="back"/> for at least <see cref="DriveOnLength"/>. The next pass of a turn is
     /// asked the same question as the tractor's own (<c>FindCurveOutTurnPoint</c>), so both ends of
     /// a turn are ends the pass is turned at when it is driven.
     /// </summary>
     public static bool IsDrivenThrough(IReadOnlyList<Vec3> pass, int first, int step,
-        Func<Vec3, bool> insideTurnArea, Func<Vec3, bool> insideField, out int back)
+        Func<Vec3, bool> insideTurnArea, Func<Vec3, bool> insideField, out int back, Func<Vec3, Vec3, bool>? rigFits = null)
     {
-        IsClip(pass, first, step, insideTurnArea, insideField, out back);
+        IsClip(pass, first, step, insideTurnArea, insideField, rigFits, out back);
         if (back == first) return false;
         if (RunInside(pass, back, step, insideTurnArea) >= DriveOnLength) return true;
         back = first;
@@ -134,10 +149,13 @@ public static class PassEnds
     /// <summary>
     /// Whether the stretch outside the turn line from <paramref name="first"/> (the first point
     /// outside) is driven through: back inside the turn line at <paramref name="back"/> with no
-    /// point of it outside the fence. Says what it decided, for the debug log.
+    /// point of it outside the fence, and none where the rig does not fit beside a hard fence
+    /// (<paramref name="rigFits"/>, asked for each piece of the stretch, from the last point
+    /// inside the turn line before it to the first one after it). Says what it decided, for the
+    /// debug log.
     /// </summary>
     private static string IsClip(IReadOnlyList<Vec3> pass, int first, int step,
-        Func<Vec3, bool> insideTurnArea, Func<Vec3, bool> insideField, out int back)
+        Func<Vec3, bool> insideTurnArea, Func<Vec3, bool> insideField, Func<Vec3, Vec3, bool>? rigFits, out int back)
     {
         back = first;
         double length = 0;
@@ -146,6 +164,9 @@ public static class PassEnds
             if (!insideField(pass[k]))
                 return FormattableString.Invariant($"the end of the pass, outside the fence at point {k} ({pass[k].Easting:F1},{pass[k].Northing:F1}), {length:F1} m on");
             if (k != first) length += Distance(pass[k - step], pass[k]);
+            int before = k - step;
+            if (rigFits != null && before >= 0 && before < pass.Count && !rigFits(pass[before], pass[k]))
+                return FormattableString.Invariant($"the end of the pass, the rig does not fit beside the hard fence before point {k} ({pass[k].Easting:F1},{pass[k].Northing:F1}), {length:F1} m on");
             if (insideTurnArea(pass[k]))
             {
                 back = k;
@@ -153,6 +174,58 @@ public static class PassEnds
             }
         }
         return "the end of the pass, the pass ends outside the turn line";
+    }
+
+    /// <summary>
+    /// How far either side of a pass the rig needs inside a hard fence to be driven along it: half
+    /// the implement and its offset (the reach the hard fence guard looks at) less what the guard
+    /// lets an end go over a fence (<see cref="HardFenceGuard.Margin"/>), or half the tractor's
+    /// track when that is more.
+    /// </summary>
+    public static double RigHalfWidth(ConfigurationStore config) =>
+        Math.Max(config.ActualToolWidth / 2 + Math.Abs(config.Tool.Offset) - HardFenceGuard.Margin, config.Vehicle.TrackWidth / 2);
+
+    /// <summary>
+    /// The test a stretch outside the turn line must pass, piece by piece, to be driven through
+    /// beside <paramref name="fence"/>: from one point of the pass to the next, the band
+    /// <paramref name="halfWidth"/> either side of it lies inside the fence. Null for a soft
+    /// fence (an implement may hang over it) or no width: the stretch is then judged by the
+    /// pass's line alone, as before.
+    /// </summary>
+    public static Func<Vec3, Vec3, bool>? RigFits(BoundaryPolygon? fence, double halfWidth)
+    {
+        if (fence is not { IsHard: true, IsValid: true } || !(halfWidth > 0) || !double.IsFinite(halfWidth)) return null;
+        return (a, b) => FitsBetween(fence, a, b, halfWidth);
+    }
+
+    /// <summary>
+    /// Whether the band <paramref name="half"/> either side of a–b is inside the fence: its two
+    /// edges and the bar across each end. The fence is one ring and the pass's points are inside
+    /// it, so the fence gets into the band only across one of those four lines.
+    /// </summary>
+    private static bool FitsBetween(BoundaryPolygon fence, Vec3 a, Vec3 b, double half)
+    {
+        double de = b.Easting - a.Easting, dn = b.Northing - a.Northing;
+        double len = Math.Sqrt(de * de + dn * dn);
+        if (len < 1e-6) return true;
+        // To the right of a -> b, the band's half width long.
+        double re = dn / len * half, rn = -de / len * half;
+        return LineInside(fence, a.Easting - re, a.Northing - rn, a.Easting + re, a.Northing + rn)
+            && LineInside(fence, b.Easting - re, b.Northing - rn, b.Easting + re, b.Northing + rn)
+            && LineInside(fence, a.Easting - re, a.Northing - rn, b.Easting - re, b.Northing - rn)
+            && LineInside(fence, a.Easting + re, a.Northing + rn, b.Easting + re, b.Northing + rn);
+    }
+
+    /// <summary>Whether the line from (e1, n1) to (e2, n2) is wholly inside the fence.</summary>
+    private static bool LineInside(BoundaryPolygon fence, double e1, double n1, double e2, double n2)
+    {
+        double de = e2 - e1, dn = n2 - n1;
+        double half = Math.Sqrt(de * de + dn * dn) / 2;
+        if (half < 1e-6) return fence.IsPointInside(e1, n1);
+        // The polygon's test takes a section: a line across a heading, half its length either side of its middle.
+        double heading = Math.Atan2(de, dn) - Math.PI / 2;
+        var status = fence.GetSegmentBoundaryStatus(new Vec2((e1 + e2) / 2, (n1 + n2) / 2), heading, half);
+        return status.IsFullyInside && !status.CrossesBoundary;
     }
 
     /// <summary>Where the segment a–b crosses <paramref name="turnLine"/> (its closing segment included); null when it doesn't.</summary>
