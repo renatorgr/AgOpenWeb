@@ -146,4 +146,16 @@ public partial class MainViewModel
         ObstacleAction.DriveThrough => "drive through",
         _ => "U-turn",
     };
+
+    // Field session step (MainViewModel.FieldSession.cs): obstacles that had no choice in the file (an
+    // AgOpenGPS field, or one saved before the choice existed) and are not drive-through now get a U-turn,
+    // as in AgOpenGPS: say so. The close-save writes the choice, so this is said once per field.
+    private Task OpenObstacleChoiceNotice(FieldOpening o)
+    {
+        if (o.Boundary is { ObstaclesNowUTurn: > 0 } b)
+            ShowErrorDialog("U-turn at obstacles", b.ObstaclesNowUTurn == 1
+                ? "1 obstacle in this field now gets a U-turn before it, as in AgOpenGPS. To drive over it as before, choose Drive through for it in the boundary list."
+                : $"{b.ObstaclesNowUTurn} obstacles in this field now get a U-turn before them, as in AgOpenGPS. To drive over one as before, choose Drive through for it in the boundary list.");
+        return Task.CompletedTask;
+    }
 }
