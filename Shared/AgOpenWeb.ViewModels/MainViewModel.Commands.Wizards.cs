@@ -26,12 +26,9 @@ public partial class MainViewModel
         set => SetProperty(ref _steerWizardViewModel, value);
     }
 
-    // Wizard commands
-    public ICommand? ShowSteerWizardCommand { get; private set; }
 
     private void InitializeWizardCommands()
     {
-        ShowSteerWizardCommand = new RelayCommand(ShowSteerWizard);
     }
 
     /// <summary>
