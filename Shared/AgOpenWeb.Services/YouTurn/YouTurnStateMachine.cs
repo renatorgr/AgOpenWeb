@@ -889,7 +889,8 @@ public sealed class YouTurnStateMachine
 
     /// <summary>
     /// The tractor, in the headland, is at the end of its pass heading out of the field (the pass
-    /// leaves the outer boundary ahead with no more field on it first: not heading in, not a gap
+    /// leaves the outer boundary ahead, or runs where the rig does not fit beside a hard fence,
+    /// with no more field on it first: not heading in, not a gap
     /// it drives on across), on the line, and no U-turn is planned or driven: none could be made
     /// at this end ("End of field reached", no turn that fits), or U-turns are off. The pipeline
     /// asks once as the tractor enters the headland and, with a hard outer boundary, takes
@@ -919,7 +920,7 @@ public sealed class YouTurnStateMachine
         if (Math.Abs(diff) > AlignmentTolerance && Math.PI - Math.Abs(diff) > AlignmentTolerance) return false;
         bool sameWay = Math.Abs(Math.IEEERemainder(heading - abHeading, 2 * Math.PI)) < Math.PI / 2;
         return _pathing.PassLeavesFieldAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.WorkEndLine, p, sameWay,
-            steeredLine, guidance.NudgeOffset, ToolShift(sameWay));
+            steeredLine, guidance.NudgeOffset, ToolShift(sameWay), rigFits: RigFitsBesideFence(in ctx));
     }
 
     /// <summary>The implement's side shift as the line steered has it, driven the way of <paramref name="sameWay"/>.</summary>
@@ -2503,18 +2504,31 @@ public sealed class YouTurnStateMachine
     /// it): not the end of the field. No turn; the tractor drives on across to the next piece,
     /// where a turn is planned again. Entering an olive grove at a corner the headland cut 11 m
     /// off the first pass, the end of the field was announced 12 s into the job.
+    /// Never where the rig does not fit beside a hard fence on the way across (the tip of a bay
+    /// by the pass): that is the end of the pass, as <see cref="PassEnds.Find"/> has it. Fork only.
     /// </summary>
     private bool DrivesOnAcrossGap(in TickContext ctx, Models.Track.Track track, double abHeading,
         GuidanceWorkingState guidance, YouTurnWorkingState turn, YouTurnEffects effects)
     {
         double? gap = _pathing.GapAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.HeadlandLine,
-            ctx.CurrentPosition, guidance.IsHeadingSameWay, turn.DistanceToHeadland);
+            ctx.CurrentPosition, guidance.IsHeadingSameWay, turn.DistanceToHeadland, RigFitsBesideFence(in ctx),
+            guidance.NudgeOffset);
         if (gap is not { } metres) return false;
         _logger.LogDebug("[YouTurn] No pass with room at this headland; pass {Pass} goes on {Gap:F0}m past it - no turn, driving on",
             guidance.HowManyPathsAway, metres);
         effects.StatusMessage = "No room to turn at this headland - driving on across it";
         return true;
     }
+
+    /// <summary>
+    /// The test a stretch of a pass must pass beside a hard outer boundary to be driven along:
+    /// the rig fits inside the fence (<see cref="PassEnds.RigFits"/>, as the end of a pass is
+    /// found with). Null for a soft fence or none.
+    /// </summary>
+    private Func<Vec3, Vec3, bool>? RigFitsBesideFence(in TickContext ctx) =>
+        ctx.Boundary?.OuterBoundary is { IsHard: true, IsValid: true } fence
+            ? PassEnds.RigFits(fence, PassEnds.RigHalfWidth(_configStore))
+            : null;
 
     private void SoundCreationFailed(YouTurnEffects effects)
     {
