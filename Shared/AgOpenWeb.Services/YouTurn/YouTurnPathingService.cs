@@ -1304,10 +1304,34 @@ public sealed class YouTurnPathingService
     /// obstacle) the end is out of its reach. True with no map, or with no crop to judge. Fork only.
     /// </summary>
     public bool TurnReachesUnworkedGround(IReadOnlyList<Vec3> turnPath, Boundary? boundary,
+        IReadOnlyList<Vec3>? headlandLine, Func<double, double, bool>? isPointCovered) =>
+        UnworkedGroundReached(turnPath, boundary, headlandLine, isPointCovered) >= MinNewGround;
+
+    /// <summary>
+    /// The unworked crop, m, that <see cref="TurnReachesUnworkedGround"/> finds along the turn's last
+    /// <see cref="OpenEndStretch"/> and as much again on along its last heading; infinite with no
+    /// map, or with no crop to judge. Fork only.
+    /// </summary>
+    public double UnworkedGroundReached(IReadOnlyList<Vec3> turnPath, Boundary? boundary,
+        IReadOnlyList<Vec3>? headlandLine, Func<double, double, bool>? isPointCovered) =>
+        UnworkedPointsReached(turnPath, boundary, headlandLine, isPointCovered) is { } points
+            ? points.Count * GroundStep : double.PositiveInfinity;
+
+    /// <summary>The spacing of the points <see cref="UnworkedPointsReached"/> looks at, m.</summary>
+    public const double GroundStep = 1.0;
+
+    /// <summary>
+    /// Where the unworked crop is that <see cref="UnworkedGroundReached"/> counts: a point every
+    /// <see cref="GroundStep"/> along the turn's last <see cref="OpenEndStretch"/> and as much again on
+    /// along its last heading, those in the cultivated area and not covered. Null with no map, or with
+    /// no crop to judge. Kept with a landing, so the next landing there can tell whether that same
+    /// ground was worked since (YouTurnStateMachine.TurnRepeatsLanding). Fork only.
+    /// </summary>
+    public List<Vec2>? UnworkedPointsReached(IReadOnlyList<Vec3> turnPath, Boundary? boundary,
         IReadOnlyList<Vec3>? headlandLine, Func<double, double, bool>? isPointCovered)
     {
-        const double Step = 1.0;
-        if (isPointCovered == null || turnPath.Count < 2) return true;
+        const double Step = GroundStep;
+        if (isPointCovered == null || turnPath.Count < 2) return null;
         var samples = new List<Vec2>();
         // Back along the path from its end.
         double walked = 0;
@@ -1333,14 +1357,15 @@ public sealed class YouTurnPathingService
             for (double s = Step; s <= OpenEndStretch; s += Step)
                 samples.Add(new Vec2(last.Easting + de / len * s, last.Northing + dn / len * s));
 
-        int inside = 0, unworked = 0;
+        int inside = 0;
+        var unworked = new List<Vec2>();
         foreach (var p in samples)
         {
             if (!IsPointInsideCultivatedArea(p.Easting, p.Northing, boundary, headlandLine)) continue;
             inside++;
-            if (!isPointCovered(p.Easting, p.Northing)) unworked++;
+            if (!isPointCovered(p.Easting, p.Northing)) unworked.Add(p);
         }
-        return inside == 0 || unworked * Step >= MinNewGround;
+        return inside == 0 ? null : unworked;
     }
 
     /// <summary>
