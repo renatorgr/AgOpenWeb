@@ -303,12 +303,14 @@ public sealed class YouTurnPathingService
     /// came, which is the way it drives after the turn. Inside the headland line; obstacles are
     /// not counted. When that pass ends sooner, its first run back of the end, however far (a
     /// wide turn lands in the headland and drives to it). 0 when there is none. With
-    /// <paramref name="stopAt"/> the run is measured no further than that.
+    /// <paramref name="stopAt"/> the run is measured no further than that. With
+    /// <paramref name="landsAt"/> (where a turn that was built ends, on that pass) the run is
+    /// measured from there, not from where a turn is taken to land.
     /// </summary>
     public double LandingLength(Models.Track.Track track, double abHeading, int pathsAway,
         Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead,
-        double stopAt = double.MaxValue, int? fromPath = null)
-        => Landing(track, abHeading, pathsAway, boundary, headlandLine, position, headingSameWay, headlandAhead, stopAt, fromPath).Length;
+        double stopAt = double.MaxValue, int? fromPath = null, Vec3? landsAt = null)
+        => Landing(track, abHeading, pathsAway, boundary, headlandLine, position, headingSameWay, headlandAhead, stopAt, fromPath, landsAt).Length;
 
     /// <summary>
     /// The landing a turn at this end has on a pass (<see cref="LandingLength"/>), and why its run
@@ -331,10 +333,16 @@ public sealed class YouTurnPathingService
     /// walk back crossed the slit (0 m), and the turn was refused with the next pass on this side
     /// of it (field job J11 on Couto Ribeira, 2026-11-16, a 42 m step and a 10 m radius; 24 % of
     /// the field left).
+    /// <para>
+    /// Where a turn lands is taken from its kind before it is built, and the turn built can be
+    /// another: a wide turn of no U-turn's shape is replaced by the omega, which lands abreast of
+    /// the end. <paramref name="landsAt"/> is where a turn that was built ends: the run is measured
+    /// from the point of the pass nearest it, whatever the turn's kind (fork only).
+    /// </para>
     /// </remarks>
     public LandingRun Landing(Models.Track.Track track, double abHeading, int pathsAway,
         Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead,
-        double stopAt = double.MaxValue, int? fromPath = null)
+        double stopAt = double.MaxValue, int? fromPath = null, Vec3? landsAt = null)
     {
         var config = _configStore;
         double widthMinusOverlap = config.ActualToolWidth - config.Tool.Overlap;
@@ -344,7 +352,7 @@ public sealed class YouTurnPathingService
         double turnOffset = fromPath is int from && from != pathsAway
             ? Math.Abs(distAway - PassGeometry.Offset(track, from, widthMinusOverlap))
             : 0;
-        bool wideTurn = turnOffset > 0 && turnOffset > 2.0 * YouTurnCreationService.PlannedTurnRadius(config, turnOffset);
+        bool wideTurn = landsAt == null && turnOffset > 0 && turnOffset > 2.0 * YouTurnCreationService.PlannedTurnRadius(config, turnOffset);
         const double Step = 1.0;
         const double RunBack = 2000.0;
         double runLimit = Math.Min(RunBack, stopAt);
@@ -373,10 +381,23 @@ public sealed class YouTurnPathingService
                 double de = curve[a].Easting - curve[b].Easting, dn = curve[a].Northing - curve[b].Northing;
                 return Math.Sqrt(de * de + dn * dn);
             }
-            // The point abreast of the end ahead.
+            // The point abreast of the end ahead, or the one nearest where the turn built ends.
             int at = near;
-            for (double walked = 0; at + fwd >= 0 && at + fwd < curve.Count && walked < ahead; at += fwd)
-                walked += Dist(at, at + fwd);
+            if (landsAt is { } builtEnd)
+            {
+                double nearestEnd = double.MaxValue;
+                for (int i = 0; i < curve.Count; i++)
+                {
+                    double de = curve[i].Easting - builtEnd.Easting, dn = curve[i].Northing - builtEnd.Northing;
+                    double d = de * de + dn * dn;
+                    if (d < nearestEnd) { nearestEnd = d; at = i; }
+                }
+            }
+            else
+            {
+                for (double walked = 0; at + fwd >= 0 && at + fwd < curve.Count && walked < ahead; at += fwd)
+                    walked += Dist(at, at + fwd);
+            }
             if (wideTurn)
             {
                 // A wide turn lands where the pass first leaves the turn area ahead (remarks); from
@@ -433,8 +454,11 @@ public sealed class YouTurnPathingService
         double t0 = (position.Easting - midE) * abNx + (position.Northing - midN) * abNy;
         bool InsideAtT(double t) => IsPointInsideCultivatedArea(midE + abNx * t, midN + abNy * t, boundary, headlandLine);
 
-        // The point abreast of the end ahead; when the pass ends sooner, the first inside behind it.
-        double tAt = t0 + s * ahead;
+        // The point abreast of the end ahead (or of where the turn built ends); when the pass ends
+        // sooner, the first inside behind it.
+        double tAt = landsAt is { } turnEnd
+            ? (turnEnd.Easting - midE) * abNx + (turnEnd.Northing - midN) * abNy
+            : t0 + s * ahead;
         double Edge(double tIn, double tOut)
         {
             // The inside point nearest tOut, to a few centimetres.
