@@ -317,6 +317,11 @@ pass at this end", "No U-turn onto the next pass: ..."):
   on again, and goes on (`JobSpec.MovesOnAfterNoRoom`, up to 20 times; `JobRun.MoveOnAsync`). The drive
   there sprays nothing, and the module must have shut its sections before they go back to Auto. The other
   harnesses still end the job there.
+- Before AutoSteer goes on, the tractor stands there until AgOpenWeb's screen shows the pass it is on, 3 s
+  of real time at most (`WaitForPassShownAsync`). AgOpenWeb picks the nearest pass again at most every
+  0.66 s of real time, and a run faster than real time was through the fixes before the engage in a tenth of
+  that, so AutoSteer was engaged on the pass the tractor had left: on Couto da Ribeira (28 Nov 2026) the job
+  ended there with "no room to move onto this line here" and 41 % sown.
 - Each time is listed in `NO-ROOM-DROVE-ON-BY-HAND` (Improvement), and the share sprayed at the first one is
   a metric (also when no pass was left to drive to): it is the number the job ended with before. The passes
   driven by hand count in "U-turns / passes".

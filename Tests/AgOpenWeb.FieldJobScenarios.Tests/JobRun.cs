@@ -826,6 +826,40 @@ public sealed class JobRun : IAsyncDisposable
         return best;
     }
 
+    /// <summary>The longest the operator waits for his pass on the screen, in real time, ms.</summary>
+    private const int PassShownWaitMs = 3000;
+
+    /// <summary>The tractor stands where the operator drove it until AgOpenWeb shows the pass it is on, as an
+    /// operator looks at the screen before he presses AutoSteer. AgOpenWeb picks the nearest pass again at most
+    /// every 0.66 s (<c>GpsPipelineService.PassPickIntervalSeconds</c>, as AgOpenGPS), by the real clock in these
+    /// jobs, and a run faster than real time is through the 30 fixes before AutoSteer goes on in a tenth of
+    /// that: AutoSteer was then engaged on the pass the tractor had left. On Couto da Ribeira (28 Nov 2026) that
+    /// pass was 27 m away, AgOpenWeb said "no room to move onto this line here without the implement crossing
+    /// the fence" and the job ended with 41 % sown. An operator who drove there took far longer than 0.66 s.
+    /// Not shown within <see cref="PassShownWaitMs"/> of real time (AgOpenWeb counts the pass another way
+    /// there), the operator goes on as before, and the trace says which pass the screen showed.</summary>
+    private async Task WaitForPassShownAsync(int pass)
+    {
+        double speed = Truth.SpeedKmh;
+        Truth.SpeedKmh = 0;
+        try
+        {
+            var waited = System.Diagnostics.Stopwatch.StartNew();
+            int shown;
+            do
+            {
+                await RollAsync(1);
+                await Rig.WaitForVmAsync();
+                shown = await Rig.ReadAsync(() => Rig.Vm.State.Guidance.HowManyPathsAway);
+                if (shown == pass) return;
+                await Task.Delay(20);
+            }
+            while (waited.ElapsedMilliseconds < PassShownWaitMs);
+            Did(F($"AgOpenWeb's screen showed pass {shown}, not pass {pass} the tractor was driven to, {PassShownWaitMs / 1000.0:0.#} s after it stopped there"));
+        }
+        finally { Truth.SpeedKmh = speed; }
+    }
+
     /// <summary>The operator at a "no room" end (<see cref="JobSpec.MovesOnAfterNoRoom"/>): sections and AutoSteer
     /// off, the tractor driven by hand to the start of the nearest pass still to do (put there), then AutoSteer
     /// and the sections on again, as at the start of the job. False when no pass is left or AutoSteer
@@ -846,6 +880,7 @@ public sealed class JobRun : IAsyncDisposable
         // joined to the first after it (the truth, the app's sections and its map).
         Array.Clear(_prevEdge); Array.Clear(_prevAppEdge); Array.Clear(_prevMapEdge);
         S.Step(F($"tractor put at the start of pass {start.Pass} ({start.Pivot.E:0},{start.Pivot.N:0}), 12 m before the boundary, heading {(start.HeadingRad * 180 / Math.PI + 360) % 360:0}° (driven there by hand after \"{said}\")"));
+        await WaitForPassShownAsync(start.Pass);
         // As at the start of the job, with the control loop and the module running: with the master off
         // the module hears its sections off before the operator puts them in Auto again.
         await RollAsync(30);
