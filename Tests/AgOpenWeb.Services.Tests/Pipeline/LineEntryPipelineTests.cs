@@ -512,13 +512,23 @@ public class LineEntryPipelineTests
 
     /// <summary>The AB line's east so that pass 0 runs 10 m inside the west fence, in the 20 m
     /// headland band.</summary>
-    private static double BandTrackE =>
-        -90 - Models.Track.PassGeometry.Offset(Models.Track.Track.FromABLine("AB", new Vec3(0, -10, 0), new Vec3(0, 290, 0)), 0, 6);
+    private static double BandTrackE => BandTrack(10);
+
+    private static double BandTrack(double insideFence) =>
+        -100 + insideFence - Models.Track.PassGeometry.Offset(Models.Track.Track.FromABLine("AB", new Vec3(0, -10, 0), new Vec3(0, 290, 0)), 0, 6);
+
+    /// <summary>
+    /// The same line where no U-turn can be made at its end: with U-turns on, 9.5 m inside the fence, so
+    /// the pass beside it (6 m nearer the fence) has the implement's end 0.5 m from the hard fence, under
+    /// the 1 m from boundary. At 10 m that end has the metre and the turn is made
+    /// (<c>TurnSeatedBackBesideFenceTests</c>): the line is then not driven to the fence.
+    /// </summary>
+    private static double BandTrackWithoutUTurn(bool uTurns) => BandTrack(uTurns ? 9.5 : 10);
 
     [Test]
     public void A_line_along_the_headland_is_driven_and_AutoSteer_goes_off_before_the_fence([Values] bool uTurns)
     {
-        OpenField(LineEntryMode.Nearest, hard: true, trackE: BandTrackE);
+        OpenField(LineEntryMode.Nearest, hard: true, trackE: BandTrackWithoutUTurn(uTurns));
         _pipeline.SetYouTurnEnabled(uTurns);
         var (track, off) = DriveUntilOff(_passLineE, 40, 0, untilN: 289);
 
@@ -560,7 +570,7 @@ public class LineEntryPipelineTests
             new(-80, 10, 0), new(80, 10, 0), new(80, 270, 0), new(-80, 270, 0),
             new(-80, 105, 0), new(-95, 105, 0), new(-95, 100, 0), new(-80, 100, 0),
         };
-        OpenField(LineEntryMode.Nearest, hard: true, trackE: BandTrackE, headlandLine: headland);
+        OpenField(LineEntryMode.Nearest, hard: true, trackE: BandTrackWithoutUTurn(uTurns), headlandLine: headland);
         _pipeline.SetYouTurnEnabled(uTurns);
         var (track, off) = DriveUntilOff(_passLineE, 40, 0, untilN: 289);
 
