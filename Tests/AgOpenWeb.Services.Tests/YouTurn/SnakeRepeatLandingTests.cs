@@ -148,6 +148,66 @@ public class SnakeRepeatLandingTests
         Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4), $"a turn onto pass 4, not \"{effects.StatusMessage}\"");
     }
 
+    // Pass 4 worked but its last 15 m at the south end: a turn onto it there reaches unworked crop.
+    // The piece is left as it was each time (a turn at its other end made early for an obstacle).
+    private static readonly Func<double, double, bool> SouthEndLeft = AllCoveredBut(n => n < -25);
+
+    [Test]
+    public void A_turn_that_lands_again_and_again_on_the_same_unworked_ground_is_not_made_a_third_time()
+    {
+        // The beta robot's farm job on a tester's field (simulator, 27 Nov 2026): the turn at the far
+        // end of each piece was made early for an obstacle, about 15 m before it, so that ground was
+        // never worked, and a turn onto the piece always reached it: 1080 turns between two passes.
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        DriveTheTurnOntoPass4(SouthEndLeft); // made a second time: a piece driven with the sections off by hand
+
+        var (_, turn, _) = SouthEndOfPass6(SouthEndLeft);
+
+        Assert.That(turn.ReturnPassTargetPath, Is.Not.EqualTo(4), "no third turn onto ground two landings left unworked");
+    }
+
+    [Test]
+    public void A_few_metres_of_that_ground_worked_since_gets_the_turn_again()
+    {
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        // 3 m of the 15 m left were worked since: the turns there were not fruitless (Sourcery on
+        // fork #382: compared by how much, 12 m left of 15 counted as none of it worked).
+        var threeMetresWorked = AllCoveredBut(n => n < -28);
+
+        var (effects, turn, _) = SouthEndOfPass6(threeMetresWorked);
+
+        Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4), $"a turn onto pass 4, not \"{effects.StatusMessage}\"");
+    }
+
+    [Test]
+    public void Unworked_ground_elsewhere_gets_the_turn_again()
+    {
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        // The same 15 m still left, and 8 m further on unworked now (another job's map): a turn
+        // there reaches ground the landings before did not.
+        var moreLeft = AllCoveredBut(n => n < -25 || (n > -18 && n < -10));
+
+        var (effects, turn, _) = SouthEndOfPass6(moreLeft);
+
+        Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4), $"a turn onto pass 4, not \"{effects.StatusMessage}\"");
+    }
+
+    [Test]
+    public void A_headland_built_again_forgets_where_turns_landed()
+    {
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        // The headland built again, its line 1 cm further out: the ground was judged in another field.
+        _square = new PolygonOffsetService().CalculatePointHeadings(
+            new List<Vec2> { new(-40.01, -40.01), new(40.01, -40.01), new(40.01, 40.01), new(-40.01, 40.01) });
+
+        var (effects, turn, _) = SouthEndOfPass6(SouthEndLeft);
+
+        Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4), $"a turn onto pass 4, not \"{effects.StatusMessage}\"");
+    }
+
     [Test]
     public void Another_track_forgets_where_turns_landed()
     {
