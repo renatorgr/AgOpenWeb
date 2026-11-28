@@ -1417,7 +1417,8 @@ public sealed class YouTurnStateMachine
                 // Taken for its end left to do, and the turn lands short of it: worked at this end, and
                 // the next pass of the order is looked for on the next cycle. One across the crop of the
                 // passes between is not made: the nearest pass still to do is looked for, else the end.
-                if (built.Path != null && !TurnCrossesCrop(in ctx, track, target, guidance, turn, effects, message))
+                if (built.Path != null && !TurnLandsOffTheCrop(in ctx, track, abHeading, target, guidance, turn, effects, message)
+                    && !TurnCrossesCrop(in ctx, track, target, guidance, turn, effects, message))
                 {
                     if (!TurnMissesOpenEnd(in ctx, track, target, turn, effects, message))
                         TurnRepeatsLanding(in ctx, track, target, turn, effects, message);
@@ -1690,7 +1691,8 @@ public sealed class YouTurnStateMachine
     private EndTried _searchKey;
     private (EndTried Key, int Tick)? _searchStopped; // the search that ran out of time, and the Tick it did
     // Passes built onto in this search: no turn built (its result, for the message), or a turn that
-    // drove across the crop of the passes between (TurnCrossesCrop).
+    // drove across the crop of the passes between (TurnCrossesCrop) or landed on a piece of the pass
+    // with no crop to drive to (TurnLandsOffTheCrop).
     private readonly Dictionary<int, YouTurnCreationService.TurnPathResult> _searchNotBuilt = new();
     private readonly HashSet<int> _searchCrossesCrop = new();
 
@@ -1815,6 +1817,12 @@ public sealed class YouTurnStateMachine
                 var built = BuildForSearch(in ctx, track, headingRadians, abHeading, guidance, turn, effects);
                 if (built.Path != null)
                 {
+                    // Lands on a piece of the pass with no crop to drive to: the next one.
+                    if (TurnLandsOffTheCrop(in ctx, track, abHeading, pass, guidance, turn, effects, message))
+                    {
+                        _searchCrossesCrop.Add(pass);
+                        continue;
+                    }
                     // Taken for its end left to do, and the turn lands short of it: the next one.
                     if (TurnMissesOpenEnd(in ctx, track, pass, turn, effects, message)) continue;
                     // Lands where a turn landed before, on worked ground: the next one.
@@ -1897,6 +1905,38 @@ public sealed class YouTurnStateMachine
         if (_pathing.TurnReachesUnworkedGround(path, ctx.Boundary, ctx.WorkEndLine, ctx.IsPointCovered)) return false;
         _logger.LogDebug("[YouTurn] Snake pass {Pass} is left to do only beyond where a turn here lands on it - worked at this end", pass);
         _openAtEnd[pass] = false;
+        DiscardPlannedTurn(turn);
+        effects.StatusMessage = messageBefore; // not "YouTurn path created"
+        return true;
+    }
+
+    /// <summary>
+    /// The turn just built onto <paramref name="pass"/> ends on a piece of it with no crop to drive
+    /// to: driven on from where the turn ends, the pass leaves the fence before it comes into the
+    /// area the snake works (<see cref="SnakeArea"/>). The turn is dropped, and the snake looks at
+    /// the next pass still to do. The room on a pass is asked before its turn is built
+    /// (<see cref="SnakeLandable"/>), where a turn of that step is taken to land: for a step of more
+    /// than twice the turn radius, where the next pass first leaves the area ahead of the tractor
+    /// (a wide turn runs along the turn line to it). A wide turn of no U-turn's shape is replaced by
+    /// the omega, which lands abreast of the end of the tractor's pass, and nobody had asked there.
+    /// On a tester's field (the farm job harness and the cloud, 28 Nov 2026) seven passes run on
+    /// through a neck 21 m wide into a plot the headland line leaves out, where the passes beside
+    /// them have a second piece cut off from their first by ground outside the fence: at the plot's
+    /// end of pass 21 the snake turned onto pass 25, four over, the wide turn back to its first
+    /// piece was malformed, and the omega landed on its piece in the plot, all headland band.
+    /// "End of the pass and no U-turn here" on landing, and the job ended with 18 % sown (37 % with
+    /// the other tractor, from pass 19 onto 23), where a turn onto a pass still to do through the
+    /// neck was there to make. Fork only.
+    /// </summary>
+    private bool TurnLandsOffTheCrop(in TickContext ctx, Models.Track.Track track, double abHeading, int pass,
+        GuidanceWorkingState guidance, YouTurnWorkingState turn, YouTurnEffects effects, string? messageBefore)
+    {
+        if (turn.TurnPath is not { Count: > 1 } path) return false;
+        if (ctx.Boundary?.OuterBoundary is not { IsValid: true }) return false;
+        double crop = _pathing.LandingLength(track, abHeading, pass, ctx.Boundary, SnakeArea(in ctx), ctx.CurrentPosition,
+            guidance.IsHeadingSameWay, turn.DistanceToHeadland, stopAt: 1.0, landsAt: path[^1]);
+        if (crop > 0) return false;
+        _logger.LogDebug("[YouTurn] Snake pass {Pass}: the turn there lands on a piece of it with no crop to drive to - not made", pass);
         DiscardPlannedTurn(turn);
         effects.StatusMessage = messageBefore; // not "YouTurn path created"
         return true;
