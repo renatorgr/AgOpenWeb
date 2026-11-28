@@ -1278,10 +1278,19 @@ public sealed class YouTurnPathingService
     /// obstacle) the end is out of its reach. True with no map, or with no crop to judge. Fork only.
     /// </summary>
     public bool TurnReachesUnworkedGround(IReadOnlyList<Vec3> turnPath, Boundary? boundary,
+        IReadOnlyList<Vec3>? headlandLine, Func<double, double, bool>? isPointCovered) =>
+        UnworkedGroundReached(turnPath, boundary, headlandLine, isPointCovered) >= MinNewGround;
+
+    /// <summary>
+    /// The unworked crop, m, that <see cref="TurnReachesUnworkedGround"/> finds along the turn's last
+    /// <see cref="OpenEndStretch"/> and as much again on along its last heading; infinite with no
+    /// map, or with no crop to judge. Fork only.
+    /// </summary>
+    public double UnworkedGroundReached(IReadOnlyList<Vec3> turnPath, Boundary? boundary,
         IReadOnlyList<Vec3>? headlandLine, Func<double, double, bool>? isPointCovered)
     {
         const double Step = 1.0;
-        if (isPointCovered == null || turnPath.Count < 2) return true;
+        if (isPointCovered == null || turnPath.Count < 2) return double.PositiveInfinity;
         var samples = new List<Vec2>();
         // Back along the path from its end.
         double walked = 0;
@@ -1314,7 +1323,7 @@ public sealed class YouTurnPathingService
             inside++;
             if (!isPointCovered(p.Easting, p.Northing)) unworked++;
         }
-        return inside == 0 || unworked * Step >= MinNewGround;
+        return inside == 0 ? double.PositiveInfinity : unworked * Step;
     }
 
     /// <summary>

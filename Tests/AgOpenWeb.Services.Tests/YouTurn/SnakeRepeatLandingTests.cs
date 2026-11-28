@@ -148,6 +148,24 @@ public class SnakeRepeatLandingTests
         Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4), $"a turn onto pass 4, not \"{effects.StatusMessage}\"");
     }
 
+    // Pass 4 worked but its last 15 m at the south end: a turn onto it there reaches unworked crop.
+    // The piece is left as it was each time (a turn at its other end made early for an obstacle).
+    private static readonly Func<double, double, bool> SouthEndLeft = AllCoveredBut(n => n < -25);
+
+    [Test]
+    public void A_turn_that_lands_again_and_again_on_the_same_unworked_ground_is_not_made_a_third_time()
+    {
+        // The beta robot's farm job on a tester's field (simulator, 27 Nov 2026): the turn at the far
+        // end of each piece was made early for an obstacle, about 15 m before it, so that ground was
+        // never worked, and a turn onto the piece always reached it: 1080 turns between two passes.
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        DriveTheTurnOntoPass4(SouthEndLeft); // made a second time: a piece driven with the sections off by hand
+
+        var (_, turn, _) = SouthEndOfPass6(SouthEndLeft);
+
+        Assert.That(turn.ReturnPassTargetPath, Is.Not.EqualTo(4), "no third turn onto ground two landings left unworked");
+    }
+
     [Test]
     public void Another_track_forgets_where_turns_landed()
     {
