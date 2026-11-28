@@ -116,6 +116,13 @@ public sealed record JobSpec(
     /// the headland, facing the field) is kept in <see cref="JobRun.StartWarnings"/> and the operator drives on, so the
     /// job goes on and the jobs' own check reports it. Fork only: the farm jobs.</summary>
     public bool DriveOnPastStartWarnings { get; init; }
+    /// <summary>The operator starts on a pass drawn at random (a random farm job, <see cref="FarmJobs"/>): of the passes a
+    /// start may be made on (<see cref="StartChordM"/>, <see cref="StartChordOfLongest"/>, no U-turn obstacle at its start),
+    /// the one at <c>Fraction</c> (0 to 1) of the way across, driven against A to B when <c>Against</c> (not with an
+    /// implement to one side, which starts on the boundary side). Started past the first pass, the passes before it are
+    /// not worked: with <c>WholeField</c> (the snake, which comes back for them) the field is still judged as a whole,
+    /// else as a run from a pass on (<see cref="JobRun.StartedAtPass"/>). Fork only.</summary>
+    public (double Fraction, bool Against, bool WholeField)? RandomStart { get; init; }
 }
 
 /// <summary>How the operator guides a job.</summary>
@@ -270,6 +277,9 @@ public sealed class JobRun : IAsyncDisposable
     /// run ends as an early end does (the whole-field checks are not made).</summary>
     public static readonly int FromPass = int.TryParse(Environment.GetEnvironmentVariable("AGOPENWEB_SCENARIO_FROM_PASS"), out var fp) ? fp : int.MinValue;
     public int StartedAtPass = int.MinValue;
+    /// <summary>The pass a random start (<see cref="JobSpec.RandomStart"/>) put the tractor on, when not the first along
+    /// the edge; int.MinValue = none.</summary>
+    public int RandomStartedAt = int.MinValue;
     /// <summary>The run was stopped short (AGOPENWEB_SCENARIO_TURNS / _MINUTES): a check that waits for a
     /// later turn notes it was not reached rather than reporting it lost.</summary>
     public bool ShortStopped;
@@ -701,6 +711,22 @@ public sealed class JobRun : IAsyncDisposable
         // A run from a pass on (AGOPENWEB_SCENARIO_FROM_PASS): the tractor starts on that pass,
         // driven the way the whole job would drive it (the passes alternate), the passes before it
         // left unworked. With AGOPENWEB_SCENARIO_TURNS it reworks a few passes where a finding was.
+        if (Spec.RandomStart is { } rs && FromPass == int.MinValue)
+        {
+            int d = rs.Against && Spec.T.Offset == 0 ? -dir : dir;
+            var can = Enumerable.Range(kMin, kMax - kMin + 1)
+                .Where(i => InsideChordM(i) >= need && !StartBlocked(i, d)
+                    && (Spec.EdgePass || Spec.T.Offset == 0 || InsideChordAtU(TractorU(i, d)) >= 20)).ToList();
+            if (can.Count > 0)
+            {
+                int pick = can[Math.Clamp((int)(rs.Fraction * can.Count), 0, can.Count - 1)];
+                S.Step(F($"random start: the operator starts on pass {pick}, {(d > 0 ? "along" : "against")} A to B ({can.IndexOf(pick) + 1} of the {can.Count} passes a start can be made on; the first from the edge is {k})"));
+                if (pick != k) RandomStartedAt = pick;
+                k = pick;
+                dir = d;
+            }
+            else S.Step(F($"random start: no pass a start can be made on {(d > 0 ? "along" : "against")} A to B; the operator starts on pass {k}"));
+        }
         if (FromPass != int.MinValue && FromPass > k)
         {
             if (((FromPass - k) & 1) == 1) dir = -dir;
@@ -879,6 +905,15 @@ public sealed class JobRun : IAsyncDisposable
             EndedBy = F($"a run from pass {StartedAtPass} on (AGOPENWEB_SCENARIO_FROM_PASS), the passes before it not worked");
             Did(EndedBy);
         }
+        else if (RandomStartedAt != int.MinValue && Spec.RandomStart is { WholeField: false })
+        {
+            // A random start mid-field: the job goes to one edge and stops there, the passes on the other side never
+            // worked. Judged as a run from a pass on; the snake comes back for them and is judged on the whole field.
+            StartedAtPass = RandomStartedAt;
+            EndedEarly = true;
+            EndedBy = F($"a run from pass {StartedAtPass} on (a random start), the passes before it not worked");
+            Did(EndedBy);
+        }
         for (int i = 0; i < 30; i++) { Truth.Advance(FixSeconds, 0); SendFix(); await Task.Delay(PaceMs); }
         await Rig.WaitForVmAsync();
         await SendAsync("autosteer.toggle");
@@ -1011,7 +1046,8 @@ public sealed class JobRun : IAsyncDisposable
                 // Before the first turn the operator looks at the U-turn arrow: a turn toward the
                 // edge they started from lands on a pass with less than 20 m inside the field (the
                 // start pass was the first one worth driving), so they tap the arrow the other way.
-                if (TurnsStarted == 0 && !executing && yt?.TurnPath is { Count: > 1 } path && !_arrowChecked)
+                // Started mid-field (a random start), both ways are field: the arrow is left alone.
+                if (TurnsStarted == 0 && !executing && yt?.TurnPath is { Count: > 1 } path && !_arrowChecked && RandomStartedAt == int.MinValue)
                 {
                     _arrowChecked = true;
                     // Where the implement lands: the path ends at the tractor; an implement to one

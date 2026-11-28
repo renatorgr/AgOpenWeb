@@ -36,4 +36,33 @@ public class FarmJobScenarioTests
             j => j.ToMarkdown(Title, Intro + (FarmJobs.Skipped.Count == 0 ? "" :
                 " Not run: " + string.Join("; ", FarmJobs.Skipped) + ".")), ct);
     }
+
+    public const string RandomTitle = "Farm job scenarios, random block: the farm's machines on its fields, set up by a seed";
+    public const string RandomIntro =
+        "The farm jobs' random block (FarmJobs.Random.cs): each job draws from its seed a field, a rig (the spreader's width " +
+        "10 to 28 m), the AB line's angle, the pass it starts on and which way, the skip button, and which obstacles swap U-turn " +
+        "and Go around, in a copy of the field. The fixed jobs (R codes) show what changed from one night to the next; these " +
+        "take the app where they never go. Every job's seed is in its title: AGOPENWEB_JOB_RANDOM_SEEDS=seed runs it again.";
+
+    /// <summary>The random block (<see cref="FarmJobs.RandomJobs"/>): ignored unless AGOPENWEB_JOB_RANDOM or
+    /// AGOPENWEB_JOB_RANDOM_SEEDS asks for jobs, so the fixed farm run is unchanged.</summary>
+    [Test]
+    [CancelAfter(28_800_000)]
+    public async Task Farm_jobs_random(CancellationToken ct)
+    {
+        if (FarmJobs.RandomSeeds().Count == 0)
+            Assert.Ignore("AGOPENWEB_JOB_RANDOM and AGOPENWEB_JOB_RANDOM_SEEDS ask for no random jobs");
+        if (string.IsNullOrEmpty(FarmJobs.FieldsRoot) || FarmJobs.FieldList.Count == 0)
+            Assert.Ignore("AGOPENWEB_JOB_FIELDS and AGOPENWEB_JOB_FIELD_LIST name no fields on this computer");
+        if (!Directory.Exists(FarmJobs.FieldsRoot))
+            Assert.Fail("AGOPENWEB_JOB_FIELDS is not a folder: " + FarmJobs.FieldsRoot);
+        using var exclusive = FieldJobScenarioTests.OneRunAtATime();
+        try
+        {
+            await Jobs.RunFixtureAsync(FarmJobs.RandomJobs().Select(j => ("Careful", j)), "farm-random-job-scenarios-report.md",
+                j => j.ToMarkdown(RandomTitle, RandomIntro + (FarmJobs.Skipped.Count == 0 ? "" :
+                    " Not run: " + string.Join("; ", FarmJobs.Skipped) + ".")), ct);
+        }
+        finally { FarmJobs.DeleteRandomCopies(); }
+    }
 }
