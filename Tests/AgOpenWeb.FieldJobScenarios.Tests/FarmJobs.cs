@@ -92,7 +92,8 @@ public static partial class FarmJobs
         var typed = TypedOnTop;
         var skip = SkipTyped;
         string forThisRun = (typed.Count > 0 ? " For this run the operator typed on top: " + string.Join(", ", typed.Select(Shown)) + "." : "")
-            + (skip is { } sk ? JobRun.F($" For this run the skip button is set to mode {sk.Mode}, {sk.Rows} row(s), not the field's own.") : "");
+            + (skip is { } sk ? JobRun.F($" For this run the skip button is set to mode {sk.Mode}, {sk.Rows} row(s), not the field's own.") : "")
+            + (TrialRunOptions.Moved.Length > 0 ? " TRIAL options of this run: " + TrialRunOptions.Moved + "." : "");
         for (int i = 0; i < list.Count; i++)
         {
             string name = list[i], folder = Path.Combine(root, name);
