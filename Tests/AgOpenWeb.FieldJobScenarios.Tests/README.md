@@ -325,11 +325,17 @@ pass at this end", "No U-turn onto the next pass: ..."):
 - On the way to that end AgOpenWeb may switch AutoSteer off with its alarm (an obstacle on the pass with no
   U-turn before it, the fence). The operator engages again once, after 2 s; when it does not stay on (off
   again within 10 s, or still off 2 s later) he takes over there and drives on by hand from there
-  (`JobRun.TakeOverBeforeNoRoomEnd`). The harness tractor rolled on to the end of the pass, steered by nobody,
+  (`JobRun.TakeOverAtAlarm`). The harness tractor rolled on to the end of the pass, steered by nobody,
   through whatever was on it: on Couto da Ribeira started on pass 17 (28 Nov 2026) through a hard obstacle and
   the ditch, with 11 m² sprayed inside them and a `SPRAYED-IN-OBSTACLE` Safety finding that was the harness's
   own. `NO-ROOM-DROVE-ON-BY-HAND` says which times he took over at the alarm, before the end of the pass; with
   every time used up (20) the job ends at the alarm.
+- An alarm on any other stretch, with AutoSteer still off 2 s after the operator's try: the job ends there
+  ("the operator took over at AgOpenWeb's alarm"). It ended only once the tractor, steered by nobody, had
+  rolled 25 m out of the field: in the same job the Maxxum, put by hand at the start of a pass with an obstacle
+  just ahead, rolled through it, 4 m² sprayed inside it and half a percent of the field sprayed on the way.
+  Not after AgOpenWeb has said the end of the field (the last pass is driven to its end), and only in the
+  farm jobs.
 - Each time is listed in `NO-ROOM-DROVE-ON-BY-HAND` (Improvement), and the share sprayed at the first one is
   a metric (also when no pass was left to drive to): it is the number the job ended with before. The passes
   driven by hand count in "U-turns / passes".
