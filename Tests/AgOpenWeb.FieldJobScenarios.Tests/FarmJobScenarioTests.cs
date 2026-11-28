@@ -57,8 +57,12 @@ public class FarmJobScenarioTests
         if (!Directory.Exists(FarmJobs.FieldsRoot))
             Assert.Fail("AGOPENWEB_JOB_FIELDS is not a folder: " + FarmJobs.FieldsRoot);
         using var exclusive = FieldJobScenarioTests.OneRunAtATime();
-        await Jobs.RunFixtureAsync(FarmJobs.RandomJobs().Select(j => ("Careful", j)), "farm-random-job-scenarios-report.md",
-            j => j.ToMarkdown(RandomTitle, RandomIntro + (FarmJobs.Skipped.Count == 0 ? "" :
-                " Not run: " + string.Join("; ", FarmJobs.Skipped) + ".")), ct);
+        try
+        {
+            await Jobs.RunFixtureAsync(FarmJobs.RandomJobs().Select(j => ("Careful", j)), "farm-random-job-scenarios-report.md",
+                j => j.ToMarkdown(RandomTitle, RandomIntro + (FarmJobs.Skipped.Count == 0 ? "" :
+                    " Not run: " + string.Join("; ", FarmJobs.Skipped) + ".")), ct);
+        }
+        finally { FarmJobs.DeleteRandomCopies(); }
     }
 }

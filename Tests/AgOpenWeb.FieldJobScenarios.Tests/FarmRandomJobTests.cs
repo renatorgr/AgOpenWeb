@@ -46,7 +46,8 @@ public class FarmRandomJobTests
             Assert.That(draws.Select(d => d.RigDigit).Distinct().Count(), Is.EqualTo(6));
             Assert.That(draws.Count(d => d.AngleDeg != 0), Is.InRange(40, 80));
             Assert.That(draws.Count(d => !d.StartAtEdge), Is.InRange(50, 90));
-            Assert.That(draws.Count(d => d.Swap.Any(x => x)), Is.GreaterThan(20));
+            // One obstacle in four: 297 obstacles drawn, about 74 swapped.
+            Assert.That(draws.Sum(d => d.Swap.Count(x => x)), Is.InRange(45, 105));
         });
     }
 
@@ -55,6 +56,8 @@ public class FarmRandomJobTests
     {
         Assert.That(FarmJobs.ParseSeeds(" 2026112803, 7 "), Is.EqualTo(new[] { 2026112803, 7 }));
         Assert.Throws<InvalidOperationException>(() => FarmJobs.ParseSeeds("12,x"));
+        Assert.Throws<InvalidOperationException>(() => FarmJobs.ParseSeeds("12,,13"), "a seed left out is not a shorter run");
+        Assert.Throws<InvalidOperationException>(() => FarmJobs.ParseSeeds("12,"));
         Assert.That(FarmJobs.SeedsFor(20261128, 3), Is.EqualTo(new[] { 2026112801, 2026112802, 2026112803 }));
     }
 
@@ -115,12 +118,25 @@ public class FarmRandomJobTests
     }
 
     [Test]
+    public void A_copy_never_goes_where_something_is_already()
+    {
+        string src = WriteField(), dst = Path.Combine(_dir, "copy");
+        Directory.CreateDirectory(dst);
+        File.WriteAllText(Path.Combine(dst, "keep.txt"), "x");
+        Assert.Throws<IOException>(() => FarmJobs.MakeRandomField(src, dst, "AB 0", 0, Array.Empty<bool>()));
+        Assert.That(File.Exists(Path.Combine(dst, "keep.txt")), Is.True);
+        Assert.Throws<IOException>(() => FarmJobs.MakeRandomField(src, src, "AB 0", 0, Array.Empty<bool>()), "never over the farmer's own folder");
+    }
+
+    [Test]
     public void No_angle_works_the_field_s_own_line()
     {
         string src = WriteField(), dst = Path.Combine(_dir, "copy");
         var (track, swapped) = FarmJobs.MakeRandomField(src, dst, "AB 0", 0, Array.Empty<bool>());
         Assert.That(track, Is.EqualTo("AB 0"));
         Assert.That(swapped, Is.Empty);
-        Assert.That(ScenarioField.FromFieldFolder(dst, "copy").Tracks, Has.Count.EqualTo(1));
+        var tracks = ScenarioField.FromFieldFolder(dst, "copy").Tracks;
+        Assert.That(tracks, Has.Count.EqualTo(1));
+        Assert.That(tracks[0].Points, Is.EqualTo(ScenarioField.FromFieldFolder(src, "src").Tracks[0].Points), "the line as saved");
     }
 }

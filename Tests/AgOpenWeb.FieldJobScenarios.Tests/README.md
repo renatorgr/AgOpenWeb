@@ -347,7 +347,11 @@ across a field. `Farm_jobs_random` (`FarmJobs.Random.cs`) adds a few jobs that d
   the start (30 % the first pass from the edge, as the R jobs, else any pass a start can be made on,
   along or against A to B); the skip button (30 % the field's own, else mode 0 to 2 with 0 to 2 rows);
   and for each obstacle, one in four, its U-turn / Go around choice swapped (Drive through stays).
-- The changes are made in a copy of the field folder in the system's temp folder, never in the farmer's.
+- The changes are made in a copy of the field folder, never in the farmer's: in a new folder of the run's own
+  in the system's temp folder, deleted when the run ends. A field list entry that is not a plain folder name
+  is not run.
+- An implement to one side starts on the boundary side, along A to B, whatever the start's way drawn (as the
+  R jobs); the job's steps say the way it started.
 - A start mid-field leaves the passes before it unworked: the job is judged as a run from a pass on, as
   with `AGOPENWEB_SCENARIO_FROM_PASS`, except with *ignore worked tracks*, where the snake comes back for
   them and the whole field is judged. The first-turn-to-the-edge check is left out for such a start.

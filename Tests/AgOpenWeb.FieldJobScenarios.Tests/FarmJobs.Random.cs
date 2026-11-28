@@ -52,7 +52,7 @@ public static partial class FarmJobs
     /// <summary>AGOPENWEB_JOB_RANDOM_SEEDS: whole numbers split by <c>,</c>; anything else stops the run, as the
     /// jobs asked for again would otherwise be other jobs.</summary>
     public static IReadOnlyList<int> ParseSeeds(string text) =>
-        text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(s =>
+        text.Split(',', StringSplitOptions.TrimEntries).Select(s =>
             int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out int v) ? v
                 : throw new InvalidOperationException($"AGOPENWEB_JOB_RANDOM_SEEDS: '{s}' is not a seed (whole numbers split by ',').")).ToList();
 
@@ -83,6 +83,26 @@ public static partial class FarmJobs
         return new RandomDraw(seed, field, rig, width, angle, edge, edge ? 0 : fraction, !edge && against, skip, swap);
     }
 
+    /// <summary>This run's folder for the fields' copies: made new and empty (owner only) in the system's temp folder,
+    /// so nothing in it was there before; <see cref="DeleteRandomCopies"/> takes it away after the run.</summary>
+    private static string? _copies;
+
+    private static string CopiesRoot => _copies ??= Directory.CreateTempSubdirectory("agopenweb-random-jobs-").FullName;
+
+    /// <summary>Takes this run's field copies away (the test calls it when the jobs are done, failed or not).</summary>
+    public static void DeleteRandomCopies()
+    {
+        if (_copies == null) return;
+        try { Directory.Delete(_copies, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        _copies = null;
+    }
+
+    /// <summary>A field list entry is a folder's name, never a path: a copy is made under that name, and a name
+    /// with a separator, a root or ".." could put it outside the copies' folder.</summary>
+    private static bool IsPlainName(string name) =>
+        name.Length > 0 && name is not ("." or "..") && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
+        && name.IndexOf('/') < 0 && name.IndexOf('\\') < 0 && !Path.IsPathRooted(name);
+
     public static IEnumerable<JobSpec> RandomJobs()
     {
         Skipped.Clear();
@@ -100,10 +120,11 @@ public static partial class FarmJobs
             int seed = seeds[n];
             var d = Draw(seed, list.Count, i => InnerCount(Path.Combine(root, list[i])));
             string code = JobRun.F($"X{n + 1}"), name = list[d.FieldIndex], folder = Path.Combine(root, name);
+            if (!IsPlainName(name)) { Skipped.Add($"{code} (seed {seed}) '{name}': not a field folder's name"); continue; }
             if (!File.Exists(Path.Combine(folder, "field.geojson"))) { Skipped.Add($"{code} (seed {seed}) '{name}': no field.geojson in its folder"); continue; }
             string? baseTrack = AbTrack(folder, ScenarioField.FromFieldFolder(folder, name));
             if (baseTrack == null) { Skipped.Add($"{code} (seed {seed}) '{name}': no AB line in the field"); continue; }
-            string copy = Path.Combine(Path.GetTempPath(), "agopenweb-random-jobs", seed.ToString(CultureInfo.InvariantCulture), name);
+            string copy = Path.Combine(CopiesRoot, code, name);
             var (track, swapped) = MakeRandomField(folder, copy, baseTrack, d.AngleDeg, d.Swap);
             var field = ScenarioField.FromFieldFolder(copy, name);
             var rig = d.RigDigit <= 4 ? kit.Rigs().First(r => r.Digit == d.RigDigit) : kit.Spreader(d.RigDigit, d.SpreaderWidth);
@@ -113,7 +134,7 @@ public static partial class FarmJobs
             string drawn = JobRun.F($"Random job, seed {seed} (AGOPENWEB_JOB_RANDOM_SEEDS={seed} runs it again): ")
                 + (d.AngleDeg == 0 ? JobRun.F($"the field's AB line '{track}'") : JobRun.F($"the AB line '{baseTrack}' turned {d.AngleDeg:+0;-0}° about its middle ('{track}')"))
                 + "; " + (d.StartAtEdge ? "the start on the first pass from the edge, as the fixed jobs"
-                    : JobRun.F($"the start {d.StartFraction * 100:0} % of the way across the passes a start can be made on, {(d.StartAgainst ? "against" : "along")} A to B"))
+                    : JobRun.F($"the start {d.StartFraction * 100:0} % of the way across the passes a start can be made on, {(d.StartAgainst ? "against A to B (along it with an implement to one side, which starts on the boundary side)" : "along A to B")}"))
                 + "; " + (d.Skip is { } s ? JobRun.F($"the skip button set to mode {s.Mode}, {s.Rows} row(s)") : skipTyped is { } t ? JobRun.F($"the skip button at AGOPENWEB_JOB_SKIP's mode {t.Mode}, {t.Rows} row(s)") : "the field's own skip button")
                 + "; " + (swapped.Count == 0 ? JobRun.F($"the {field.Inner.Count} obstacle(s) as saved") : "obstacles swapped: " + string.Join(", ", swapped))
                 + ".";
@@ -145,7 +166,8 @@ public static partial class FarmJobs
     /// </summary>
     public static (string Track, List<string> Swapped) MakeRandomField(string src, string dst, string baseTrack, int angleDeg, IReadOnlyList<bool> swap)
     {
-        if (Directory.Exists(dst)) Directory.Delete(dst, recursive: true);
+        // Never written over: a copy goes in a folder of its own, made here (a folder already there could be anything).
+        if (Directory.Exists(dst) || File.Exists(dst)) throw new IOException("the field's copy would go where something is already: " + dst);
         Directory.CreateDirectory(dst);
         foreach (var f in new[] { "field.origin", "HeadlandSegments.json", "UTurnSkip.json", "TramConfig.json" })
         {
