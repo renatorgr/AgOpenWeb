@@ -541,9 +541,19 @@ public sealed class YouTurnPathingService
     /// corner the headland clips off the pass, a gap across it, not the pass's end. Null when
     /// the pass ends there: it leaves the field before any more of it inside, or there is none
     /// within <see cref="MaxGapAhead"/>. Null too without a usable outer boundary.
+    /// <para>
+    /// Beside a hard fence the rig must fit all the way across (<paramref name="rigFits"/>,
+    /// <see cref="PassEnds.RigFits"/>, asked for each metre walked; fork only): the pass's line
+    /// can stay inside the fence where the implement does not, by the tip of a bay. There the
+    /// pass ends (<see cref="PassEnds.Find"/> ends it for the same reason), and with the line
+    /// alone looked at here, no turn at that end was "a gap to drive on across": AutoSteer was
+    /// left on to the tip, where the fence guard took it off (Tapada da Casa, a 3 m no-till
+    /// drill, the night of 27 Nov 2026: every job with the drill ended there).
+    /// </para>
     /// </summary>
     public double? GapAhead(Models.Track.Track track, double abHeading, int pathsAway,
-        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead)
+        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead,
+        Func<Vec3, Vec3, bool>? rigFits = null)
     {
         var outer = boundary?.OuterBoundary;
         if (outer == null || !outer.IsValid) return null;
@@ -600,6 +610,7 @@ public sealed class YouTurnPathingService
             {
                 var p = curve[i + fwd];
                 if (!outer.IsPointInside(p.Easting, p.Northing)) return null;
+                if (rigFits != null && !rigFits(curve[i], p)) return null;
                 bool inside = IsPointInsideCultivatedArea(p.Easting, p.Northing, boundary, headlandLine);
                 if (left && inside && RunsOnInsideFrom(i + fwd)) return gap;
                 if (!left && !inside) { left = true; gap = 0; }
@@ -635,11 +646,15 @@ public sealed class YouTurnPathingService
             }
             return true;
         }
+        var before = new Vec3(midE + abNx * tAt, midN + abNy * tAt, 0);
         for (double d = Step; d <= RunOnLimit + MaxGapAhead; d += Step)
         {
             double t = tAt + s * d;
             double e = midE + abNx * t, n = midN + abNy * t;
             if (!outer.IsPointInside(e, n)) return null;
+            var here = new Vec3(e, n, 0);
+            if (rigFits != null && !rigFits(before, here)) return null;
+            before = here;
             bool inside = IsPointInsideCultivatedArea(e, n, boundary, headlandLine);
             if (double.IsNaN(crossedAt))
             {
@@ -696,19 +711,30 @@ public sealed class YouTurnPathingService
     /// <paramref name="steeredLine"/> (the pass bent round Go around obstacles, the line the
     /// tractor follows) that line is walked instead, from its point nearest the tractor: the
     /// straight pass beside a bend can still be in the crop where the bend has left it. Fork only.
+    /// <para>
+    /// With <paramref name="rigFits"/> (<see cref="PassEnds.RigFits"/>: a hard fence), a metre of
+    /// the walk the rig does not fit along counts as the fence: the line stays inside by the tip
+    /// of a bay where the implement does not, and the pass ends there as it does where it leaves
+    /// the field (<see cref="GapAhead"/>).
+    /// </para>
     /// </summary>
     public bool PassLeavesFieldAhead(Models.Track.Track track, double abHeading, int pathsAway,
         Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay,
-        IReadOnlyList<Vec3>? steeredLine = null, double nudge = 0, double toolShift = 0, double reach = MaxWalkToFence)
+        IReadOnlyList<Vec3>? steeredLine = null, double nudge = 0, double toolShift = 0, double reach = MaxWalkToFence,
+        Func<Vec3, Vec3, bool>? rigFits = null)
     {
         var outer = boundary?.OuterBoundary;
         if (outer == null || !outer.IsValid || track.Points.Count < 2) return false;
 
         double insideRun = 0;
+        Vec3? walked = null;
         foreach (var p in PassPointsAhead(track, abHeading, pathsAway, position, headingSameWay, steeredLine, reach,
                      nudge, toolShift))
         {
             if (!outer.IsPointInside(p.Easting, p.Northing)) return true;
+            var here = new Vec3(p.Easting, p.Northing, 0);
+            if (rigFits != null && walked is { } before && !rigFits(before, here)) return true;
+            walked = here;
             if (IsPointInsideCultivatedArea(p.Easting, p.Northing, boundary, headlandLine))
             {
                 insideRun += WalkStep;
