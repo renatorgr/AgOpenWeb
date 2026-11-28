@@ -1203,10 +1203,10 @@ tool.defaultSectionWidth
   app      YouTurnPathingService.GapAhead  (via ToolConfig._sectionWidths > ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.InsideLength  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.InsideLength  (via ToolConfig._sectionWidths > ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
-  app      YouTurnPathingService.IsPassWorked  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
-  app      YouTurnPathingService.IsPassWorked  (via ToolConfig._sectionWidths > ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.Landing  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.Landing  (via ToolConfig._sectionWidths > ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
+  app      YouTurnPathingService.PassCover  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
+  app      YouTurnPathingService.PassCover  (via ToolConfig._sectionWidths > ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.PassPointsAhead  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.PassPointsAhead  (via ToolConfig._sectionWidths > ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnStateMachine.AimTurnAt  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
@@ -1494,10 +1494,10 @@ tool.numSections
   app      YouTurnPathingService.GapAhead  (via ToolConfig._sectionWidths > ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.InsideLength  (via ConfigurationStore._numSections > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.InsideLength  (via ToolConfig._sectionWidths > ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
-  app      YouTurnPathingService.IsPassWorked  (via ConfigurationStore._numSections > ConfigurationStore.ActualToolWidth)
-  app      YouTurnPathingService.IsPassWorked  (via ToolConfig._sectionWidths > ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.Landing  (via ConfigurationStore._numSections > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.Landing  (via ToolConfig._sectionWidths > ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
+  app      YouTurnPathingService.PassCover  (via ConfigurationStore._numSections > ConfigurationStore.ActualToolWidth)
+  app      YouTurnPathingService.PassCover  (via ToolConfig._sectionWidths > ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.PassPointsAhead  (via ConfigurationStore._numSections > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.PassPointsAhead  (via ToolConfig._sectionWidths > ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnStateMachine.AimTurnAt  (via ConfigurationStore._numSections > ConfigurationStore.ActualToolWidth)
@@ -1635,8 +1635,8 @@ tool.overlap
   app      YouTurnPathingService.EndStretch
   app      YouTurnPathingService.GapAhead
   app      YouTurnPathingService.InsideLength
-  app      YouTurnPathingService.IsPassWorked
   app      YouTurnPathingService.Landing
+  app      YouTurnPathingService.PassCover
   app      YouTurnPathingService.PassPointsAhead
   app      YouTurnStateMachine.AimTurnAt
   app      YouTurnStateMachine.CompleteTurn
@@ -1687,8 +1687,8 @@ tool.overlapSide
   app      YouTurnPathingService.EndStretch
   app      YouTurnPathingService.GapAhead
   app      YouTurnPathingService.InsideLength
-  app      YouTurnPathingService.IsPassWorked
   app      YouTurnPathingService.Landing
+  app      YouTurnPathingService.PassCover
   app      YouTurnPathingService.PassPointsAhead
   app      YouTurnStateMachine.AimTurnAt
   app      YouTurnStateMachine.CompleteTurn
@@ -1805,8 +1805,8 @@ tool.sectionWidth
   app      YouTurnPathingService.EndStretch  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.GapAhead  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.InsideLength  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
-  app      YouTurnPathingService.IsPassWorked  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.Landing  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
+  app      YouTurnPathingService.PassCover  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnPathingService.PassPointsAhead  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnStateMachine.AimTurnAt  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
   app      YouTurnStateMachine.CompleteTurn  (via ToolConfig.GetSectionWidth > ConfigurationStore.ActualToolWidth)
@@ -2035,6 +2035,7 @@ uturn.distanceFromBoundary
   app      YouTurnCreationService.SimpleFallback
   app      YouTurnCreationService.TurnObstacleAhead
   app      YouTurnPathingService.NoLandingMessage
+  app      YouTurnPathingService.PieceAheadOfTurn
   app      YouTurnPathingService.TurnObstacleCuts
   app      YouTurnStateMachine.EndKey
   app      YouTurnStateMachine.ObstacleTurnedAt
