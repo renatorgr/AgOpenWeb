@@ -55,13 +55,19 @@ public class GapPastFenceTipTests
         _track = Models.Track.Track.FromABLine("AB", new Vec3(0, -100, 0), new Vec3(0, 100, 0));
     }
 
-    /// <summary>A fence at ±50 with a bay from the east side, its tip <paramref name="tipClear"/> m east of pass 6 at y 0.</summary>
-    private static Boundary Field(bool hard, double tipClear)
+    /// <summary>
+    /// A fence at ±50 with a bay from the east side, its tip <paramref name="tipClear"/> m east of pass 6 at y 0.
+    /// With <paramref name="spikeClear"/>, a second, narrow spike whose tip is that far east of pass 6 at y 15:
+    /// beside the 10 m of the pass that are in the area again past the bay.
+    /// </summary>
+    private static Boundary Field(bool hard, double tipClear, double? spikeClear = null)
     {
-        var fence = new List<Vec2>
-        {
-            new(-50, -50), new(50, -50), new(50, -20), new(Pass6 + tipClear, 0), new(50, 20), new(50, 50), new(-50, 50),
-        };
+        var fence = new List<Vec2> { new(-50, -50), new(50, -50), new(50, -20), new(Pass6 + tipClear, 0) };
+        if (spikeClear is { } clear)
+            fence.AddRange(new Vec2[] { new(50, 12), new(Pass6 + clear, 15), new(50, 18) });
+        else
+            fence.Add(new(50, 20));
+        fence.AddRange(new Vec2[] { new(50, 50), new(-50, 50) });
         return new Boundary
         {
             OuterBoundary = new BoundaryPolygon
@@ -120,6 +126,38 @@ public class GapPastFenceTipTests
         {
             Assert.That(Gap(_track, field, RigFits(field)), Is.EqualTo(23.3).Within(1.5));
             Assert.That(Gap(Curve(), field, RigFits(field)), Is.EqualTo(23.3).Within(2.5));
+        });
+    }
+
+    [Test]
+    public void No_gap_where_the_rig_does_not_fit_along_the_pass_just_past_it()
+    {
+        // The bay's tip is 3 m off (the rig fits by it), and a spike's tip is 0.7 m from the pass at y 15,
+        // 3 m after the pass is in the area again: the 10 m that make the gap one to drive across.
+        var field = Field(hard: true, tipClear: 3.0, spikeClear: 0.7);
+        Assert.Multiple(() =>
+        {
+            Assert.That(Gap(_track, field, null), Is.EqualTo(23.3).Within(1.5), "the scenario: the line alone stays inside the fence");
+            Assert.That(Gap(_track, field, RigFits(field)), Is.Null, "an AB line's pass");
+            Assert.That(Gap(Curve(), field, RigFits(field)), Is.Null, "a curve's pass");
+        });
+    }
+
+    [Test]
+    public void The_gap_is_looked_for_on_the_pass_as_nudged()
+    {
+        // The bay's tip 3 m from the pass: the rig fits. Nudged 2 m towards it, the tip is 1 m off: it does not.
+        var wide = Field(hard: true, tipClear: 3.0);
+        // The tip 0.7 m from the pass: the rig does not fit. Nudged 2 m away, it is 2.7 m off: it does.
+        var tight = Field(hard: true, tipClear: 0.7);
+        double? Nudged(Models.Track.Track track, Boundary field, double nudge) =>
+            _pathing.GapAhead(track, 0, 6, field, _area, At(Pass6 + nudge, -35), true, 15, RigFits(field), nudge);
+        Assert.Multiple(() =>
+        {
+            Assert.That(Nudged(_track, wide, 2.0), Is.Null, "an AB line's pass nudged towards the tip");
+            Assert.That(Nudged(Curve(), wide, 2.0), Is.Null, "a curve's pass nudged towards the tip");
+            Assert.That(Nudged(_track, tight, -2.0), Is.Not.Null, "an AB line's pass nudged away from the tip");
+            Assert.That(Nudged(Curve(), tight, -2.0), Is.Not.Null, "a curve's pass nudged away from the tip");
         });
     }
 

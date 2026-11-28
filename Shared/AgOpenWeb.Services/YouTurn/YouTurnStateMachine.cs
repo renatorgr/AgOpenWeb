@@ -2471,7 +2471,8 @@ public sealed class YouTurnStateMachine
         GuidanceWorkingState guidance, YouTurnWorkingState turn, YouTurnEffects effects)
     {
         double? gap = _pathing.GapAhead(track, abHeading, guidance.HowManyPathsAway, ctx.Boundary, ctx.HeadlandLine,
-            ctx.CurrentPosition, guidance.IsHeadingSameWay, turn.DistanceToHeadland, RigFitsBesideFence(in ctx));
+            ctx.CurrentPosition, guidance.IsHeadingSameWay, turn.DistanceToHeadland, RigFitsBesideFence(in ctx),
+            guidance.NudgeOffset);
         if (gap is not { } metres) return false;
         _logger.LogDebug("[YouTurn] No pass with room at this headland; pass {Pass} goes on {Gap:F0}m past it - no turn, driving on",
             guidance.HowManyPathsAway, metres);

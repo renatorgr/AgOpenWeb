@@ -548,19 +548,27 @@ public sealed class YouTurnPathingService
     /// pass ends (<see cref="PassEnds.Find"/> ends it for the same reason), and with the line
     /// alone looked at here, no turn at that end was "a gap to drive on across": AutoSteer was
     /// left on to the tip, where the fence guard took it off (Tapada da Casa, a 3 m no-till
-    /// drill, the night of 27 Nov 2026: every job with the drill ended there).
+    /// drill, the night of 27 Nov 2026: every job with the drill ended there). The 10 m the pass
+    /// must run on in the field past the gap are held to the same test. The stretch before
+    /// <paramref name="headlandAhead"/> is not: that is the pass up to its end, which
+    /// <see cref="PassEnds.Find"/> already ends where the rig does not fit outside the turn line,
+    /// and inside the turn line an implement's end over the fence is the fence guard's.
+    /// </para>
+    /// <para>
+    /// <paramref name="nudge"/> moves the pass as the end of the pass was found with it (the
+    /// guidance nudge): a pass nudged towards a tip can no longer fit by it, one nudged away can.
     /// </para>
     /// </summary>
     public double? GapAhead(Models.Track.Track track, double abHeading, int pathsAway,
         Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Position position, bool headingSameWay, double headlandAhead,
-        Func<Vec3, Vec3, bool>? rigFits = null)
+        Func<Vec3, Vec3, bool>? rigFits = null, double nudge = 0)
     {
         var outer = boundary?.OuterBoundary;
         if (outer == null || !outer.IsValid) return null;
         if (track.Points.Count < 2) return null;
         var config = _configStore;
         double widthMinusOverlap = config.ActualToolWidth - config.Tool.Overlap;
-        double distAway = PassGeometry.Offset(track, pathsAway, widthMinusOverlap);
+        double distAway = PassGeometry.Offset(track, pathsAway, widthMinusOverlap, nudge);
         const double Step = 1.0;
         double ahead = Math.Clamp(double.IsFinite(headlandAhead) ? headlandAhead : 0, 0, 2000);
 
@@ -602,6 +610,7 @@ public sealed class YouTurnPathingService
                     var q = curve[k + fwd];
                     if (!outer.IsPointInside(q.Easting, q.Northing) || !IsPointInsideCultivatedArea(q.Easting, q.Northing, boundary, headlandLine))
                         return false;
+                    if (rigFits != null && !rigFits(curve[k], q)) return false;
                     run += Dist(k, k + fwd);
                 }
                 return true;
@@ -639,10 +648,14 @@ public sealed class YouTurnPathingService
         // Inside again for at least MinRunAfterGap: the pass goes on in the field there.
         bool RunsOnInside(double t)
         {
+            var from = new Vec3(midE + abNx * t, midN + abNy * t, 0);
             for (double k = Step; k <= MinRunAfterGap; k += Step)
             {
                 double e = midE + abNx * (t + s * k), n = midN + abNy * (t + s * k);
                 if (!outer.IsPointInside(e, n) || !IsPointInsideCultivatedArea(e, n, boundary, headlandLine)) return false;
+                var to = new Vec3(e, n, 0);
+                if (rigFits != null && !rigFits(from, to)) return false;
+                from = to;
             }
             return true;
         }
