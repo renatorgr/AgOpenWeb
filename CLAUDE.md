@@ -432,6 +432,17 @@ thread" stand-in, `IUiDispatcher`), coordinates services, and is driven only thr
 | `MainViewModel.ImplementGps.cs` | Fork only: a GPS on a trailed implement (UDP 9990), shown and recorded, never steered by |
 | `MainViewModel.*.Remote.cs` | Web-client-only flows (field builder edits, headland, KML, tram) |
 
+**Since the official refactor** (#977, merged 27 Nov 2026, `Plans/MAINVIEWMODEL_REFACTOR_PLAN.md`): the services are
+registered once in `Shared/AgOpenWeb.RemoteWiring/BackendServices.cs` (a head keeps only its own: logging, network,
+battery, device report, VT), so a new service goes there, not in the three heads. Opening and closing a field are
+declared steps (`MainViewModel.FieldSession.cs`, each with the reason for its place; the bodies in
+`MainViewModel.FieldSteps.cs`, each domain's open beside its close): a new thing a field starts gets an open step and
+a close step there. The fork's own steps are listed there too (obstacle choice notice, field progress, U-turn skip)
+with their methods in the fork's files (`MainViewModel.Obstacles.Remote.cs`, `.FieldProgress.cs`, `.YouTurn.cs`). Flags,
+headland segments and tracks are the field session's (`FieldFlags`, `FieldHeadland`, `HeadlandSegmentBuilder` with the
+fork's Along the Passes, `TrackFile`). The characterization tests and `Tools/settings-readers/settings-readers.txt` hold
+the fork's data: at a sync remake them (their update switches) and check every difference is a fork feature.
+
 ### ConfigurationStore
 `ConfigurationStore` is a reactive singleton holding all runtime configuration (vehicle, tool, guidance, hotkeys, etc.). It syncs to/from `AppSettings` JSON via `ConfigurationService`.
 

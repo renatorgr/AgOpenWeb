@@ -49,6 +49,8 @@ left behind: vm.SelectedHeadlandSegment.IsSelected
 left behind: vm.SelectedHeadlandSegment.Name
 left behind: vm.SelectedHeadlandSegment.Offset
 left behind: vm.SelectedHeadlandSegment.OffsetPoints
+left behind: vm.SelectedHeadlandSegment.PassHeading
+left behind: vm.SelectedHeadlandSegment.SideOffset
 left behind: vm.SelectedHeadlandSegment.StartExtension
 left behind: vm.SelectedHeadlandSegment.Type
 left behind: vm.State.Field.HeadlandProximityDistance
@@ -123,6 +125,8 @@ showing through: vm.SelectedHeadlandSegment.IsSelected
 showing through: vm.SelectedHeadlandSegment.Name
 showing through: vm.SelectedHeadlandSegment.Offset
 showing through: vm.SelectedHeadlandSegment.OffsetPoints
+showing through: vm.SelectedHeadlandSegment.PassHeading
+showing through: vm.SelectedHeadlandSegment.SideOffset
 showing through: vm.SelectedHeadlandSegment.StartExtension
 showing through: vm.SelectedHeadlandSegment.Type
 showing through: vm.State.Guidance.CurrentLineLabel
