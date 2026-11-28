@@ -327,15 +327,12 @@ public partial class MainViewModel
             SetProperty(ref _simulatorSteerAngle, value);
             State.Simulator.SteerAngle = value; // mirror for the web-UI projector
             PersistentState.SimulatorSteerAngle = value; // persisted on close
-            OnPropertyChanged(nameof(SimulatorSteerAngleDisplay)); // Notify display property
             if (_isSimulatorEnabled)
             {
                 _simulatorService.SteerAngle = value;
             }
         }
     }
-
-    public string SimulatorSteerAngleDisplay => $"{_simulatorSteerAngle:F1}°";
 
     /// <summary>
     /// Simulator speed in kph. Range: -10 to +25 kph, also with 10x on (10x is time-lapse, fork only).
@@ -447,14 +444,6 @@ public partial class MainViewModel
         StatusMessage = saved
             ? $"Simulator reset to {latitude:F8}, {longitude:F8}"
             : $"Reset to {latitude:F8}, {longitude:F8} (save failed: {_settingsService.GetSettingsFilePath()})";
-    }
-
-    /// <summary>
-    /// Get current simulator position
-    /// </summary>
-    public AgOpenWeb.Models.Wgs84 GetSimulatorPosition()
-    {
-        return _simulatorService.CurrentPosition;
     }
 
     #endregion
