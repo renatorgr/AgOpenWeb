@@ -481,6 +481,7 @@ public partial class MainViewModel
         FixQuality = GetFixQualityString(v.FixQuality);
         GpsToPgnLatencyMs = _latestGpsToPgnLatencyMs;
         ExpireNtripNotice();
+        ImplementGpsStatusTick(); // the implement's GPS, UDP 9990 (fork only)
     }
 
     #endregion

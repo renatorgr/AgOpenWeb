@@ -531,6 +531,48 @@ function toolFootprintSk(canvas) {
     path.delete();
   }
 }
+// The real implement, from a GPS on it (fork only; UDP 9990, MainViewModel.ImplementGps.cs): the Tick says where its
+// working centre and antenna are against the model's implement (across / along its heading, its heading less the
+// model's), so it is drawn from the model's implement as drawn and moves with it. A dashed magenta line where it
+// really works, as wide as the tool, its centre line to the tractor's pin, and the antenna. Paler when the fix was not
+// of the tractor's instant; not drawn once the fix is 2 s old.
+function implementGpsSk(canvas) {
+  const ip = tick && tick.implementPose, t = renderTool();
+  if (!ip || !t || !(ip.age < 2) || (!t.e && !t.n)) return;
+  if (!SKP.implGps) {
+    SKP.implGps = new CK.Paint();
+    SKP.implGps.setStyle(CK.PaintStyle.Stroke);
+    SKP.implGps.setAntiAlias(true);
+    SKP.implGps.setStrokeCap(CK.StrokeCap.Round);
+    SKP.implGpsDash = CK.PathEffect.MakeDash([10, 6], 0);
+    SKP.implGpsDot = new CK.Paint();
+    SKP.implGpsDot.setStyle(CK.PaintStyle.Fill);
+    SKP.implGpsDot.setAntiAlias(true);
+  }
+  const col = ckColor(ip.ready === 1 ? '#FF2BD6' : 'rgba(255,43,214,0.5)');
+  SKP.implGps.setColor(col);
+  SKP.implGpsDot.setColor(col);
+  // the model's frame: right and ahead of its heading
+  const hs = Math.sin(t.heading), hc = Math.cos(t.heading);
+  const at = (across, along) => ({ e: t.e + hc * across + hs * along, n: t.n - hs * across + hc * along });
+  const work = at(ip.across, ip.along);
+  const h = t.heading + ip.headingDiff * Math.PI / 180;
+  const rs = Math.cos(h), rc = -Math.sin(h);                  // right of the real heading
+  let left = -1.5, right = 1.5;
+  const secs = scene && scene.toolSections;
+  if (secs && secs.length) { left = secs[0].left; right = secs[secs.length - 1].right; }
+  SKP.implGps.setStrokeWidth(4);
+  SKP.implGps.setPathEffect(SKP.implGpsDash);
+  strokePtsSk(canvas, [{ e: work.e + rs * left, n: work.n + rc * left }, { e: work.e + rs * right, n: work.n + rc * right }], false, SKP.implGps);
+  SKP.implGps.setPathEffect(null);
+  SKP.implGps.setStrokeWidth(2);
+  if (tick.hitchE != null && (tick.hitchE || tick.hitchN))
+    strokePtsSk(canvas, [{ e: tick.hitchE, n: tick.hitchN }, work], false, SKP.implGps);
+  const ant = at(ip.antAcross, ip.antAlong);
+  if (pw(ant.e, ant.n) < 1.0) return;                         // behind the near plane
+  const xy = w2s(ant.e, ant.n);
+  canvas.drawCircle(xy[0], xy[1], 5, SKP.implGpsDot);
+}
 // Lightbar — screen-space LED strip, identical logic/geometry to the 2D
 // lightbar(). The arrow + cm/label text lives in the HUD div (no CanvasKit font
 // bundled), so here we draw only the LEDs. Drawn in CSS px

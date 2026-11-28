@@ -112,6 +112,12 @@ public static partial class RemoteServerWiring
                 con.AgShareApiKey = val; cfg.SaveAppSettings(); return;
             case "conn.agShareEnabled": con.AgShareEnabled = B(); cfg.SaveAppSettings(); return;
             case "conn.rtcmBroadcast": con.RtcmBroadcast = B(); cfg.SaveAppSettings(); return;
+            // A GPS on a trailed implement, UDP 9990 (fork only; the VM starts / stops the listener)
+            case "conn.implementGpsEnabled": con.ImplementGpsEnabled = B(); cfg.SaveAppSettings(); return;
+            case "conn.implementGpsAntennaHeight": if (D(out var igh)) { con.ImplementGpsAntennaHeight = igh; cfg.SaveAppSettings(); } return;
+            case "conn.implementGpsAntennaRight": if (D(out var igr)) { con.ImplementGpsAntennaRight = igr; cfg.SaveAppSettings(); } return;
+            case "conn.implementGpsRollInvert": con.ImplementGpsRollInvert = B(); cfg.SaveAppSettings(); return;
+            case "conn.implementGpsRollZero": if (D(out var igz)) { con.ImplementGpsRollZero = igz; cfg.SaveAppSettings(); } return;
             case "conn.sendCorrectedPosition": con.SendCorrectedPosition = B(); cfg.SaveAppSettings(); return;
             case "conn.ntripEnabled": con.NtripEnabled = B(); cfg.SaveAppSettings(); return; // the VM connects / disconnects
             case "conn.ntripProfilePerField": con.NtripProfilePerField = B(); cfg.SaveAppSettings(); return; // the VM applies the mode

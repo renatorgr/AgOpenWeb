@@ -1257,6 +1257,28 @@ public static partial class RemoteServerWiring
                         }
                         return list;
                     };
+                    // A GPS on a trailed implement, UDP 9990 (fork only): Network IO's numbers and the Tick's implement.
+                    server.ImplementGpsProvider = () =>
+                    {
+                        var v = vm.ImplementGps;
+                        if (!v.Enabled) return null;
+                        return new AgOpenWeb.RemoteServer.ImplementGpsDto(
+                            v.Listening, v.Error ?? "", v.Sender ?? "", v.Sentence ?? "", v.Heard, v.RateHz,
+                            v.FixQuality, v.Satellites, v.AgeS, v.Paired, v.TimeDiffS,
+                            v.ReceiverHeadingDeg, v.RollRawDeg, v.RollUsedDeg,
+                            v.HasPose, v.AcrossM, v.AlongM, v.HeadingDiffDeg, v.ReceiverHeadingDiffDeg,
+                            v.Why ?? "", v.Refused, v.LogName ?? "", v.LogRows,
+                            v.AntennaHeight, v.AntennaRight, v.RollInvert, v.RollZero, v.BehindPin, v.Trailed,
+                            v.Lost, v.Repeated, v.OtherSender ?? "", v.FromOthers);
+                    };
+                    server.ImplementPoseProvider = () =>
+                    {
+                        var v = vm.ImplementGps;
+                        if (!v.Enabled || !v.HasPose || v.SampleMs == 0) return null;
+                        double age = (System.Environment.TickCount64 - v.SampleMs) / 1000.0;
+                        return new AgOpenWeb.RemoteServer.ImplementPoseDto(v.Paired ? 1 : 2, v.AcrossM, v.AlongM,
+                            v.HeadingDiffDeg, v.AntennaAcrossM, v.AntennaAlongM, age);
+                    };
                     server.SystemDataProvider = () =>
                     {
                         var d = gpsSvc.CurrentData;

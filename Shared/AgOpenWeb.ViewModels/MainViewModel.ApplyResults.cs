@@ -330,6 +330,9 @@ public partial class MainViewModel
             HandleFarFromFieldWarning(w);
         }
 
+        // A GPS on a trailed implement, UDP 9990: this fix kept for its fixes of the same instant (fork only)
+        OnImplementGpsCycle(result);
+
         // Section states
         if (result.SectionStates != null)
         {

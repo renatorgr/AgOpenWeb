@@ -723,6 +723,16 @@ public static class WireCodec
         w.Write((byte)(t.IsOutOfBounds ? 1 : 0)); // #494 — pivot outside the field
         w.Write((byte)t.ContourAhead);   // contour: 0 clear, 1 the line turns back, 2 runs over sprayed ground, 3 ends
         w.Write((float)t.ContourAheadM); // f32 — how far ahead along the line (m)
+        // The real implement from its own GPS (fork only): u8 ready (0 none, 1 paired, 2 nearest fix), then always
+        // f32 across, along (m), heading diff (deg), antenna across, along (m), age (s).
+        var ip = t.ImplementPose;
+        w.Write((byte)(ip?.Ready ?? 0));
+        w.Write((float)(ip?.AcrossM ?? 0));
+        w.Write((float)(ip?.AlongM ?? 0));
+        w.Write((float)(ip?.HeadingDiffDeg ?? 0));
+        w.Write((float)(ip?.AntennaAcrossM ?? 0));
+        w.Write((float)(ip?.AntennaAlongM ?? 0));
+        w.Write((float)(ip?.AgeS ?? 0));
         return ms.ToArray();
     }
 
@@ -981,6 +991,46 @@ public static class WireCodec
             w.Write((float)dq[i].RateHz);
             w.Write((float)dq[i].NominalHz);
             w.Write((float)dq[i].Amount);
+        }
+        // A GPS on a trailed implement (fork only, after the data quality): u8 present, then the fields in
+        // ImplementGpsDto's order (bools u8, ints i32, longs as i32, doubles f32, strings str).
+        var ig = s.ImplementGps;
+        w.Write((byte)(ig != null ? 1 : 0));
+        if (ig != null)
+        {
+            w.Write((byte)(ig.Listening ? 1 : 0));
+            WriteStr(w, ig.Error);
+            WriteStr(w, ig.Sender);
+            WriteStr(w, ig.Sentence);
+            w.Write((byte)(ig.Heard ? 1 : 0));
+            w.Write((float)ig.RateHz);
+            w.Write(ig.FixQuality);
+            w.Write(ig.Satellites);
+            w.Write((float)ig.AgeS);
+            w.Write((byte)(ig.Paired ? 1 : 0));
+            w.Write((float)ig.TimeDiffS);
+            w.Write((float)ig.ReceiverHeadingDeg);
+            w.Write((float)ig.RollRawDeg);
+            w.Write((float)ig.RollUsedDeg);
+            w.Write((byte)(ig.HasPose ? 1 : 0));
+            w.Write((float)ig.AcrossM);
+            w.Write((float)ig.AlongM);
+            w.Write((float)ig.HeadingDiffDeg);
+            w.Write((float)ig.ReceiverHeadingDiffDeg);
+            WriteStr(w, ig.Why);
+            w.Write((int)Math.Min(ig.Refused, int.MaxValue));
+            WriteStr(w, ig.LogFile);
+            w.Write((int)Math.Min(ig.LogRows, int.MaxValue));
+            w.Write((float)ig.AntennaHeight);
+            w.Write((float)ig.AntennaRight);
+            w.Write((byte)(ig.RollInvert ? 1 : 0));
+            w.Write((float)ig.RollZero);
+            w.Write((float)ig.BehindPin);
+            w.Write((byte)(ig.Trailed ? 1 : 0));
+            w.Write((int)Math.Min(ig.Lost, int.MaxValue));
+            w.Write((int)Math.Min(ig.Repeated, int.MaxValue));
+            WriteStr(w, ig.OtherSender);
+            w.Write((int)Math.Min(ig.FromOthers, int.MaxValue));
         }
         return ms.ToArray();
     }

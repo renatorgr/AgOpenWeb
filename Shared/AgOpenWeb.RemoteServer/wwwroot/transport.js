@@ -183,12 +183,21 @@ window.RemoteTransport = {
           op.outOfBounds = !!u8(); // #494 — pivot outside the field: red boundary, orange frame
           op.contourAhead = u8();    // contour: 0 clear, 1 the line turns back, 2 runs over sprayed ground, 3 ends
           op.contourAheadM = f32();  // ... that far ahead along the line (m): take over
+          // The real implement from its own GPS (fork only, UDP 9990): ready 0 none, 1 paired, 2 nearest fix; then
+          // its working centre across / along the model's (m, + right, + ahead), its heading less the model's (deg),
+          // the antenna the same way, and the fix's age (s). Always sent.
+          let implementPose = null;
+          if (o < dv.byteLength) {
+            const ready = u8();
+            const ip = { ready, across: f32(), along: f32(), headingDiff: f32(), antAcross: f32(), antAlong: f32(), age: f32() };
+            if (ready) implementPose = ip;
+          }
           handlers.onTick && handlers.onTick({
             sceneVersion, pose, fix, sections, crossTrackError, guidanceActive, lineLabel,
             activeTrackName: atn.length ? atn : null, tool, op, roll, tools,
             headlandDist, headlandWarn, steerAngleError,
             chartSetSteer, chartActualSteer, chartPwm, chartImuHeading,
-            hitchE, hitchN, vehicleSteerAngle, hostMs, goal, chartGpsHeading,
+            hitchE, hitchN, vehicleSteerAngle, hostMs, goal, chartGpsHeading, implementPose,
           });
           break;
         }
@@ -305,6 +314,19 @@ window.RemoteTransport = {
           const dataQuality = [];
           for (let k = u8(); k > 0; k--)
             dataQuality.push({ name: str(), finding: u8(), faulty: !!u8(), rateHz: f32(), nominalHz: f32(), amount: f32() });
+          // A GPS on a trailed implement, UDP 9990 (fork only; null with it off): ImplementGpsDto's order.
+          let implementGps = null;
+          if (o < dv.byteLength && u8()) {
+            implementGps = {
+              listening: !!u8(), error: str(), sender: str(), sentence: str(), heard: !!u8(), rateHz: f32(),
+              fixQuality: i32(), sats: i32(), age: f32(), paired: !!u8(), timeDiffS: f32(),
+              receiverHeading: f32(), rollRaw: f32(), rollUsed: f32(),
+              hasPose: !!u8(), across: f32(), along: f32(), headingDiff: f32(), receiverHeadingDiff: f32(),
+              why: str(), refused: i32(), logFile: str(), logRows: i32(),
+              antennaHeight: f32(), antennaRight: f32(), rollInvert: !!u8(), rollZero: f32(), behindPin: f32(), trailed: !!u8(),
+              lost: i32(), repeated: i32(), otherSender: str(), fromOthers: i32(),
+            };
+          }
           handlers.onStatusBar && handlers.onStatusBar({
             fixQuality, fixText, age, sats, isMetric,
             gpsOk, imuOk, autoSteerOk, machineOk, imuIp, autoSteerIp, machineIp,
@@ -317,7 +339,7 @@ window.RemoteTransport = {
             simPanelVisible, driftEasting, driftNorthing, unsavedCoveragePrompt,
             devOverlay, gpsToPgnLatencyMs, gpsSentence, dualHeadingMissing, ntripRtcm, systemData,
             gpsLost, isobus, fieldData, sendCorrectedPosition, scanReplySubnet, ntripSession, simDrivesSteering, sprayer,
-            lineTune, onTwoLinks, secondLinks, dataQuality,
+            lineTune, onTwoLinks, secondLinks, dataQuality, implementGps,
           });
           break;
         }

@@ -155,6 +155,15 @@ public record GpsCycleResult
     /// <summary>How far the position is held off the receiver's, m (0 when not held; fork only).</summary>
     public double RtkHoldM { get; init; }
 
+    /// <summary>The receiver's time of day on this fix (UTC, hundredths of a second; -1 none): pairs a GPS on the
+    /// implement with the tractor's fix of the same instant (fork only, <c>MainViewModel.ImplementGps.cs</c>).</summary>
+    public int FixTimeCentiseconds { get; init; } = -1;
+
+    /// <summary>The Offset Fix added to this fix's plane position (m): another GPS's position is moved by the same
+    /// to sit on this one's map (fork only).</summary>
+    public double DriftEasting { get; init; }
+    public double DriftNorthing { get; init; }
+
     /// <summary>
     /// The way to the start of the pass through the headland (GuidanceConfig.LineEntryMode; fork
     /// only): being driven, or offered to the operator when <see cref="LineEntryOfferPass"/> is set.
