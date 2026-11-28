@@ -167,6 +167,48 @@ public class SnakeRepeatLandingTests
     }
 
     [Test]
+    public void A_few_metres_of_that_ground_worked_since_gets_the_turn_again()
+    {
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        // 3 m of the 15 m left were worked since: the turns there were not fruitless (Sourcery on
+        // fork #382: compared by how much, 12 m left of 15 counted as none of it worked).
+        var threeMetresWorked = AllCoveredBut(n => n < -28);
+
+        var (effects, turn, _) = SouthEndOfPass6(threeMetresWorked);
+
+        Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4), $"a turn onto pass 4, not \"{effects.StatusMessage}\"");
+    }
+
+    [Test]
+    public void Unworked_ground_elsewhere_gets_the_turn_again()
+    {
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        // The same 15 m still left, and 8 m further on unworked now (another job's map): a turn
+        // there reaches ground the landings before did not.
+        var moreLeft = AllCoveredBut(n => n < -25 || (n > -18 && n < -10));
+
+        var (effects, turn, _) = SouthEndOfPass6(moreLeft);
+
+        Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4), $"a turn onto pass 4, not \"{effects.StatusMessage}\"");
+    }
+
+    [Test]
+    public void A_headland_built_again_forgets_where_turns_landed()
+    {
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        DriveTheTurnOntoPass4(SouthEndLeft);
+        // The headland built again, its line 1 cm further out: the ground was judged in another field.
+        _square = new PolygonOffsetService().CalculatePointHeadings(
+            new List<Vec2> { new(-40.01, -40.01), new(40.01, -40.01), new(40.01, 40.01), new(-40.01, 40.01) });
+
+        var (effects, turn, _) = SouthEndOfPass6(SouthEndLeft);
+
+        Assert.That(turn.ReturnPassTargetPath, Is.EqualTo(4), $"a turn onto pass 4, not \"{effects.StatusMessage}\"");
+    }
+
+    [Test]
     public void Another_track_forgets_where_turns_landed()
     {
         DriveTheTurnOntoPass4(SouthPieceDone);

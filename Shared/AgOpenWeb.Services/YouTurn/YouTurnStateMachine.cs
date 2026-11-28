@@ -96,14 +96,23 @@ public sealed class YouTurnStateMachine
     private readonly Dictionary<int, bool> _doneAtEnd = new();
 
     // Where the last turns driven landed (fork only): the pass, the way the tractor then went on it,
-    // the turn's last point, the unworked crop the turn reached there (YouTurnPathingService.
-    // UnworkedGroundReached) and how many landings there in a row found it no smaller. A turn the
-    // snake builds that lands there again, on ground already worked or on the same unworked ground
-    // twice over, is dropped (TurnRepeatsLanding). Forgotten with the track or when its line moves.
+    // the turn's last point, where the unworked crop the turn reached there lay (YouTurnPathingService.
+    // UnworkedPointsReached; null with nothing to judge) and how many landings there in a row found
+    // that same ground still unworked and none besides it. A turn the snake builds that lands there
+    // again, on ground already worked or on the same unworked ground twice over, is dropped
+    // (TurnRepeatsLanding). Forgotten with the track, when its line moves, and when the field the
+    // ground was judged in changes (_landingsFieldStamp: the boundary, the headland, the obstacles).
     private readonly List<Landing> _landings = new();
     private readonly record struct Landing(Models.Track.Track Track, int Pass, bool SameWay, double East, double North,
-        double Unworked, int Fruitless);
+        IReadOnlyList<Vec2>? Unworked, int Fruitless);
     private const int LandingsKept = 8;
+    private long _landingsFieldStamp;
+
+    /// <summary>
+    /// A point of the unworked ground a turn reaches this close to one found at the landing before
+    /// is the same ground, m: the two turns are not the same path, and their points lie a step apart.
+    /// </summary>
+    private const double SameGroundDistance = 2.0;
 
     /// <summary>
     /// Landings in a row on the same unworked ground, none of it painted in between, after which the
@@ -1938,13 +1947,17 @@ public sealed class YouTurnStateMachine
     private bool TurnRepeatsLanding(in TickContext ctx, Models.Track.Track track, int pass, YouTurnWorkingState turn,
         YouTurnEffects effects, string? messageBefore)
     {
-        if (ctx.IsPointCovered == null || turn.TurnPath is not { Count: > 1 } path || _landings.Count == 0) return false;
+        if (ctx.IsPointCovered == null || turn.TurnPath is not { Count: > 1 } path) return false;
+        ForgetLandingsOfAnotherField(in ctx);
+        if (_landings.Count == 0) return false;
         var end = path[^1];
         if (LandingAt(track, pass, !turn.WasHeadingSameWayAtTurnStart, end) is not { } before) return false;
-        double unworked = _pathing.UnworkedGroundReached(path, ctx.Boundary, ctx.WorkEndLine, ctx.IsPointCovered);
+        var unworkedPoints = _pathing.UnworkedPointsReached(path, ctx.Boundary, ctx.WorkEndLine, ctx.IsPointCovered);
+        double unworked = unworkedPoints is { } u ? u.Count * YouTurnPathingService.GroundStep : double.PositiveInfinity;
         if (unworked >= YouTurnPathingService.MinNewGround)
         {
-            if (!(before.Fruitless >= FruitlessLandingsAllowed && NoneOfItWorked(before, unworked))) return false;
+            if (!(before.Fruitless >= FruitlessLandingsAllowed && NoneOfItWorked(before, unworkedPoints, ctx.IsPointCovered)))
+                return false;
             _logger.LogDebug("[YouTurn] Snake pass {Pass}: turns landed here {Count} times and none of its {Unworked:F0} m left was worked - worked at this end",
                 pass, before.Fruitless + 1, unworked);
         }
@@ -1973,13 +1986,46 @@ public sealed class YouTurnStateMachine
     }
 
     /// <summary>
-    /// Was none of the unworked ground found at <paramref name="before"/> worked since: what a turn
-    /// there reaches now (<paramref name="unworked"/>, m) is less by under
-    /// <see cref="YouTurnPathingService.MinNewGround"/>.
+    /// Is a turn there now fruitless: the unworked ground found at <paramref name="before"/> (at least
+    /// <see cref="YouTurnPathingService.MinNewGround"/> of it) is all still unworked, not a point of it
+    /// covered since, and the turn reaches no other unworked ground (<paramref name="now"/>, where a
+    /// turn there reaches unworked crop now: under <see cref="YouTurnPathingService.MinNewGround"/> of
+    /// it further than <see cref="SameGroundDistance"/> from that ground). Judged point by point, not
+    /// by how much: two landings that reach as much unworked crop in different places, or one after a
+    /// few metres of it were worked, are not fruitless (Sourcery on fork #382).
     /// </summary>
-    private static bool NoneOfItWorked(Landing before, double unworked) =>
-        before.Unworked >= YouTurnPathingService.MinNewGround && !double.IsInfinity(before.Unworked)
-        && unworked > before.Unworked - YouTurnPathingService.MinNewGround;
+    private static bool NoneOfItWorked(Landing before, IReadOnlyList<Vec2>? now, Func<double, double, bool> isPointCovered)
+    {
+        if (before.Unworked is not { } was || now == null
+            || was.Count * YouTurnPathingService.GroundStep < YouTurnPathingService.MinNewGround) return false;
+        foreach (var p in was)
+            if (isPointCovered(p.Easting, p.Northing)) return false;
+        int elsewhere = 0;
+        foreach (var p in now)
+        {
+            bool same = false;
+            foreach (var q in was)
+            {
+                double de = p.Easting - q.Easting, dn = p.Northing - q.Northing;
+                if (de * de + dn * dn <= SameGroundDistance * SameGroundDistance) { same = true; break; }
+            }
+            if (!same) elsewhere++;
+        }
+        return elsewhere * YouTurnPathingService.GroundStep < YouTurnPathingService.MinNewGround;
+    }
+
+    /// <summary>
+    /// The landings remembered were judged in another field: the outer boundary, the obstacles or the
+    /// line where the crop ends (<see cref="TickContext.WorkEndLine"/>) changed since. Forgotten, as
+    /// what a turn there reached is not what it reaches now (Sourcery on fork #382).
+    /// </summary>
+    private void ForgetLandingsOfAnotherField(in TickContext ctx)
+    {
+        long stamp = SnakeFieldStamp(ctx.Boundary, ctx.WorkEndLine) * 31 + YouTurnCreationService.ObstacleStamp(ctx.Boundary);
+        if (stamp == _landingsFieldStamp) return;
+        _landings.Clear();
+        _landingsFieldStamp = stamp;
+    }
 
     // The snake order this state machine planned, and the field it planned it for.
     private List<int>? _snakePlan;
@@ -2801,9 +2847,11 @@ public sealed class YouTurnStateMachine
             && guidance.HowManyPathsAway != passBefore)
         {
             bool landedSameWay = !turn.WasHeadingSameWayAtTurnStart;
-            double unworked = _pathing.UnworkedGroundReached(landedPath, ctx.Boundary, ctx.WorkEndLine, ctx.IsPointCovered);
-            int fruitless = LandingAt(landedTrack, guidance.HowManyPathsAway, landedSameWay, landedPath[^1]) is { } before
-                && NoneOfItWorked(before, unworked) ? before.Fruitless + 1 : 0;
+            ForgetLandingsOfAnotherField(in ctx);
+            var unworked = _pathing.UnworkedPointsReached(landedPath, ctx.Boundary, ctx.WorkEndLine, ctx.IsPointCovered);
+            int fruitless = ctx.IsPointCovered is { } covered
+                && LandingAt(landedTrack, guidance.HowManyPathsAway, landedSameWay, landedPath[^1]) is { } before
+                && NoneOfItWorked(before, unworked, covered) ? before.Fruitless + 1 : 0;
             if (_landings.Count >= LandingsKept) _landings.RemoveAt(0);
             _landings.Add(new Landing(landedTrack, guidance.HowManyPathsAway, landedSameWay,
                 landedPath[^1].Easting, landedPath[^1].Northing, unworked, fruitless));
