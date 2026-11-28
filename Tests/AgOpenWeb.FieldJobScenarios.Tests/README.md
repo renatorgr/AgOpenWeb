@@ -337,6 +337,42 @@ AGOPENWEB_JOB_FIELDS=~/AgOpenWeb/Fields AGOPENWEB_JOB_FIELD_LIST="Field A;Field 
 The report goes to `farm-job-scenarios-report.md`, or to `AGOPENWEB_SCENARIO_REPORT`. It names the
 fields, so keep it on that computer.
 
+### The random block (fork only)
+
+The R jobs are the same every night, so two nights' reports can be compared; they never take another way
+across a field. `Farm_jobs_random` (`FarmJobs.Random.cs`) adds a few jobs that do, each set up by a seed:
+
+- In this order it draws: the field; the rig (1 to 6, the spreader's width 10 to 28 m in steps of 2);
+  the AB line's angle (40 % the field's own, else turned by a whole degree from -90 to 89 about its middle);
+  the start (30 % the first pass from the edge, as the R jobs, else any pass a start can be made on,
+  along or against A to B); the skip button (30 % the field's own, else mode 0 to 2 with 0 to 2 rows);
+  and for each obstacle, one in four, its U-turn / Go around choice swapped (Drive through stays).
+- The changes are made in a copy of the field folder in the system's temp folder, never in the farmer's.
+- A start mid-field leaves the passes before it unworked: the job is judged as a run from a pass on, as
+  with `AGOPENWEB_SCENARIO_FROM_PASS`, except with *ignore worked tracks*, where the snake comes back for
+  them and the whole field is judged. The first-turn-to-the-edge check is left out for such a start.
+- The jobs are X1 to XN. The seed is in each job's title and story, with everything it drew.
+
+| Variable | |
+|---|---|
+| `AGOPENWEB_JOB_RANDOM` | How many random jobs (0 to 99). Without it (or `_SEEDS`) the test is ignored |
+| `AGOPENWEB_JOB_RANDOM_SEED` | Optional: the night's base; its jobs' seeds are base × 100 + 1 to N. By default today's date (UTC, `yyyyMMdd`), so each night draws other jobs |
+| `AGOPENWEB_JOB_RANDOM_SEEDS` | Optional: `,`-separated seeds, run again exactly (in place of the two above) |
+
+The other farm variables are read as for the R jobs; `AGOPENWEB_JOB_SKIP` is used where a job keeps the
+field's skip.
+
+```bash
+AGOPENWEB_JOB_FIELDS=~/AgOpenWeb/Fields AGOPENWEB_JOB_FIELD_LIST="Field A;Field B" AGOPENWEB_JOB_RANDOM=4 \
+  dotnet test Tests/AgOpenWeb.FieldJobScenarios.Tests/ -c Release --filter "FullyQualifiedName~Farm_jobs_random"
+# one job again:
+AGOPENWEB_JOB_FIELDS=... AGOPENWEB_JOB_FIELD_LIST=... AGOPENWEB_JOB_RANDOM_SEEDS=2026112803 dotnet test ...
+```
+
+The report goes to `farm-random-job-scenarios-report.md`, or to `AGOPENWEB_SCENARIO_REPORT`. The seed
+needs the same field list, in the same order, to draw the same job. `FarmRandomJobTests` (unit) checks
+that a seed always draws the same job and what the field's copy holds.
+
 ## Turn interventions: an operator who acts during a U-turn
 
 `TurnInterventionScenarioTests` runs J1 (Olival, the 8 m sprayer) with an operator who does one
