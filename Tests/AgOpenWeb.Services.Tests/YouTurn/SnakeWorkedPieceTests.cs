@@ -82,13 +82,14 @@ public class SnakeWorkedPieceTests
         _crop = offset.CalculatePointHeadings(new List<Vec2> { new(-50, -90), new(90, -90), new(90, 90), new(-50, 90) });
     }
 
-    private void AddDitch(ObstacleAction atObstacle)
+    private void AddDitch(ObstacleAction atObstacle, bool hard = false)
     {
         var pts = new List<Vec2> { new(-56, DitchSouth), new(96, DitchSouth), new(96, DitchNorth), new(-56, DitchNorth) };
         _boundary.InnerBoundaries.Add(new BoundaryPolygon
         {
             Points = pts.Select(p => new BoundaryPoint(p.Easting, p.Northing, 0)).ToList(),
             AtObstacle = atObstacle,
+            IsHard = hard,
         });
     }
 
@@ -98,11 +99,11 @@ public class SnakeWorkedPieceTests
     // Pass 3 heading north in the piece north of the ditch, the north headland 30 m ahead. A turn
     // dropped is looked for again on the next cycle, so the cycles go on until a turn is planned
     // or the snake says what it found.
-    private (string? Said, YouTurnWorkingState Turn) Tick(Func<double, double, bool> covered)
+    private (string? Said, YouTurnWorkingState Turn) Tick(Func<double, double, bool> covered, Models.Track.Track? track = null)
     {
         var ctx = new YouTurnStateMachine.TickContext(
             new Position { Easting = PassX(3), Northing = 60, Heading = 0, Speed = 2.78 },
-            _track, _boundary, _turnLine,
+            track ?? _track, _boundary, _turnLine,
             UTurnSkipRows: 2, IsSkipWorkedMode: true,
             HeadlandCalculatedWidth: Headland, HeadlandDistance: Headland,
             IsPointCovered: covered, WorkHeadlandLine: _crop, PassEndLine: _crop);
@@ -187,12 +188,98 @@ public class SnakeWorkedPieceTests
 
         Assert.Multiple(() =>
         {
-            // From 80 m north down to the ditch's north edge at 36.
-            Assert.That(piece.Crop, Is.InRange(44, 45));
+            // From 80 m north down to where the pass is turned at before the ditch: the turn line a
+            // U-turn obstacle has, the distance from boundary (2 m) out from its north edge at 36.
+            Assert.That(piece.Crop, Is.InRange(42, 43));
+            Assert.That(piece.Setback, Is.InRange(1, 2), "the crop between that line and the ditch");
             Assert.That(piece.Covered, Is.EqualTo(piece.Crop), "all of it is worked");
             Assert.That(piece.IsWorked, Is.True);
             Assert.That(piece.IsOpenAtLanding, Is.False);
         });
+    }
+
+    // A turn that ends on pass 6 going south at the given northing.
+    private YouTurnPathingService.PieceCover SouthFrom(double n, Func<double, double, bool> covered) =>
+        _pathing.PieceAheadOfTurn(TurnEndingAt(PassX(6), n), Pass6, _boundary, _crop, covered);
+
+    [Test]
+    public void The_crop_before_a_ditch_the_pass_is_turned_at_is_not_part_of_the_piece()
+    {
+        // A hard ditch is turned at 4 m before it (the distance from boundary and half the 4 m
+        // implement): at 40 m north. A turn that ends at 46: 7 m of crop to drive, 43 to 46 worked.
+        // The 3 m from the turn line to the ditch are never driven on this pass: counted, 4 of 10
+        // m covered made the piece one still to do, and the turn onto it was made.
+        AddDitch(ObstacleAction.GoRound, hard: true);
+
+        var piece = SouthFrom(46, (e, n) => n > 42.5);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(piece.Crop, Is.InRange(6, 7));
+            Assert.That(piece.Covered, Is.EqualTo(4));
+            Assert.That(piece.Setback, Is.InRange(3, 4));
+            Assert.That(piece.IsWorked, Is.True);
+            Assert.That(piece.IsOpenAtLanding, Is.False);
+        });
+    }
+
+    [Test]
+    public void A_turn_that_ends_in_the_room_before_the_ditch_has_nothing_to_work()
+    {
+        AddDitch(ObstacleAction.GoRound, hard: true);
+
+        // Ends 3 m from the ditch, inside the 4 m the pass is turned at before it.
+        var piece = SouthFrom(39, (e, n) => false);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(piece.Crop, Is.Zero);
+            Assert.That(piece.Setback, Is.InRange(3, 4));
+            Assert.That(piece.IsWorked, Is.True, "nothing of it is driven: not a piece to turn onto");
+            Assert.That(piece.IsOpenAtLanding, Is.False);
+        });
+    }
+
+    [Test]
+    public void The_end_the_turn_lands_at_stops_where_the_pass_leaves_the_crop()
+    {
+        AddDitch(ObstacleAction.GoRound);
+        // The crop with a bay 10 m deep across pass 6, from 60 to 70 m north. A turn that ends at
+        // 78: 8 m of crop, the bay, then 22 m down to the ditch's turn line. The 8 m are worked, the
+        // first 12 m after the bay are not, the rest is: the end the turn lands at is the 8 m, all
+        // worked. Counted on through the bay, 8 of its "first 20 m" made it an end left to do.
+        var crop = new PolygonOffsetService().CalculatePointHeadings(new List<Vec2>
+        {
+            new(-50, -90), new(90, -90), new(90, 60), new(10, 60), new(10, 70), new(90, 70), new(90, 90), new(-50, 90),
+        });
+
+        var piece = _pathing.PieceAheadOfTurn(TurnEndingAt(PassX(6), 78), Pass6, _boundary, crop, (e, n) => n > 70 || n < 47.5);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(piece.EndCrop, Is.InRange(7, 9));
+            Assert.That(piece.EndCovered, Is.EqualTo(piece.EndCrop));
+            Assert.That(piece.Crop, Is.InRange(28, 32));
+            Assert.That(piece.IsWorked, Is.True);
+            Assert.That(piece.IsOpenAtLanding, Is.False);
+        });
+    }
+
+    [Test]
+    public void On_a_curve_that_stops_in_the_field_the_piece_is_walked_along_its_run_on()
+    {
+        // A curve up the field that stops 30 m short of the fence at each end: it is driven on
+        // straight past its ends, and a turn at the north headland ends on that run-on, 20 m past
+        // the curve's last point. Walked along the curve's own points only, that turn did not end
+        // on the pass, nothing was judged, and the turn onto the worked piece was made.
+        AddDitch(ObstacleAction.GoRound);
+        var curve = Models.Track.Track.FromCurve("Short",
+            new List<Vec3> { new(0, -70, 0), new(0, 0, 0), new(0, 70, 0) }, isClosed: false);
+
+        var (said, turn) = Tick(NorthOfTheDitch, curve);
+
+        Assert.That(turn.TurnPath, Is.Null, "no turn onto a piece already worked");
+        Assert.That(said, Does.Contain("no room on the next pass at this end"));
     }
 
     [Test]

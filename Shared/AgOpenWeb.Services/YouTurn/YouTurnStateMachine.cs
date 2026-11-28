@@ -2057,11 +2057,14 @@ public sealed class YouTurnStateMachine
     /// Pass <paramref name="pass"/> is still to do on the whole, and the piece of it the turn just
     /// built lands on is worked: from where the turn ends to where the tractor would next turn on
     /// that pass (<see cref="YouTurnPathingService.PieceAheadOfTurn"/>: the fence, a U-turn
-    /// obstacle's turn line, a Go around obstacle with no room to go round on that pass) at least
-    /// half of the crop is covered, as on a pass worked on the whole, and so is the stretch where
-    /// the turn lands (not left to do there, as <see cref="YouTurnPathingService.IsPassOpenAtThisEnd"/>
-    /// asks of a pass). The turn is dropped and the pass counts worked at this end: what is left of
-    /// it lies beyond that obstacle, and is turned onto from there. It is
+    /// obstacle's turn line, the same line round a Go around obstacle with no room to go round on
+    /// that pass) at least half of the crop is covered, as on a pass worked on the whole, and so is
+    /// the stretch where the turn lands (not left to do there, as
+    /// <see cref="YouTurnPathingService.IsPassOpenAtThisEnd"/> asks of a pass), or the turn lands
+    /// with no crop ahead but what lies before the obstacle the pass is turned at. The turn is
+    /// dropped and the pass counts worked at this end: what is left of it lies beyond that
+    /// obstacle, and is turned onto from there. The crop is the one the end tests judge
+    /// (<see cref="TickContext.WorkEndLine"/>), not <see cref="SnakeArea"/>. It is
     /// <see cref="YouTurnPathingService.IsPieceDoneAtThisEnd"/>'s rule asked of the turn as built:
     /// that test judges a pass from its end at the headland before any turn is built and cuts it
     /// only at the obstacles chosen as U-turn, and <see cref="TurnRepeatsLanding"/> remembers the
@@ -2089,8 +2092,8 @@ public sealed class YouTurnStateMachine
                     pass, piece.Covered, piece.Crop, piece.EndCovered, piece.EndCrop);
             return false;
         }
-        _logger.LogDebug("[YouTurn] Snake pass {Pass}: the turn there lands on a worked piece ({Covered} of its {Crop} m to its next end covered, {EndCovered} of its first {EndCrop}) - worked at this end",
-            pass, piece.Covered, piece.Crop, piece.EndCovered, piece.EndCrop);
+        _logger.LogDebug("[YouTurn] Snake pass {Pass}: the turn there lands on a worked piece ({Covered} of its {Crop} m to its next end covered, {EndCovered} of its first {EndCrop}; {Setback} m more before the obstacle it is turned at) - worked at this end",
+            pass, piece.Covered, piece.Crop, piece.EndCovered, piece.EndCrop, piece.Setback);
         _repeatAtEnd.Add(pass);
         DiscardPlannedTurn(turn);
         effects.StatusMessage = messageBefore; // not "YouTurn path created"

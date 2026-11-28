@@ -1591,6 +1591,8 @@ namespace AgOpenWeb.Services.YouTurn
             _straightDestination = pass;
             if (input.BendPass != null) pass = input.BendPass(distAway, pass);
             _bentDestination = pass;
+            _destinationEnds = (made.PercentRemoved, made.StartKept, made.EndKept, made.StartIsEnd, made.EndIsEnd);
+            _destinationWithRunOn = null;
             return CurveProcessing.ExtendPassForTurn((pass, made.PercentRemoved, made.StartKept, made.EndKept, made.StartIsEnd, made.EndIsEnd));
         }
 
@@ -1598,12 +1600,23 @@ namespace AgOpenWeb.Services.YouTurn
         // (the same list when nothing bends it), for LandsOnBend.
         private List<Vec3>? _straightDestination, _bentDestination;
 
+        // What CurvePass said of the destination pass's ends, and the pass with its run-on past them,
+        // made when it is asked for (LastDestinationPass).
+        private (double PercentRemoved, bool StartKept, bool EndKept, bool StartIsEnd, bool EndIsEnd) _destinationEnds;
+        private List<Vec3>? _destinationWithRunOn;
+
         /// <summary>
         /// The pass the turn last built lands on, as it is steered after the turn: bent round its Go
-        /// around obstacles, and straight through one it has no room to go round, which is turned
-        /// at. Null when the last build made no next pass. Fork only.
+        /// around obstacles, straight through one it has no room to go round, which is turned at,
+        /// and with the run-on past each end the turn was built on (a turn may end on it, and a
+        /// curve that stops in the field is driven on along it). A list of its own, made when first
+        /// asked for. Null when the last build made no next pass. Fork only.
         /// </summary>
-        public IReadOnlyList<Vec3>? LastDestinationPass => _bentDestination;
+        public IReadOnlyList<Vec3>? LastDestinationPass =>
+            _bentDestination == null
+                ? null
+                : _destinationWithRunOn ??= CurveProcessing.ExtendPassForTurn((_bentDestination, _destinationEnds.PercentRemoved,
+                    _destinationEnds.StartKept, _destinationEnds.EndKept, _destinationEnds.StartIsEnd, _destinationEnds.EndIsEnd));
 
         /// <summary>
         /// Whether a created path ends on a bend of the next pass: its last point more than half a
