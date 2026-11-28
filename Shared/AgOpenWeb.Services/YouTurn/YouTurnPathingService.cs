@@ -1178,7 +1178,38 @@ public sealed class YouTurnPathingService
         Func<double, double, bool>? isPointCovered)
     {
         if (isPointCovered == null || track.Points.Count < 2) return track.IsPathWorked(pass);
+        var (inside, covered) = PassCover(track, pass, nudgeOffset, boundary, headlandLine, isPointCovered);
+        return inside > 0 && covered * 2 >= inside;
+    }
 
+    /// <summary>
+    /// Has pass <paramref name="pass"/> crop still to work: it is not worked
+    /// (<see cref="IsPassWorked"/>) and has crop at all. A pass with nothing inside the cultivated
+    /// area is not worked either, and has nothing to do. With no map, a pass without its mark.
+    /// Fork only.
+    /// </summary>
+    public bool HasCropLeft(
+        Models.Track.Track track,
+        int pass,
+        double nudgeOffset,
+        Boundary? boundary,
+        IReadOnlyList<Vec3>? headlandLine,
+        Func<double, double, bool>? isPointCovered)
+    {
+        if (isPointCovered == null || track.Points.Count < 2) return !track.IsPathWorked(pass);
+        var (inside, covered) = PassCover(track, pass, nudgeOffset, boundary, headlandLine, isPointCovered);
+        return inside > 0 && covered * 2 < inside;
+    }
+
+    // The samples of a pass inside the cultivated area, and how many of them the job's map covers.
+    private (int Inside, int Covered) PassCover(
+        Models.Track.Track track,
+        int pass,
+        double nudgeOffset,
+        Boundary? boundary,
+        IReadOnlyList<Vec3>? headlandLine,
+        Func<double, double, bool> isPointCovered)
+    {
         double widthMinusOverlap = _configStore.ActualToolWidth - _configStore.Tool.Overlap;
         double distAway = PassGeometry.Offset(track, pass, widthMinusOverlap, nudgeOffset);
         var area = CultivatedPolygon(boundary, headlandLine);
@@ -1226,12 +1257,12 @@ public sealed class YouTurnPathingService
         }
         else
         {
-            if (area == null) return false;
+            if (area == null) return default;
             var a = track.Points[0];
             var b = track.Points[1];
             double dx = b.Easting - a.Easting, dy = b.Northing - a.Northing;
             double len = Math.Sqrt(dx * dx + dy * dy);
-            if (len < 0.01) return false;
+            if (len < 0.01) return default;
             double ux = dx / len, uy = dy / len;
             // Right of A→B is (uy, -ux): the side PassGeometry counts positive.
             double offE = a.Easting + uy * distAway, offN = a.Northing - ux * distAway;
@@ -1264,7 +1295,7 @@ public sealed class YouTurnPathingService
                 }
         }
 
-        return inside > 0 && covered * 2 >= inside;
+        return (inside, covered);
     }
 
     /// <summary>
@@ -1404,6 +1435,162 @@ public sealed class YouTurnPathingService
         }
         return inside == 0 ? null : unworked;
     }
+
+    /// <summary>
+    /// The crop a turn drives to: a point every <see cref="GroundStep"/> along
+    /// <paramref name="pass"/> (the pass the turn ends on, as it is steered after the turn, its
+    /// run-on past each end with it: <see cref="YouTurnCreationService.LastDestinationPass"/>) from
+    /// where <paramref name="turnPath"/> ends, on the way it ends, as far as the tractor drives the
+    /// pass before its next turn: until the pass leaves the fence, meets a U-turn obstacle's turn
+    /// line (<see cref="TurnObstacleCuts"/>) or runs into a Go around obstacle it does not bend
+    /// round (no room on that pass: turned at, at the turn line a U-turn obstacle has, so the crop
+    /// between that line and the obstacle is left out and counted in
+    /// <see cref="PieceCover.Setback"/>). How many of those points are in the cultivated area, and
+    /// how many of them are covered on the job's map; the same for the end of the piece the turn
+    /// lands at: its first <see cref="OpenEndStretch"/> of crop, as far as the pass stays in the
+    /// crop, as <see cref="EndStretch"/>. The snake's end tests (<see cref="IsPieceDoneAtThisEnd"/>)
+    /// judge a pass from its end at the headland and cut it at the obstacles chosen as U-turn only,
+    /// so a piece of crop between the headland and a long Go around obstacle with no room to go
+    /// round (a ditch across the passes) was judged with the rest of the pass beyond the ditch
+    /// (YouTurnStateMachine.TurnLandsOnWorkedPiece). All 0 when the turn does not end on the pass.
+    /// Fork only.
+    /// </summary>
+    public PieceCover PieceAheadOfTurn(IReadOnlyList<Vec3> turnPath, IReadOnlyList<Vec3> pass,
+        Boundary? boundary, IReadOnlyList<Vec3>? headlandLine, Func<double, double, bool> isPointCovered)
+    {
+        if (turnPath.Count < 2 || pass.Count < 2) return default;
+        var last = turnPath[^1];
+        int k = turnPath.Count - 2;
+        while (k > 0 && GeometryMath.Distance(turnPath[k], last) < 0.5) k--;
+        double he = last.Easting - turnPath[k].Easting, hn = last.Northing - turnPath[k].Northing;
+
+        // Where the turn ends on the pass: the nearest point of its line.
+        int seg = 0;
+        double best = double.MaxValue, e = 0, n = 0;
+        for (int i = 1; i < pass.Count; i++)
+        {
+            double ae = pass[i - 1].Easting, an = pass[i - 1].Northing;
+            double de = pass[i].Easting - ae, dn = pass[i].Northing - an;
+            double len2 = de * de + dn * dn;
+            double t = len2 > 1e-12 ? Math.Clamp(((last.Easting - ae) * de + (last.Northing - an) * dn) / len2, 0, 1) : 0;
+            double pe = ae + de * t, pn = an + dn * t;
+            double d = (pe - last.Easting) * (pe - last.Easting) + (pn - last.Northing) * (pn - last.Northing);
+            if (d < best) { best = d; seg = i; e = pe; n = pn; }
+        }
+        if (best > OffPassAtTurnEnd * OffPassAtTurnEnd) return default;
+        double se = pass[seg].Easting - pass[seg - 1].Easting, sn = pass[seg].Northing - pass[seg - 1].Northing;
+        int dir = se * he + sn * hn >= 0 ? 1 : -1;
+        int next = dir > 0 ? seg : seg - 1; // the point of the pass ahead
+
+        var cuts = TurnObstacleCuts(boundary);
+        var inners = boundary?.InnerBoundaries;
+        // The obstacle not driven through that the line is in: the line as steered bends round a
+        // Go around obstacle it has room to go round, so in one it has none.
+        BoundaryPolygon? blocked = null;
+        // In an obstacle: 1 one the pass does not go on through, 2 one driven through.
+        int InObstacle(double pe, double pn)
+        {
+            if (InTurnObstacleCut(pe, pn, cuts)) return 1;
+            if (inners == null) return 0;
+            foreach (var inner in inners)
+                if (inner.IsValid && inner.IsPointInside(pe, pn))
+                {
+                    if (inner.AtObstacle == ObstacleAction.DriveThrough) return 2;
+                    blocked = inner;
+                    return 1;
+                }
+            return 0;
+        }
+
+        // The crop points of the piece in the order driven; AtLanding: in the end of the piece the
+        // turn lands at.
+        var points = new List<(double E, double N, bool Covered, bool AtLanding)>();
+        const int EndPoints = (int)(OpenEndStretch / GroundStep);
+        bool landingOpen = true;
+        bool done = false;
+        for (double walked = 0; walked <= MaxPieceLength && !done; walked += GroundStep)
+        {
+            if (OutsideFence(e, n, boundary)) break;
+            int obstacle = InObstacle(e, n);
+            if (obstacle == 1) break;
+            if (obstacle == 0)
+            {
+                if (IsPointInsideCultivatedArea(e, n, boundary, headlandLine))
+                {
+                    points.Add((e, n, isPointCovered(e, n), landingOpen));
+                    if (points.Count >= EndPoints) landingOpen = false;
+                }
+                else if (points.Count > 0) landingOpen = false; // the pass left the crop: the end of the piece stops here
+            }
+            // A step on along the pass.
+            double left = GroundStep;
+            while (left > 0)
+            {
+                if (next < 0 || next >= pass.Count) { done = true; break; }
+                double de = pass[next].Easting - e, dn = pass[next].Northing - n;
+                double d = Math.Sqrt(de * de + dn * dn);
+                if (d > left)
+                {
+                    e += de / d * left;
+                    n += dn / d * left;
+                    left = 0;
+                }
+                else
+                {
+                    e = pass[next].Easting;
+                    n = pass[next].Northing;
+                    left -= d;
+                    next += dir;
+                }
+            }
+        }
+
+        // Turned at before the obstacle, where a U-turn obstacle's turn line is: the crop from
+        // there to the obstacle is not driven.
+        int setback = 0;
+        if (blocked != null)
+        {
+            double grow = Math.Max(0, _configStore.Guidance.UTurnDistanceFromBoundary)
+                + (blocked.IsHard ? YouTurnCreationService.HardReach(_configStore) : 0);
+            var cut = new List<(BoundaryPolygon, double, double, double, double, double)> { CutOf(blocked, grow) };
+            while (points.Count > 0 && InTurnObstacleCut(points[^1].E, points[^1].N, cut))
+            {
+                points.RemoveAt(points.Count - 1);
+                setback++;
+            }
+        }
+
+        int covered = 0, endCrop = 0, endCovered = 0;
+        foreach (var point in points)
+        {
+            if (point.Covered) covered++;
+            if (!point.AtLanding) continue;
+            endCrop++;
+            if (point.Covered) endCovered++;
+        }
+        return new PieceCover(points.Count, covered, endCrop, endCovered, setback);
+    }
+
+    /// <summary>
+    /// The crop of the piece of a pass a turn drives to (<see cref="PieceAheadOfTurn"/>), a point a
+    /// metre: all of it and how much of it is covered, the same for its first
+    /// <see cref="OpenEndStretch"/> from where the turn lands, and the crop left out before an
+    /// obstacle the pass is turned at (<paramref name="Setback"/>).
+    /// </summary>
+    public readonly record struct PieceCover(int Crop, int Covered, int EndCrop, int EndCovered, int Setback = 0)
+    {
+        /// <summary>
+        /// Worked as a pass is (<see cref="IsPassWorked"/>): at least half of its crop covered. A piece
+        /// with no crop but what lies before the obstacle the pass is turned at has nothing to work.
+        /// </summary>
+        public bool IsWorked => Crop + Setback > 0 && Covered * 2 >= Crop;
+
+        /// <summary>Left to do where the turn lands, as <see cref="IsPassOpenAtThisEnd"/>: less than half of that stretch covered.</summary>
+        public bool IsOpenAtLanding => EndCrop > 0 && EndCovered * 2 < EndCrop;
+    }
+
+    /// <summary>A turn's last point further than this from a pass does not end on it, m (<see cref="PieceAheadOfTurn"/>).</summary>
+    private const double OffPassAtTurnEnd = 2.0;
 
     /// <summary>
     /// The most of the crop of the passes between the two it joins that a snake turn at the field's
@@ -1628,16 +1815,22 @@ public sealed class YouTurnPathingService
         foreach (var inner in inners)
         {
             if (inner.AtObstacle != ObstacleAction.Turn || !inner.IsValid) continue;
-            double grow = Math.Max(0, distance) + (inner.IsHard ? hardReach : 0);
-            double minE = double.MaxValue, minN = double.MaxValue, maxE = double.MinValue, maxN = double.MinValue;
-            foreach (var p in inner.Points)
-            {
-                minE = Math.Min(minE, p.Easting); maxE = Math.Max(maxE, p.Easting);
-                minN = Math.Min(minN, p.Northing); maxN = Math.Max(maxN, p.Northing);
-            }
-            cuts.Add((inner, grow, minE - grow, minN - grow, maxE + grow, maxN + grow));
+            cuts.Add(CutOf(inner, Math.Max(0, distance) + (inner.IsHard ? hardReach : 0)));
         }
         return cuts;
+    }
+
+    // An obstacle grown by <paramref name="grow"/>, with the box round it, for InTurnObstacleCut.
+    private static (BoundaryPolygon Poly, double Grow, double MinE, double MinN, double MaxE, double MaxN) CutOf(
+        BoundaryPolygon inner, double grow)
+    {
+        double minE = double.MaxValue, minN = double.MaxValue, maxE = double.MinValue, maxN = double.MinValue;
+        foreach (var p in inner.Points)
+        {
+            minE = Math.Min(minE, p.Easting); maxE = Math.Max(maxE, p.Easting);
+            minN = Math.Min(minN, p.Northing); maxN = Math.Max(maxN, p.Northing);
+        }
+        return (inner, grow, minE - grow, minN - grow, maxE + grow, maxN + grow);
     }
 
     /// <summary>Is the point inside a U-turn obstacle's turn line (<see cref="TurnObstacleCuts"/>)?</summary>

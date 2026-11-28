@@ -284,7 +284,7 @@ public partial class YouTurnCreationService
 
         while (true)
         {
-            _straightDestination = _bentDestination = null;
+            _straightDestination = _bentDestination = _destinationWithRunOn = null;
             var input = BuildCreationInput(
                 currentPosition, selectedTrack, headingRadians, abHeading, turnLeft,
                 boundary, headlandLine, guidance, turn, uTurnSkipRows, headlandCalculatedWidth,

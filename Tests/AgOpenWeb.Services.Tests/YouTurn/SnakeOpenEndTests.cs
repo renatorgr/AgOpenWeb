@@ -326,7 +326,8 @@ public class SnakeOpenEndTests
         Assert.Multiple(() =>
         {
             Assert.That(turn.TurnPath, Is.Null, $"no turn onto pass {turn.ReturnPassTargetPath}");
-            Assert.That(effects.StatusMessage, Is.EqualTo("Field complete — all tracks worked"));
+            // Not "Field complete": pass 4's main piece north of the bay is still to do.
+            Assert.That(effects.StatusMessage, Is.EqualTo("1 pass still to do, but no room on the next pass at this end"));
         });
     }
 
