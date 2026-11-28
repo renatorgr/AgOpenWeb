@@ -66,6 +66,11 @@ public sealed record JobSpec(
     /// the first, as before). Fork only: the farm jobs, where the share sprayed by the first such end swung
     /// from 56 to 23 % with the order the passes happened to be worked in (Casa, 25-26 Nov 2026).</summary>
     public int MovesOnAfterNoRoom { get; init; }
+    /// <summary>TRIAL (not in the repo): when AgOpenWeb gives the tractor back in the middle of a job (a turn
+    /// refused, an alarm that takes AutoSteer off and stands), the operator turns by hand to the start of the
+    /// nearest pass still to do and goes on, up to this many times (0: the job ends at the first, as before),
+    /// so one job shows every such place of the field and not only the first.</summary>
+    public int TurnsByHand { get; init; }
     /// <summary>How the operator guides the job: the AB line named in <see cref="Track"/> (the
     /// default), or a curve, a closed loop, a water pivot, contour or a recorded path
     /// (<see cref="PathOperator"/>).</summary>
@@ -300,6 +305,12 @@ public sealed class JobRun : IAsyncDisposable
     /// <summary>Each "no room" end the operator drove on from by hand (<see cref="JobSpec.MovesOnAfterNoRoom"/>):
     /// when it was said, on which pass, the pass driven to and the share sprayed by then.</summary>
     public readonly List<string> MovedOn = new();
+    /// <summary>Each place AgOpenWeb gave the tractor back and the operator turned by hand (<see cref="JobSpec.TurnsByHand"/>).</summary>
+    public readonly List<string> TurnedByHand = new();
+    private bool _moveOnByHand;
+    private string? _lastTakeOverSaid;
+    private int _lastReengageFix = int.MinValue / 2;
+    private bool HandTurnsLeft => TurnedByHand.Count < Spec.TurnsByHand && Frame is StraightFrame;
     /// <summary>The share of the cultivated area sprayed when the operator first drove on by hand (NaN: never).</summary>
     public double SprayedAtFirstMoveOn = double.NaN;
     /// <summary>A "no room" end reached, the operator to drive on from it by hand (<see cref="MoveOnAsync"/>).</summary>
@@ -1197,13 +1208,26 @@ public sealed class JobRun : IAsyncDisposable
                     offReason = c.DisengageReason;
                     offAt = Seconds;
                     Said.Add(F($"{Seconds:0.0} s: AutoSteer off: {c.DisengageReason ?? "no reason given"}"));
+                    // Off again within 10 s of engaging again: the alarm stands, the operator turns by hand.
+                    if (HandTurnsLeft && _moveOn == null && Fix - _lastReengageFix <= 100)
+                    {
+                        _moveOn = (F($"AutoSteer off: {c.DisengageReason ?? "no reason given"}"), Seconds, Pass);
+                        _moveOnByHand = true;
+                    }
                 }
                 // The careful operator looks up, and after two seconds engages again.
                 else if (Fix - offSince == 20 && Spec.Reengage)
                 {
                     await SendAsync("autosteer.toggle");
                     Reengaged++;
-                    if (Reengaged > 8) { Problems.Add("AutoSteer kept going off; gave up after 8 re-engagements"); break; }
+                    _lastReengageFix = Fix;
+                    if (Reengaged > 8 + 3 * Spec.TurnsByHand) { Problems.Add("AutoSteer kept going off; gave up after 8 re-engagements"); break; }
+                }
+                // Still off two seconds after engaging again: it did not engage.
+                else if (Fix - offSince == 40 && HandTurnsLeft && _moveOn == null)
+                {
+                    _moveOn = (F($"AutoSteer off: {offReason ?? "no reason given"} (it would not engage again)"), offAt, Pass);
+                    _moveOnByHand = true;
                 }
             }
             else { offSince = -1; offReason = null; }
@@ -1262,6 +1286,11 @@ public sealed class JobRun : IAsyncDisposable
                             _takeOverAtEnd = (Seconds, e, Pass);
                             Did(F($"AgOpenWeb asked the operator to take over at the end of the field (\"{e}\"): the operator drives pass {Pass} to its end"));
                         }
+                        else if (HandTurnsLeft)
+                        {
+                            _lastTakeOverSaid = F($"{Seconds:0} s on pass {Pass}: {e}");
+                            Did(F($"AgOpenWeb asked the operator to take over (\"{e}\"): the operator keeps on until AutoSteer goes off"));
+                        }
                         else TakeOver(e, Seconds, Pass, atEnd: false);
                     }
                 }
@@ -1284,8 +1313,18 @@ public sealed class JobRun : IAsyncDisposable
             if (_moveOn is { } mo)
             {
                 _moveOn = null;
+                bool byHand = _moveOnByHand;
+                _moveOnByHand = false;
                 if (await MoveOnAsync(mo.Text, mo.At, mo.Pass))
                 {
+                    if (byHand)
+                    {
+                        TurnedByHand.Add(F($"{MovedOn[^1]}; AgOpenWeb: \"{mo.Text}\"{(_lastTakeOverSaid != null ? F($"; before that, {_lastTakeOverSaid}") : "")}"));
+                        _lastTakeOverSaid = null;
+                        _lastReengageFix = int.MinValue / 2;
+                        InTurn = false;
+                        _takeOverAtEnd = null;
+                    }
                     cmd = 0; wasExecuting = false; turn = null;
                     offSince = -1; offReason = null; offAt = -1;
                     leftWorkAt = -1; inWorkSinceEnd = false;
@@ -1312,6 +1351,12 @@ public sealed class JobRun : IAsyncDisposable
             }
             if (TookOverAt >= 0) break;
             double far = OutsideBoundaryM().Worst;
+            if (far > 25 && !engaged && !string.IsNullOrEmpty(offReason) && HandTurnsLeft && _moveOn == null)
+            {
+                _moveOn = (F($"AutoSteer off: {offReason} (the tractor then rolled out of the field)"), offAt, Pass);
+                _moveOnByHand = true;
+                continue;
+            }
             if (far > 25 && !engaged && !string.IsNullOrEmpty(offReason))
             {
                 // AgOpenWeb switched AutoSteer off with its alarm and the reason (the implement heading
@@ -1356,9 +1401,16 @@ public sealed class JobRun : IAsyncDisposable
     /// an obstacle, which the app must refuse, #698) and a missed one are what the app said, noted.</summary>
     private void TakeOver(string e, double warnedAt, int pass, bool atEnd, bool mayMoveOn = true)
     {
-        if (mayMoveOn && atEnd && IsNoRoom(e) && MovedOn.Count < Spec.MovesOnAfterNoRoom && Frame is StraightFrame)
+        if (mayMoveOn && atEnd && IsNoRoom(e) && MovedOn.Count - TurnedByHand.Count < Spec.MovesOnAfterNoRoom && Frame is StraightFrame)
         {
             _moveOn = (e, warnedAt, pass);
+            _takeOverAtEnd = null;
+            return;
+        }
+        if (mayMoveOn && HandTurnsLeft)
+        {
+            _moveOn = (e, warnedAt, pass);
+            _moveOnByHand = true;
             _takeOverAtEnd = null;
             return;
         }

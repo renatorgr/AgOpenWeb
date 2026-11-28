@@ -140,12 +140,18 @@ public static partial class FarmJobs
             DriveOnPastStartWarnings = true,
             // "No room on the next pass" with the field going on: by hand to the nearest pass still to do, and on.
             MovesOnAfterNoRoom = 20,
+            TurnsByHand = int.TryParse(Environment.GetEnvironmentVariable("AGOPENWEB_JOB_HAND_TURNS"), out int handTurns) ? handTurns : 0,
             ExtraJudge = (sc, r, flag) =>
             {
                 // The job went on past "no room" ends by hand: the share at the first is the number the
                 // job ended with before (comparable with older nights), the rest is the whole field's.
                 if (!double.IsNaN(r.SprayedAtFirstMoveOn))
                     sc.Row.Metrics.Add(("Sprayed when AgOpenWeb first had no room for a U-turn on the next pass (the operator then drove on by hand)", JobRun.F($"{r.SprayedAtFirstMoveOn * 100:0.0} %")));
+                if (r.TurnedByHand.Count > 0)
+                {
+                    sc.Row.Metrics.Add(("TRIAL: places AgOpenWeb gave the tractor back and the operator turned by hand", JobRun.F($"{r.TurnedByHand.Count}")));
+                    flag(Severity.Improvement, "TRIAL-TURNED-BY-HAND", JobRun.F($"AgOpenWeb gave the tractor back {r.TurnedByHand.Count} time(s) and the operator turned by hand to the nearest pass still to do: {string.Join(" || ", r.TurnedByHand)}"));
+                }
                 if (r.MovedOn.Count > 0)
                 {
                     flag(Severity.Improvement, "NO-ROOM-DROVE-ON-BY-HAND", JobRun.F($"AgOpenWeb had no room for a U-turn on the next pass {r.MovedOn.Count} time(s) with the field going on, and the operator drove by hand to the nearest pass still to do: {string.Join("; ", r.MovedOn)}."));
