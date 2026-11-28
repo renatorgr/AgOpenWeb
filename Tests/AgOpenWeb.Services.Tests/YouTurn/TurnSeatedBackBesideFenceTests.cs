@@ -1,5 +1,5 @@
 // AgOpenWeb
-// Copyright (C) 2026 AgOpenWeb Contributors
+// Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 using System;
@@ -267,19 +267,46 @@ public class TurnSeatedBackBesideFenceTests
         // A pass north along x = 4, a point every 2 m from y = -150; its end at point 124 (y = 98).
         var pass = Enumerable.Range(0, 130).Select(i => new Vec3(4, -150 + 2.0 * i, 0)).ToList();
 
-        var wall = PassSeatWall.At(pass, endIndex: 124, step: 1, tractorIndex: 15, setback: 13.0);
+        var wall = PassSeatWall.At(pass, endIndex: 124, step: 1, tractorIndex: 15, setback: 13.0, tractor: pass[15], minAhead: 2.0);
         Assert.That(wall, Is.Not.Null);
         Assert.That(wall!.Value.Easting, Is.EqualTo(4).Within(1e-9));
         Assert.That(wall.Value.Northing, Is.EqualTo(85).Within(1e-9));
         Assert.That((wall.Value.DirE, wall.Value.DirN), Is.EqualTo((0.0, 1.0)), "the way the tractor goes");
 
         // Driven the other way (the points run against the tractor), the end at point 1.
-        var south = PassSeatWall.At(pass, endIndex: 1, step: -1, tractorIndex: 100, setback: 13.0);
+        var south = PassSeatWall.At(pass, endIndex: 1, step: -1, tractorIndex: 100, setback: 13.0, tractor: pass[100], minAhead: 2.0);
         Assert.That(south!.Value.Northing, Is.EqualTo(-135).Within(1e-9));
         Assert.That(south.Value.DirN, Is.EqualTo(-1.0));
 
         // At the tractor or behind it: no wall.
-        Assert.That(PassSeatWall.At(pass, endIndex: 124, step: 1, tractorIndex: 120, setback: 13.0), Is.Null);
+        Assert.That(PassSeatWall.At(pass, endIndex: 124, step: 1, tractorIndex: 120, setback: 13.0, tractor: pass[120], minAhead: 2.0), Is.Null);
+    }
+
+    // A curve drawn by taps has a point every 20 m: the stretch that starts at the tractor's point is
+    // most of the way to the end. Judged by that point, a wall 13 m ahead of the tractor was "at the
+    // tractor" and no turn was seated back there.
+    [Test]
+    public void On_the_stretch_from_the_tractor_s_point_the_wall_is_judged_by_where_the_tractor_is()
+    {
+        // A pass north along x = 4, a point every 20 m from y = -100; its end at point 6 (y = 20).
+        var pass = Enumerable.Range(0, 9).Select(i => new Vec3(4, -100 + 20.0 * i, 0)).ToList();
+
+        // The tractor at y = 2, nearest point 5 (y = 0); 5 m before the end is y = 15, 13 m ahead.
+        var wall = PassSeatWall.At(pass, endIndex: 6, step: 1, tractorIndex: 5, setback: 5.0, tractor: new Vec3(4, 2, 0), minAhead: 2.0);
+        Assert.That(wall, Is.Not.Null, "a wall 13 m ahead of the tractor");
+        Assert.That(wall!.Value.Northing, Is.EqualTo(15).Within(1e-9));
+
+        // 16.5 m before the end is y = 3.5: 1.5 m ahead of the tractor, where no turn can start 2 m ahead.
+        Assert.That(PassSeatWall.At(pass, endIndex: 6, step: 1, tractorIndex: 5, setback: 16.5, tractor: new Vec3(4, 2, 0), minAhead: 2.0), Is.Null);
+        // And one behind the tractor: the tractor at y = 8 (its nearest point still 5), the wall at y = 5.
+        Assert.That(PassSeatWall.At(pass, endIndex: 6, step: 1, tractorIndex: 5, setback: 15.0, tractor: new Vec3(4, 8, 0), minAhead: 2.0), Is.Null);
+        // Behind the tractor's point: none, as before.
+        Assert.That(PassSeatWall.At(pass, endIndex: 6, step: 1, tractorIndex: 5, setback: 25.0, tractor: new Vec3(4, -8, 0), minAhead: 2.0), Is.Null);
+
+        // Driven the other way: the end at point 2 (y = -60), the tractor at y = -42, nearest point 3.
+        var south = PassSeatWall.At(pass, endIndex: 2, step: -1, tractorIndex: 3, setback: 5.0, tractor: new Vec3(4, -42, Math.PI), minAhead: 2.0);
+        Assert.That(south, Is.Not.Null);
+        Assert.That(south!.Value.Northing, Is.EqualTo(-55).Within(1e-9));
     }
 
     [Test]

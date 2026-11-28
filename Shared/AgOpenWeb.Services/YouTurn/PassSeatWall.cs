@@ -1,5 +1,5 @@
 // AgOpenWeb
-// Copyright (C) 2026 AgOpenWeb Contributors
+// Copyright (C) 2024-2026 AgOpenWeb Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 using System;
@@ -37,28 +37,43 @@ internal static class PassSeatWall
     /// <summary>
     /// Where the wall stands: <paramref name="setback"/> m back along <paramref name="pass"/> from its
     /// end (<paramref name="endIndex"/>, the first point outside the turn area on the first try)
-    /// towards the tractor (<paramref name="tractorIndex"/>; <paramref name="step"/> is the way the
-    /// tractor goes through the points, 1 or -1). Null when that is at the tractor or behind it.
+    /// towards the tractor (<paramref name="tractorIndex"/>, the point of the pass nearest
+    /// <paramref name="tractor"/>; <paramref name="step"/> is the way the tractor goes through the
+    /// points, 1 or -1). Null when that is behind the tractor's point, or on the stretch that starts at
+    /// that point and not more than <paramref name="minAhead"/> m ahead of the tractor itself. That
+    /// stretch is judged by the tractor's place, not by its point: on a pass with points far apart (a
+    /// curve drawn by taps has one every 20 m) it is most of the way to the end.
     /// </summary>
-    public static Wall? At(IReadOnlyList<Vec3> pass, int endIndex, int step, int tractorIndex, double setback)
+    public static Wall? At(IReadOnlyList<Vec3> pass, int endIndex, int step, int tractorIndex, double setback,
+        Vec3 tractor, double minAhead)
     {
         if (endIndex < 0 || endIndex >= pass.Count || step == 0) return null;
         double left = Math.Max(0.0, setback);
         for (int j = endIndex; ; j -= step)
         {
             int k = j - step;
-            if (k < 0 || k >= pass.Count || (k - tractorIndex) * step <= 0) return null;
+            if (k < 0 || k >= pass.Count || (k - tractorIndex) * step < 0) return null;
             double de = pass[j].Easting - pass[k].Easting, dn = pass[j].Northing - pass[k].Northing;
             double seg = Math.Sqrt(de * de + dn * dn);
             if (seg < 1e-6) continue;
             if (left <= seg)
             {
                 double t = left / seg;
-                return new Wall(pass[j].Easting - de * t, pass[j].Northing - dn * t, de / seg, dn / seg);
+                var wall = new Wall(pass[j].Easting - de * t, pass[j].Northing - dn * t, de / seg, dn / seg);
+                if (k == tractorIndex
+                    && (wall.Easting - tractor.Easting) * wall.DirE + (wall.Northing - tractor.Northing) * wall.DirN <= minAhead)
+                    return null;
+                return wall;
             }
             left -= seg;
         }
     }
+
+    /// <summary>
+    /// Where the pass must be inside the turn line for a turn to be seated at <paramref name="wall"/>:
+    /// half a metre before it.
+    /// </summary>
+    public static Vec2 Probe(Wall wall) => new(wall.Easting - wall.DirE * 0.5, wall.Northing - wall.DirN * 0.5);
 
     /// <summary>
     /// <paramref name="turnLine"/> (the outer turn line, a ring) cut off at <paramref name="wall"/>:
@@ -81,7 +96,8 @@ internal static class PassSeatWall
         };
         var pieces = Clipper.Intersect(new Paths64 { ring }, new Paths64 { before }, FillRule.NonZero);
         // The piece the pass is in, half a metre before the wall.
-        var probe = P(wall.Easting - wall.DirE * 0.5, wall.Northing - wall.DirN * 0.5);
+        var at = Probe(wall);
+        var probe = P(at.Easting, at.Northing);
         foreach (var piece in pieces)
         {
             if (piece.Count < 3 || Clipper.PointInPolygon(probe, piece) == PointInPolygonResult.IsOutside) continue;

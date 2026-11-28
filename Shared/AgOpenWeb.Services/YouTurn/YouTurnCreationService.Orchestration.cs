@@ -295,6 +295,7 @@ public partial class YouTurnCreationService
         int obstacleAtEnd = -1;
         // How far the implement was over a hard fence's margin on the last try along the pass.
         double wallIntrusion = double.PositiveInfinity;
+        var tractor = new Vec3(currentPosition.Easting, currentPosition.Northing, headingRadians);
 
         var obstacles = EmptyObstacles;
         // No turn where it was seated back to: told by what seated it back, an obstacle (a bend round
@@ -315,9 +316,17 @@ public partial class YouTurnCreationService
         {
             _straightDestination = _bentDestination = _destinationWithRunOn = null;
             PassSeatWall.Wall? wall = alongPass
-                ? PassSeatWall.At(firstPass!, turnLineEnd!.Value, passStep, firstLocation, extraSetback)
+                ? PassSeatWall.At(firstPass!, turnLineEnd!.Value, passStep, firstLocation, extraSetback, tractor, MinArcStartAhead)
                 : null;
-            var input = alongPass && wall == null ? null : BuildCreationInput(
+            // The pass outside the turn line where the wall would stand: asked of the first try's turn
+            // area (the turn lines where they are, as the wall's are) before anything is built there.
+            bool wallOffTheArea = false;
+            if (wall is { } seatAt && turnAreaAsItIs != null)
+            {
+                var seatProbe = PassSeatWall.Probe(seatAt);
+                wallOffTheArea = turnAreaAsItIs(new Vec3(seatProbe.Easting, seatProbe.Northing, 0)) < 0;
+            }
+            var input = alongPass && (wall == null || wallOffTheArea) ? null : BuildCreationInput(
                 currentPosition, selectedTrack, headingRadians, abHeading, turnLeft,
                 boundary, headlandLine, guidance, turn, uTurnSkipRows, headlandCalculatedWidth,
                 out obstacles, extraSetback, plan, wall);
@@ -577,6 +586,10 @@ public partial class YouTurnCreationService
                         // Seated back along the pass, a fence beside the pass stays as near the
                         // implement: when a try further back brought it no nearer to clear, none
                         // will, and each try is a turn built.
+                        // Going on after a try that came no nearer was measured (the farm job harness on
+                        // the tester's fields, 20 jobs, 28 Nov 2026: two more tries allowed wherever this
+                        // stopped them): no turn was found at any of those ends, the implement as far
+                        // inside the margin on every try (1.5, 3.8, 8 m) or further in.
                         if (alongPass && clearance.MaxIntrusion > wallIntrusion - 0.01)
                         {
                             _logger.Log(refused, "[YouTurn] Seated back {S:F1} m along the pass the implement is still {I:F2} m inside the hard boundary's margin (a fence beside the pass); not engaging.",
@@ -715,7 +728,7 @@ public partial class YouTurnCreationService
             // pass moved in too: the same setback along the pass instead (PassSeatWall), where that
             // is still ahead of the tractor. Fork only.
             if (extraSetback > 0 && !alongPass && turnLineEnd != null && firstPass != null
-                && PassSeatWall.At(firstPass, turnLineEnd.Value, passStep, firstLocation, extraSetback) != null)
+                && PassSeatWall.At(firstPass, turnLineEnd.Value, passStep, firstLocation, extraSetback, tractor, MinArcStartAhead) != null)
             {
                 _logger.LogDebug("[YouTurn] With the turn lines moved in {S:F1} m no turn is built ({Reason}); seating it back along the pass instead",
                     extraSetback, output.FailureReason ?? "unknown");
