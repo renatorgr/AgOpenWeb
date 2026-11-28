@@ -966,6 +966,8 @@ public sealed class JobRun : IAsyncDisposable
         int saidAtTurnStart = 0;
         TurnRecord? turn = null;
         int offSince = -1, lastPassSeen = int.MinValue;
+        // The fix at which the operator last engaged AutoSteer again after an alarm.
+        int reengagedAtFix = int.MinValue / 2;
         // Why AgOpenWeb switched AutoSteer off this time (its alarm), and when; null while AutoSteer is on.
         string? offReason = null;
         double offAt = -1;
@@ -1197,14 +1199,19 @@ public sealed class JobRun : IAsyncDisposable
                     offReason = c.DisengageReason;
                     offAt = Seconds;
                     Said.Add(F($"{Seconds:0.0} s: AutoSteer off: {c.DisengageReason ?? "no reason given"}"));
+                    // Off again within 10 s of engaging again: the alarm stands.
+                    if (Fix - reengagedAtFix <= 100) TakeOverBeforeNoRoomEnd(offReason);
                 }
                 // The careful operator looks up, and after two seconds engages again.
                 else if (Fix - offSince == 20 && Spec.Reengage)
                 {
                     await SendAsync("autosteer.toggle");
                     Reengaged++;
+                    reengagedAtFix = Fix;
                     if (Reengaged > 8) { Problems.Add("AutoSteer kept going off; gave up after 8 re-engagements"); break; }
                 }
+                // Still off two seconds after engaging again: it did not engage.
+                else if (Fix - offSince == 40 && Spec.Reengage) TakeOverBeforeNoRoomEnd(offReason);
             }
             else { offSince = -1; offReason = null; }
 
@@ -1348,6 +1355,22 @@ public sealed class JobRun : IAsyncDisposable
     }
 
     public (double E, double N, double Heading) ToolCentre() => Truth.ToolCentre;
+
+    /// <summary>On the way to a "no room" end (<see cref="_takeOverAtEnd"/>) AgOpenWeb switched AutoSteer off with its
+    /// alarm (<paramref name="alarm"/>: an obstacle ahead with no U-turn before it, the fence) and it would not stay
+    /// on when the operator engaged again: the operator takes over where AgOpenWeb gave the tractor back, as the
+    /// alarm asks, and drives on by hand from there (<see cref="MoveOnAsync"/>), not from the end of the pass. The
+    /// harness tractor, steered by nobody, rolled on to the end of the pass through whatever was on it: on Couto
+    /// da Ribeira started on pass 17 (28 Nov 2026) through a hard obstacle and the ditch, 11 m² sprayed inside
+    /// them and a Safety finding that was the harness's own. Only where the operator drives on by hand from a
+    /// "no room" end (<see cref="JobSpec.MovesOnAfterNoRoom"/>); the other jobs end as before.</summary>
+    private void TakeOverBeforeNoRoomEnd(string? alarm)
+    {
+        if (_takeOverAtEnd is not { } w || TookOverAt >= 0 || _moveOn != null || !IsNoRoom(w.Text) || string.IsNullOrEmpty(alarm)) return;
+        if (MovedOn.Count >= Spec.MovesOnAfterNoRoom || Frame is not StraightFrame) return;
+        Did(F($"on the way to the end of pass {w.Pass} AutoSteer went off (\"{alarm}\") and would not stay on: the operator takes over here, {Seconds:0} s, as the alarm asks"));
+        TakeOver(w.Text, w.At, w.Pass, atEnd: true);
+    }
 
     /// <summary>The operator takes over at AgOpenWeb's warning <paramref name="e"/> (said at <paramref name="warnedAt"/> s
     /// on pass <paramref name="pass"/>), now; <paramref name="atEnd"/> when the warning asked for the end of the field and

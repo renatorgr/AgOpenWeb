@@ -322,6 +322,13 @@ pass at this end", "No U-turn onto the next pass: ..."):
   0.66 s of real time, and a run faster than real time was through the fixes before the engage in a tenth of
   that, so AutoSteer was engaged on the pass the tractor had left: on Couto da Ribeira (28 Nov 2026) the job
   ended there with "no room to move onto this line here" and 41 % sown.
+- On the way to that end AgOpenWeb may switch AutoSteer off with its alarm (an obstacle on the pass with no
+  U-turn before it, the fence). The operator engages again once, after 2 s; when it does not stay on (off
+  again within 10 s, or still off 2 s later) he takes over there and drives on by hand from there
+  (`JobRun.TakeOverBeforeNoRoomEnd`). The harness tractor rolled on to the end of the pass, steered by nobody,
+  through whatever was on it: on Couto da Ribeira started on pass 17 (28 Nov 2026) through a hard obstacle and
+  the ditch, with 11 m² sprayed inside them and a `SPRAYED-IN-OBSTACLE` Safety finding that was the harness's
+  own.
 - Each time is listed in `NO-ROOM-DROVE-ON-BY-HAND` (Improvement), and the share sprayed at the first one is
   a metric (also when no pass was left to drive to): it is the number the job ended with before. The passes
   driven by hand count in "U-turns / passes".
