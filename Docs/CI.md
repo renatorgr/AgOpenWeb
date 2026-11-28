@@ -4,7 +4,10 @@
 GitHub Actions workflows, split by purpose:
 
 - **`build-and-release.yml`** ("CI") — on every push / PR to `main` or `develop`: runs the test suite plus a
-  compile-check of each platform head (Desktop, Android, iOS). No packaging, no releases.
+  compile-check of each platform head (Desktop, Android, iOS). No packaging, no releases. It also checks
+  the settings reader map (`Tools/settings-readers`): every `config.set` key and the code that reads it,
+  found by the compiler; it fails when the map is out of date or a setting is read by nothing
+  (`dotnet run --project Tools/settings-readers -- --write` updates it).
 - **`build-deploy-bundles.yml`** — the single packaging + release publisher. Runs the
   `deploy/{linux,windows,macos}/package.sh` scripts + builds the signed Android APK on clean runners:
   - on a **`v*` tag** (or manual dispatch with a tag) → publishes one complete Release, marked
@@ -30,5 +33,9 @@ GitHub Actions workflows, split by purpose:
   The slow ones that rarely change (the Vehicle & Tool settings sweep, working day, update, dump replay) run only when a
   commit of the last 25 hours touched what they cover, and every Sunday whatever changed (`.github/scripts/nightly-fresh.sh`,
   the paths in each workflow; add a path there when a harness starts covering more). Each harness's `README.md` says what it covers.
+  With the repository variable `NIGHTLY_ALWAYS` set to `true` (Settings → Secrets and variables → Actions → Variables,
+  or `gh variable set NIGHTLY_ALWAYS --body true`), every harness runs every night whether or not anything changed: for a
+  freeze, when `develop` has no commits and the nightly must keep running on it. Delete it afterwards
+  (`gh variable delete NIGHTLY_ALWAYS`); it needs no commit either way.
 
 To cut a release (about weekly, so each one stays small): bump `sys/version.h` and the three heads' display versions, then push a tag — `git tag v26.7.x && git push origin v26.7.x`. A summary on top of the generated list goes in with `gh release edit`.

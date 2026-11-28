@@ -143,6 +143,14 @@ public partial class MainViewModel
     /// that has none), with the row rule of the skip button: the skip modes skip at least 1 row.
     /// Each field keeps its own, also after the app is closed.
     /// </summary>
+    // Field session step (MainViewModel.FieldSession.cs): the field's own U-turn skip choice (Normal for a
+    // field that has none), so the last field's doesn't carry over and a restart doesn't lose it.
+    private Task OpenUTurnSkip(FieldOpening o)
+    {
+        LoadUTurnSkipFromField(o.FieldPath);
+        return Task.CompletedTask;
+    }
+
     private void LoadUTurnSkipFromField(string fieldDirectory)
     {
         var choice = Services.YouTurn.UTurnSkipFileService.Load(fieldDirectory);

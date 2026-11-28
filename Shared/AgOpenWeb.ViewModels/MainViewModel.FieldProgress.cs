@@ -131,6 +131,15 @@ public partial class MainViewModel
 
     /// <summary>Start counting the field and timing the job. Called with the field open and its coverage
     /// loaded (next to <see cref="StartCoverageAutosave"/>).</summary>
+    // Field session steps (MainViewModel.FieldSession.cs): started once coverage is loaded, stopped with the autosave.
+    private Task OpenFieldProgress(FieldOpening o)
+    {
+        StartFieldProgress();
+        return Task.CompletedTask;
+    }
+
+    private void CloseFieldProgress() => StopFieldProgress();
+
     private void StartFieldProgress()
     {
         var job = _jobService.ActiveJob;

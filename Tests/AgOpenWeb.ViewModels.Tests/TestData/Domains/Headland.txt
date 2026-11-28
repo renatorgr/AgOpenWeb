@@ -2,7 +2,6 @@
 # Made by DomainCharacterizationTests (AGOPENWEB_UPDATE_DOMAINS=1); do not edit by hand.
 == open the field
   vm.ActiveField = same as vm.State.Field.ActiveField
-  vm.ActiveFieldArea = 3.967
   vm.ActiveFieldName = <field>
   vm.BoundaryAreaDisplay = 3.97 ha
   vm.CurrentBoundary = same as vm.State.Field.ActiveField.Boundary
@@ -18,7 +17,6 @@
   vm.PersistentState.LastOpenedField = <field>
   vm.PersistentState.SimulatorLatitude = 47.22
   vm.PersistentState.SimulatorLongitude = 8.52
-  vm.RemainingAreaDisplay = 3.97 ha
   vm.SavedTracks = count 3 #5bba861a
   vm.SavedTracks[0] = same as vm.State.Field.Tracks[0]
   vm.SavedTracks[1] = same as vm.State.Field.Tracks[1]
@@ -324,7 +322,6 @@
   vm.StatusMessage = Headland ON
 == close the field
   vm.ActiveField = null
-  vm.ActiveFieldArea = null
   vm.ActiveFieldName = null
   vm.BoundaryAreaDisplay = 0.00 ha
   vm.CurrentBoundary = null
@@ -382,7 +379,6 @@
   vm.HeadlandStatusText = No headland lines
   vm.IsFieldOpen = False
   vm.IsHeadlandOn = False
-  vm.RemainingAreaDisplay = 0.00 ha
   vm.SavedTracks = count 0 #00000011
   vm.SavedTracks[0] = (gone)
   vm.SavedTracks[1] = (gone)
@@ -612,7 +608,6 @@
   files: HeadlandSegments.json#6f0ffebd TramConfig.json#cc8c5326 field.geojson#4bed6384
 == open it again
   vm.ActiveField = same as vm.State.Field.ActiveField
-  vm.ActiveFieldArea = 3.967
   vm.ActiveFieldName = <field>
   vm.BoundaryAreaDisplay = 3.97 ha
   vm.CurrentBoundary = same as vm.State.Field.ActiveField.Boundary
@@ -670,7 +665,6 @@
   vm.HeadlandStatusText = 2.56 ha (3 lines)
   vm.IsFieldOpen = True
   vm.IsHeadlandOn = True
-  vm.RemainingAreaDisplay = 3.97 ha
   vm.SavedTracks = count 3 #5bba861a
   vm.SavedTracks[0] = same as vm.State.Field.Tracks[0]
   vm.SavedTracks[1] = same as vm.State.Field.Tracks[1]
@@ -1024,7 +1018,6 @@
   files: HeadlandSegments.json#00004b33 TramConfig.json#cc8c5326 field.geojson#df647990
 == close the field
   vm.ActiveField = null
-  vm.ActiveFieldArea = null
   vm.ActiveFieldName = null
   vm.BoundaryAreaDisplay = 0.00 ha
   vm.CurrentBoundary = null
@@ -1034,7 +1027,6 @@
   vm.HasActiveField = False
   vm.HasBoundary = False
   vm.IsFieldOpen = False
-  vm.RemainingAreaDisplay = 0.00 ha
   vm.SavedTracks = count 0 #00000011
   vm.SavedTracks[0] = (gone)
   vm.SavedTracks[1] = (gone)
@@ -1245,7 +1237,6 @@
   vm.StatusStripRotatingLine = No field
 == open it again
   vm.ActiveField = same as vm.State.Field.ActiveField
-  vm.ActiveFieldArea = 3.967
   vm.ActiveFieldName = <field>
   vm.BoundaryAreaDisplay = 3.97 ha
   vm.CurrentBoundary = same as vm.State.Field.ActiveField.Boundary
@@ -1255,7 +1246,6 @@
   vm.HasActiveField = True
   vm.HasBoundary = True
   vm.IsFieldOpen = True
-  vm.RemainingAreaDisplay = 3.97 ha
   vm.SavedTracks = count 3 #5bba861a
   vm.SavedTracks[0] = same as vm.State.Field.Tracks[0]
   vm.SavedTracks[1] = same as vm.State.Field.Tracks[1]

@@ -19,8 +19,6 @@ public partial class MainViewModel
 {
     #region Guidance State
 
-    // Track guidance state (carried between iterations for track snapping/preview)
-    private TrackGuidanceState? _trackGuidanceState;
 
     #endregion
 

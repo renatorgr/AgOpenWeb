@@ -40,7 +40,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 concurrency:
-  group: update-scenarios
+  group: update-scenarios-${{ github.ref }}  # by branch: a round's run must not cancel develop's
   cancel-in-progress: true
 
 jobs:
@@ -54,6 +54,8 @@ jobs:
 
       - name: Anything new since the last night?
         id: fresh
+        env:
+          NIGHTLY_ALWAYS: ${{ vars.NIGHTLY_ALWAYS }}
         run: |
           # A slow harness: only when what it covers changed, and on Sundays (the script).
           .github/scripts/nightly-fresh.sh "${{ inputs.nightly }}" \
