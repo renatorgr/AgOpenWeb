@@ -1599,6 +1599,13 @@ namespace AgOpenWeb.Services.YouTurn
         private List<Vec3>? _straightDestination, _bentDestination;
 
         /// <summary>
+        /// The pass the turn last built lands on, as it is steered after the turn: bent round its Go
+        /// around obstacles, and straight through one it has no room to go round, which is turned
+        /// at. Null when the last build made no next pass. Fork only.
+        /// </summary>
+        public IReadOnlyList<Vec3>? LastDestinationPass => _bentDestination;
+
+        /// <summary>
         /// Whether a created path ends on a bend of the next pass: its last point more than half a
         /// metre off the straight next pass, that pass having been bent round a Go around obstacle.
         /// </summary>

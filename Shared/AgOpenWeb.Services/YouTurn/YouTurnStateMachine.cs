@@ -82,6 +82,8 @@ public sealed class YouTurnStateMachine
     // and would otherwise test every pass again on each cycle. Cleared when the snake is
     // planned again, a turn completes, or the track, nudge or cultivated area changes.
     private readonly Dictionary<int, bool> _coveredPasses = new();
+    // The passes not worked that have crop to work (PassesWithCropLeft), kept with _coveredPasses.
+    private readonly Dictionary<int, bool> _cropLeft = new();
     private (List<int>? Plan, Models.Track.Track? Track, double Nudge, Boundary? Boundary, IReadOnlyList<Vec3>? Headland) _coveredPassesKey;
 
     // Of the passes worked on the whole, the ones still to do at the end ahead
@@ -125,7 +127,9 @@ public sealed class YouTurnStateMachine
     private const double SameLandingDistance = 30.0;
 
     // The passes whose turn at the end ahead would land where a turn landed before, on worked
-    // ground: worked at this end. Decided once per end, cleared with _openAtEnd. Fork only.
+    // ground, or on a piece of the pass that is worked as far as its next end
+    // (TurnLandsOnWorkedPiece): worked at this end. Decided once per end, cleared with _openAtEnd.
+    // Fork only.
     private readonly HashSet<int> _repeatAtEnd = new();
 
     // Which way the last turn stepped across the field (+1 to a higher pass, -1 lower) and on
@@ -1134,6 +1138,7 @@ public sealed class YouTurnStateMachine
         turn.SnakeIndex = -1;
         turn.AltSign = 0;
         _coveredPasses.Clear();
+        _cropLeft.Clear();
         _openAtEnd.Clear();
         _doneAtEnd.Clear();
         _repeatAtEnd.Clear();
@@ -1154,6 +1159,7 @@ public sealed class YouTurnStateMachine
         turn.SnakeSequence = null;
         turn.SnakeIndex = -1;
         _coveredPasses.Clear();
+        _cropLeft.Clear();
         _openAtEnd.Clear();
         _doneAtEnd.Clear();
         _repeatAtEnd.Clear();
@@ -1346,8 +1352,21 @@ public sealed class YouTurnStateMachine
         }
         if (nextPath == null)
         {
-            _logger.LogDebug("[YouTurn] Snake sequence complete — field done");
-            effects.StatusMessage = "Field complete — all tracks worked";
+            // Every pass of the order is worked at this end, which is not every pass worked: one done
+            // at this end only (its piece here worked, a turn onto it here landing on worked ground)
+            // is still to do from its other end, or beyond the obstacle it is turned at. "Field
+            // complete" was said with half the field left (TurnLandsOnWorkedPiece's field).
+            int left = PassesWithCropLeft(in ctx, track, guidance, turn);
+            if (left > 0)
+            {
+                _logger.LogDebug("[YouTurn] Snake: no pass to turn onto at this end, {Left} still to do from elsewhere", left);
+                effects.StatusMessage = SnakeNoRoomMessage(left);
+            }
+            else
+            {
+                _logger.LogDebug("[YouTurn] Snake sequence complete — field done");
+                effects.StatusMessage = "Field complete — all tracks worked";
+            }
             SoundCreationFailed(effects);
             return;
         }
@@ -1419,8 +1438,9 @@ public sealed class YouTurnStateMachine
                 if (built.Path != null && !TurnLandsOffTheCrop(in ctx, track, abHeading, target, guidance, turn, effects, message)
                     && !TurnCrossesCrop(in ctx, track, target, guidance, turn, effects, message))
                 {
-                    if (!TurnMissesOpenEnd(in ctx, track, target, turn, effects, message))
-                        TurnRepeatsLanding(in ctx, track, target, turn, effects, message);
+                    if (!TurnMissesOpenEnd(in ctx, track, target, turn, effects, message)
+                        && !TurnRepeatsLanding(in ctx, track, target, turn, effects, message))
+                        TurnLandsOnWorkedPiece(in ctx, target, turn, effects, message);
                     return;
                 }
                 if (built.Path == null) refused = _searchNotBuilt[target] = built;
@@ -1478,6 +1498,28 @@ public sealed class YouTurnStateMachine
         var left = new HashSet<int>();
         foreach (int pass in seq)
             if (pass != guidance.HowManyPathsAway && !isWorked(pass)) left.Add(pass);
+        return left.Count;
+    }
+
+    /// <summary>
+    /// The passes of the snake's order with crop still to work, whatever end they are worked from,
+    /// the one the tractor is on left out: what is left when every pass counts worked at this end
+    /// (<see cref="YouTurnPathingService.HasCropLeft"/>, asked once for each pass not worked and kept
+    /// with <see cref="_coveredPasses"/>; nothing is asked with every pass worked).
+    /// </summary>
+    private int PassesWithCropLeft(in TickContext ctx, Models.Track.Track track, GuidanceWorkingState guidance, YouTurnWorkingState turn)
+    {
+        if (turn.SnakeSequence is not { } seq) return 0;
+        var worked = WorkedPasses(in ctx, track, guidance, turn, atEndOf: null);
+        var area = SnakeArea(in ctx);
+        var left = new HashSet<int>();
+        foreach (int pass in seq)
+        {
+            if (pass == guidance.HowManyPathsAway || worked(pass)) continue;
+            if (!_cropLeft.TryGetValue(pass, out bool crop))
+                _cropLeft[pass] = crop = _pathing.HasCropLeft(track, pass, guidance.NudgeOffset, ctx.Boundary, area, ctx.IsPointCovered);
+            if (crop) left.Add(pass);
+        }
         return left.Count;
     }
 
@@ -1826,6 +1868,8 @@ public sealed class YouTurnStateMachine
                     if (TurnMissesOpenEnd(in ctx, track, pass, turn, effects, message)) continue;
                     // Lands where a turn landed before, on worked ground: the next one.
                     if (TurnRepeatsLanding(in ctx, track, pass, turn, effects, message)) continue;
+                    // Lands on a piece of the pass worked as far as its next end: the next one.
+                    if (TurnLandsOnWorkedPiece(in ctx, pass, turn, effects, message)) continue;
                     // Drives across the crop of the passes between: the next one.
                     if (TurnCrossesCrop(in ctx, track, pass, guidance, turn, effects, message))
                     {
@@ -2010,6 +2054,50 @@ public sealed class YouTurnStateMachine
     }
 
     /// <summary>
+    /// Pass <paramref name="pass"/> is still to do on the whole, and the piece of it the turn just
+    /// built lands on is worked: from where the turn ends to where the tractor would next turn on
+    /// that pass (<see cref="YouTurnPathingService.PieceAheadOfTurn"/>: the fence, a U-turn
+    /// obstacle's turn line, a Go around obstacle with no room to go round on that pass) at least
+    /// half of the crop is covered, as on a pass worked on the whole, and so is the stretch where
+    /// the turn lands (not left to do there, as <see cref="YouTurnPathingService.IsPassOpenAtThisEnd"/>
+    /// asks of a pass). The turn is dropped and the pass counts worked at this end: what is left of
+    /// it lies beyond that obstacle, and is turned onto from there. It is
+    /// <see cref="YouTurnPathingService.IsPieceDoneAtThisEnd"/>'s rule asked of the turn as built:
+    /// that test judges a pass from its end at the headland before any turn is built and cuts it
+    /// only at the obstacles chosen as U-turn, and <see cref="TurnRepeatsLanding"/> remembers the
+    /// last <see cref="LandingsKept"/> landings. On a tester's field (Couto da Ribeira, the farm job
+    /// harness, 28 Nov 2026, the no-till drill, 2 rows skipped) a ditch drawn as a Go around
+    /// obstacle, 166 m long across the passes, leaves 40 to 60 m of crop between it and the north
+    /// headland; with that piece sown, every pass through it still had its 300 m south of the ditch
+    /// to do, every turn from inside it landed inside it, and going round ten passes the same
+    /// landing came back after nine others: 988 turns until the time ran out, with 44.5 % of the
+    /// field sown. A pass worked on the whole and turned onto for its end left to do is
+    /// <see cref="TurnMissesOpenEnd"/>'s. False with no map, or with no next pass kept by the
+    /// builder. Fork only.
+    /// </summary>
+    private bool TurnLandsOnWorkedPiece(in TickContext ctx, int pass, YouTurnWorkingState turn,
+        YouTurnEffects effects, string? messageBefore)
+    {
+        if (ctx.IsPointCovered is not { } isPointCovered || turn.TurnPath is not { Count: > 1 } path) return false;
+        if (!_coveredPasses.TryGetValue(pass, out bool workedOnTheWhole) || workedOnTheWhole) return false;
+        if (_creation.LastDestinationPass is not { Count: > 1 } line) return false;
+        var piece = _pathing.PieceAheadOfTurn(path, line, ctx.Boundary, ctx.WorkEndLine, isPointCovered);
+        if (!piece.IsWorked || piece.IsOpenAtLanding)
+        {
+            if (piece.Covered * 4 >= piece.Crop && piece.Crop > 0)
+                _logger.LogDebug("[YouTurn] Snake pass {Pass}: the turn there lands on a piece with {Covered} of its {Crop} m to its next end covered, {EndCovered} of its first {EndCrop} - still to do",
+                    pass, piece.Covered, piece.Crop, piece.EndCovered, piece.EndCrop);
+            return false;
+        }
+        _logger.LogDebug("[YouTurn] Snake pass {Pass}: the turn there lands on a worked piece ({Covered} of its {Crop} m to its next end covered, {EndCovered} of its first {EndCrop}) - worked at this end",
+            pass, piece.Covered, piece.Crop, piece.EndCovered, piece.EndCrop);
+        _repeatAtEnd.Add(pass);
+        DiscardPlannedTurn(turn);
+        effects.StatusMessage = messageBefore; // not "YouTurn path created"
+        return true;
+    }
+
+    /// <summary>
     /// The last landing of this job on <paramref name="pass"/> of <paramref name="track"/>, going the
     /// same way, within <see cref="SameLandingDistance"/> of <paramref name="end"/>; null with none.
     /// </summary>
@@ -2139,6 +2227,7 @@ public sealed class YouTurnStateMachine
             || !ReferenceEquals(headlandLine, _coveredPassesKey.Headland))
         {
             _coveredPasses.Clear();
+            _cropLeft.Clear();
             _openAtEnd.Clear();
             _doneAtEnd.Clear();
             _repeatAtEnd.Clear();
@@ -2838,6 +2927,7 @@ public sealed class YouTurnStateMachine
                 _pathing.AdvanceSnakeSequence(turn, guidance.HowManyPathsAway,
                     WorkedPasses(in ctx, ctx.SelectedTrack, guidance, turn, atEndOf: null));
                 _coveredPasses.Clear(); // decided again for the next turn
+                _cropLeft.Clear();
                 _openAtEnd.Clear();
                 _doneAtEnd.Clear();
                 _repeatAtEnd.Clear();
