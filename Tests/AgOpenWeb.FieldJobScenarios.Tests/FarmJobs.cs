@@ -27,7 +27,7 @@ namespace AgOpenWeb.FieldJobScenarios.Tests;
 /// 2 the Maxxum with the same boom; 3 the Puma with the semi-mounted no-till drill; 4 the Maxxum with the drill;
 /// 5 the Puma with a mounted twin-disc fertiliser spreader at 12 m, 6 the same at 20 m (two sections, left and right).
 /// </summary>
-public static class FarmJobs
+public static partial class FarmJobs
 {
     public static string? FieldsRoot => Environment.GetEnvironmentVariable("AGOPENWEB_JOB_FIELDS");
 
@@ -103,53 +103,61 @@ public static class FarmJobs
             double headland = HeadlandWidth(folder);
             bool snake = (skip?.Mode ?? SkipMode(folder)) == 2;
             foreach (var rig in kit.Rigs())
-            {
-                var watch = snake ? new SkipWorkedJobs.SnakeWatch(careless: false) : null;
-                yield return new JobSpec(
-                    JobRun.F($"R{i + 1}{rig.Digit}"), $"{name}, {rig.Title}",
-                    JobRun.F($"{rig.Story} The field as it was saved ({field.Inner.Count} obstacles, headland {headland:0.#} m, its own boundary and skip mode{(snake ? ": ignore worked tracks" : "")}), worked on its AB line '{track}'.") + forThisRun,
-                    name, track, rig.V, rig.T, Machines.PumaSys)
-                {
-                    FieldFolder = folder,
-                    FieldSkip = skip,
-                    Obstacles = true,
-                    HeadlandM = headland > 0 ? headland : 12,
-                    MakeHeadland = r => FileHeadlandAsync(r, headland),
-                    HeadlandSections = rig.HeadlandSections,
-                    OffWhenOut = rig.OffWhenOut,
-                    UTurnRadius = rig.Radius,
-                    UTurnDistanceFromBoundary = rig.Distance,
-                    UTurnStyle = rig.Style,
-                    LookAheadMatchesValves = rig.LookAheadMatchesValves,
-                    SpeedKmh = rig.SpeedKmh,
-                    Extra = typed.Count > 0 ? rig.Extra.Concat(typed).ToList() : rig.Extra,
-                    PassCheck = true,
-                    // A corner of short passes beside the hard fence has no room to turn: start on a full-length pass.
-                    StartChordM = 100,
-                    StartChordOfLongest = 0.8,
-                    DriveOnPastStartWarnings = true,
-                    // "No room on the next pass" with the field going on: by hand to the nearest pass still to do, and on.
-                    MovesOnAfterNoRoom = 20,
-                    ExtraJudge = (sc, r, flag) =>
-                    {
-                        // The job went on past "no room" ends by hand: the share at the first is the number the
-                        // job ended with before (comparable with older nights), the rest is the whole field's.
-                        if (!double.IsNaN(r.SprayedAtFirstMoveOn))
-                            sc.Row.Metrics.Add(("Sprayed when AgOpenWeb first had no room for a U-turn on the next pass (the operator then drove on by hand)", JobRun.F($"{r.SprayedAtFirstMoveOn * 100:0.0} %")));
-                        if (r.MovedOn.Count > 0)
-                        {
-                            flag(Severity.Improvement, "NO-ROOM-DROVE-ON-BY-HAND", JobRun.F($"AgOpenWeb had no room for a U-turn on the next pass {r.MovedOn.Count} time(s) with the field going on, and the operator drove by hand to the nearest pass still to do: {string.Join("; ", r.MovedOn)}."));
-                        }
-                        // AutoSteer engaged in the headland facing the field: a turn planned at the crossing the
-                        // tractor is about to enter fails, and with a hard boundary the operator is told to take over.
-                        if (r.StartWarnings.Count > 0)
-                            flag(Severity.Bug, "TAKE-OVER-AT-START", JobRun.F($"AgOpenWeb told the operator to take over before the implement had reached the cultivated area on the first pass ({string.Join("; ", r.StartWarnings)}); the operator drove on, {(r.Turns.Count > 0 ? "and the turn at the far end was made" : "and no turn was made")}."));
-                        // The snake check needs a turn with the implement's pass known (a job that ends on its first pass has none).
-                        if (watch != null && r.Turns.Any(t => t.TruthPassBefore != int.MinValue)) watch.Judge(sc, r, flag);
-                    },
-                };
-            }
+                yield return MakeJob(JobRun.F($"R{i + 1}{rig.Digit}"), name, folder, track, headland, rig, skip, typed,
+                    JobRun.F($"The field as it was saved ({field.Inner.Count} obstacles, headland {headland:0.#} m, its own boundary and skip mode{(snake ? ": ignore worked tracks" : "")}), worked on its AB line '{track}'.") + forThisRun,
+                    snake);
         }
+    }
+
+    /// <summary>One farm job: <paramref name="rig"/> on the field in <paramref name="folder"/> (its own, or a random job's
+    /// changed copy), on its AB line <paramref name="track"/>, with the farm jobs' operator.</summary>
+    private static JobSpec MakeJob(string code, string name, string folder, string track, double headland,
+        Rig rig, (int Mode, int Rows)? skip, IReadOnlyList<string> typed, string story, bool snake)
+    {
+        var watch = snake ? new SkipWorkedJobs.SnakeWatch(careless: false) : null;
+        return new JobSpec(
+            code, $"{name}, {rig.Title}",
+            rig.Story + " " + story,
+            name, track, rig.V, rig.T, Machines.PumaSys)
+        {
+            FieldFolder = folder,
+            FieldSkip = skip,
+            Obstacles = true,
+            HeadlandM = headland > 0 ? headland : 12,
+            MakeHeadland = r => FileHeadlandAsync(r, headland),
+            HeadlandSections = rig.HeadlandSections,
+            OffWhenOut = rig.OffWhenOut,
+            UTurnRadius = rig.Radius,
+            UTurnDistanceFromBoundary = rig.Distance,
+            UTurnStyle = rig.Style,
+            LookAheadMatchesValves = rig.LookAheadMatchesValves,
+            SpeedKmh = rig.SpeedKmh,
+            Extra = typed.Count > 0 ? rig.Extra.Concat(typed).ToList() : rig.Extra,
+            PassCheck = true,
+            // A corner of short passes beside the hard fence has no room to turn: start on a full-length pass.
+            StartChordM = 100,
+            StartChordOfLongest = 0.8,
+            DriveOnPastStartWarnings = true,
+            // "No room on the next pass" with the field going on: by hand to the nearest pass still to do, and on.
+            MovesOnAfterNoRoom = 20,
+            ExtraJudge = (sc, r, flag) =>
+            {
+                // The job went on past "no room" ends by hand: the share at the first is the number the
+                // job ended with before (comparable with older nights), the rest is the whole field's.
+                if (!double.IsNaN(r.SprayedAtFirstMoveOn))
+                    sc.Row.Metrics.Add(("Sprayed when AgOpenWeb first had no room for a U-turn on the next pass (the operator then drove on by hand)", JobRun.F($"{r.SprayedAtFirstMoveOn * 100:0.0} %")));
+                if (r.MovedOn.Count > 0)
+                {
+                    flag(Severity.Improvement, "NO-ROOM-DROVE-ON-BY-HAND", JobRun.F($"AgOpenWeb had no room for a U-turn on the next pass {r.MovedOn.Count} time(s) with the field going on, and the operator drove by hand to the nearest pass still to do: {string.Join("; ", r.MovedOn)}."));
+                }
+                // AutoSteer engaged in the headland facing the field: a turn planned at the crossing the
+                // tractor is about to enter fails, and with a hard boundary the operator is told to take over.
+                if (r.StartWarnings.Count > 0)
+                    flag(Severity.Bug, "TAKE-OVER-AT-START", JobRun.F($"AgOpenWeb told the operator to take over before the implement had reached the cultivated area on the first pass ({string.Join("; ", r.StartWarnings)}); the operator drove on, {(r.Turns.Count > 0 ? "and the turn at the far end was made" : "and no turn was made")}."));
+                // The snake check needs a turn with the implement's pass known (a job that ends on its first pass has none).
+                if (watch != null && r.Turns.Any(t => t.TruthPassBefore != int.MinValue)) watch.Judge(sc, r, flag);
+            },
+        };
     }
 
     /// <summary>The headland line saved with the field; a field saved without one gets one from the whole boundary.</summary>
@@ -333,10 +341,14 @@ public static class FarmJobs
                 "The Case IH Maxxum 135 with the drill as in job J14 (pivot 1.54 m behind the rear axle): radius 4.3 m, Keyhole, distance from boundary 2.8 m, 8 km/h.",
                 Machines.Maxxum, Machines.DirettaCorsa300, 4.3, 2.8, 2, true, true, true, 8, drillExtra);
             foreach (var (digit, width) in new[] { (5, 12.0), (6, 20.0) })
-                yield return new Rig(digit, JobRun.F($"Puma with the fertiliser spreader at {width:0} m"),
-                    JobRun.F($"The Case Puma with a mounted twin-disc fertiliser spreader set to {width:0} m in two sections (left and right halves), the discs 1.2 m behind the lower links ({PumaLowerLinks + 1.2:0.0#} m behind the rear axle); the boom's U-turn settings, 10 km/h."),
-                    Puma, new ToolSpec(JobRun.F($"Mounted fertiliser spreader {width:0} m (2 x {width / 2:0} m)"), "rear", width, 2, HitchLength: PumaLowerLinks + 1.2),
-                    Radius, Distance, Style, OffWhenOut, HeadlandSections, true, 10, PumaGuidance.Append("uturn.extension:20").ToList());
+                yield return Spreader(digit, width);
         }
+
+        /// <summary>The Puma with the mounted twin-disc fertiliser spreader set to <paramref name="width"/> m.</summary>
+        public Rig Spreader(int digit, double width) =>
+            new(digit, JobRun.F($"Puma with the fertiliser spreader at {width:0} m"),
+                JobRun.F($"The Case Puma with a mounted twin-disc fertiliser spreader set to {width:0} m in two sections (left and right halves), the discs 1.2 m behind the lower links ({PumaLowerLinks + 1.2:0.0#} m behind the rear axle); the boom's U-turn settings, 10 km/h."),
+                Puma, new ToolSpec(JobRun.F($"Mounted fertiliser spreader {width:0} m (2 x {width / 2:0} m)"), "rear", width, 2, HitchLength: PumaLowerLinks + 1.2),
+                Radius, Distance, Style, OffWhenOut, HeadlandSections, true, 10, PumaGuidance.Append("uturn.extension:20").ToList());
     }
 }
