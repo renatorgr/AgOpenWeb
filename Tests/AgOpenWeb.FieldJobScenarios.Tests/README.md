@@ -328,7 +328,8 @@ pass at this end", "No U-turn onto the next pass: ..."):
   (`JobRun.TakeOverBeforeNoRoomEnd`). The harness tractor rolled on to the end of the pass, steered by nobody,
   through whatever was on it: on Couto da Ribeira started on pass 17 (28 Nov 2026) through a hard obstacle and
   the ditch, with 11 m² sprayed inside them and a `SPRAYED-IN-OBSTACLE` Safety finding that was the harness's
-  own.
+  own. `NO-ROOM-DROVE-ON-BY-HAND` says which times he took over at the alarm, before the end of the pass; with
+  every time used up (20) the job ends at the alarm.
 - Each time is listed in `NO-ROOM-DROVE-ON-BY-HAND` (Improvement), and the share sprayed at the first one is
   a metric (also when no pass was left to drive to): it is the number the job ended with before. The passes
   driven by hand count in "U-turns / passes".
